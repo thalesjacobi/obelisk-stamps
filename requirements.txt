@@ -1,16 +1,16 @@
 # Core Flask framework
-Flask==3.0.0
+Flask==3.1.0
 
 # Templating and form handling
-Jinja2==3.1.2
-Flask-WTF==1.2.1
+Jinja2==3.1.5
+Flask-WTF==1.2.2
 
 # Handling requests and sessions
-Flask-Session==0.4.0
-Flask-Flash==0.0.2
+Flask-Session==0.8.0
+Flask-Flash==1.6.8
 
 # Email handling (SMTP-based)
-Flask-Mail==0.9.1
+Flask-Mail==0.10.0
 
 # Google Cloud SDKs (for database, storage, and authentication)
 google-cloud-sqlalchemy==1.0.0
@@ -22,7 +22,7 @@ google-cloud-secret-manager==2.16.0
 python-dotenv==1.0.1
 
 # HTTP request handling
-requests==2.31.0
+requests==2.32.3
 
 # Security and authentication (optional, useful for future enhancements)
 Flask-Login==0.6.3
