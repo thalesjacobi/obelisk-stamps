@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+
+{% block title %}Catalogue - Obelisk Stamps{% endblock %}
+
+{% block content %}
+    <h1 class="text-center">Stamp Collection Catalogue</h1>
+    <p class="text-center">Browse our collection of handcrafted framed stamps.</p>
+
+    <div class="catalogue-grid">
+        <div class="catalogue-item">
+            <img src="{{ url_for('static', filename='stamp1.jpg') }}" alt="Stamp 1">
+            <p>Vintage Austrian Stamp</p>
+        </div>
+        <div class="catalogue-item">
+            <img src="{{ url_for('static', filename='stamp2.jpg') }}" alt="Stamp 2">
+            <p>Rare Collector's Edition</p>
+        </div>
+        <div class="catalogue-item">
+            <img src="{{ url_for('static', filename='stamp3.jpg') }}" alt="Stamp 3">
+            <p>Limited Edition Stamp</p>
+        </div>
+    </div>
+{% endblock %}

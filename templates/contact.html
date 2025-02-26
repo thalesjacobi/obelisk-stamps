@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+
+{% block title %}Contact Us - Obelisk Stamps{% endblock %}
+
+{% block content %}
+    <h1 class="text-center">Contact Us</h1>
+    <p class="text-center">Have any questions? Fill out the form below, and we'll get back to you soon.</p>
+
+    <div class="container">
+        <form action="{{ url_for('contact') }}" method="POST" class="mt-4">
+            <div class="mb-3">
+                <label for="name" class="form-label">Your Name</label>
+                <input type="text" class="form-control" id="name" name="name" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="email" class="form-label">Your Email</label>
+                <input type="email" class="form-control" id="email" name="email" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="message" class="form-label">Your Message</label>
+                <textarea class="form-control" id="message" name="message" rows="4" required></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Send Message</button>
+        </form>
+    </div>
+{% endblock %}
