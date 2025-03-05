@@ -7,9 +7,10 @@ Flask-Flash==1.6.8
 
 # Email handling (SMTP-based)
 Flask-Mailman==1.1.1
+flask-mail==0.9.1  # Required for Flask-Mail integration
 
-# Database (Using Pinecone instead of Cloud SQL)
-pinecone-client==3.0.2  # Latest stable Pinecone client
+# Database
+mysql-connector-python==8.2.0  # Latest stable MySQL connector
 
 # Environment management
 python-dotenv==1.0.1
@@ -20,3 +21,14 @@ requests==2.32.3
 # Security and authentication
 Flask-Login==0.6.3
 Flask-Bcrypt==1.0.1
+
+# OAuth authentication
+oauthlib==3.2.2  # Required for OAuth client
+requests-oauthlib==1.3.1  # Helps handle OAuth requests
+
+# Google authentication
+google-auth==2.25.2
+google-auth-oauthlib==1.1.0
+
+# Additional utilities
+smtplib==0.1.0  # Email sending
