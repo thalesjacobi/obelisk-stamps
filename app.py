@@ -1,9 +1,23 @@
 """This is the main file of the website."""
 
-from flask import Flask, render_template, request, flash
+import mysql.connector
+import os
+from flask import Flask, render_template, request, flash, redirect, url_for, session
+from flask_mail import Mail, Message
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+import smtplib
+from oauthlib.oauth2 import WebApplicationClient
+import requests
+import json
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = "supersecretkey"  # Required for flashing messages
+
+
 
 @app.route('/')
 def home():
