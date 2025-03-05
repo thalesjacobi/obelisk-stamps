@@ -5,7 +5,7 @@ import os
 from flask import Flask, render_template, request, flash, redirect, url_for, session
 from flask_mail import Mail, Message
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-import smtplib
+#import smtplib
 from oauthlib.oauth2 import WebApplicationClient
 import requests
 import json

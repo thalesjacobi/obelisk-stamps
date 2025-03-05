@@ -31,4 +31,4 @@ google-auth==2.25.2
 google-auth-oauthlib==1.1.0
 
 # Additional utilities
-smtplib==0.1.0  # Email sending
+#smtplib==0.1.0  # Email sending
