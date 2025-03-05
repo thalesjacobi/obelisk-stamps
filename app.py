@@ -17,6 +17,12 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = "supersecretkey"  # Required for flashing messages
 
+# Flask-Mail Setup
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = 'thalesjacobi@gmail.com'
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 
 
 @app.route('/')
