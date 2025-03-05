@@ -65,6 +65,53 @@ def load_user(user_id):
         return User(*user_data)
     return None
 
+#-------------------------------------------------------
+# Templates
+
+@app.route('/')
+def home():
+    return render_template('home.html')
+
+@app.route('/about')
+def about():
+    return render_template('about.html')
+
+@app.route('/catalogue')
+def catalogue():
+    cursor.execute("SELECT * FROM catalogue")
+    catalogue_items = cursor.fetchall()
+    return render_template('catalogue.html', catalogue_items=catalogue_items)
+
+@app.route('/contact', methods=['GET', 'POST'])
+def contact():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        email = request.form.get('email')
+        message = request.form.get('message')
+
+        try:
+            msg = Message("New Contact Request",
+                          sender=email,
+                          recipients=["thalesjacobi@gmail.com"])
+            msg.body = f"Name: {name}\nEmail: {email}\nMessage: {message}"
+            mail.send(msg)
+            flash(f"Thank you, {name}. Your message has been sent!", "success")
+        except smtplib.SMTPException as e:
+            flash("Email sending failed. Please try again later.", "danger")
+            print(f"Error sending email: {e}")
+    
+    return render_template('contact.html')
+
+@app.route('/privacy')
+def privacy():
+    """Privacy Policy Page"""
+    return render_template('privacy.html')
+
+@app.route('/terms')
+def terms():
+    """Terms and Conditions Page"""
+    return render_template('terms.html')
+
 @app.route('/login')
 def login():
     google_provider_cfg = requests.get(GOOGLE_DISCOVERY_URL).json()
