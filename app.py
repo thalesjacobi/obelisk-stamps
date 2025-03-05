@@ -1,14 +1,14 @@
 """This is the main file of the website."""
- 
-import mysql.connector
+
 import os
+import json
+import mysql.connector
 from flask import Flask, render_template, request, flash, redirect, url_for, session
 from flask_mail import Mail, Message
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 #import smtplib
 from oauthlib.oauth2 import WebApplicationClient
 import requests
-import json
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -29,7 +29,7 @@ mail = Mail(app)
 # Google OAuth Configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_DISCOVERY_URL = ("https://accounts.google.com/.well-known/openid-configuration")
+GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 client = WebApplicationClient(GOOGLE_CLIENT_ID)
 
 # Database Connection
@@ -133,4 +133,6 @@ def logout():
     return redirect(url_for("home"))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    port = int(os.environ.get("PORT", 8080))  # Use PORT from environment or default to 8080
+    app.run(host='0.0.0.0', port=port)
+
