@@ -24,6 +24,25 @@ app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USERNAME'] = 'thalesjacobi@gmail.com'
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 
+mail = Mail(app)
+
+# Google OAuth Configuration
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_DISCOVERY_URL = ("https://accounts.google.com/.well-known/openid-configuration")
+client = WebApplicationClient(GOOGLE_CLIENT_ID)
+
+# Database Connection
+db = mysql.connector.connect(
+    host="mysql-28241c40-thalesjacobi-7f99.d.aivencloud.com",
+    port="16042",
+    user="avnadmin",
+    password=os.getenv('DB_PASSWORD'),
+    database="defaultdb"
+)
+
+cursor = db.cursor()
+
 
 @app.route('/')
 def home():
