@@ -39,5 +39,4 @@ jobs:
           echo "DB_PASSWORD is set? " $(if [ -z "$DB_PASSWORD" ]; then echo "NO"; else echo "YES"; fi)
           echo "MAIL_PASSWORD is set? " $(if [ -z "$MAIL_PASSWORD" ]; then echo "NO"; else echo "YES"; fi)
 
-      - name: Run Application
-        run: python app.py  # Change if using a different entry point
+
