@@ -102,10 +102,10 @@ def login_callback():
     username = user_info["email"].split("@")[0]
     email = user_info["email"]
     name = user_info["name"]
-    
+
     cursor.execute("SELECT id, username, email, name, active FROM users WHERE email = %s", (email,))
     user_data = cursor.fetchone()
-    
+
     if user_data:
         user = User(*user_data)
         if not user.active:
@@ -116,7 +116,7 @@ def login_callback():
         db.commit()
         user_id = cursor.lastrowid
         user = User(user_id, username, email, name, 1)
-    
+
     login_user(user)
     return redirect(url_for("account"))
 
@@ -134,5 +134,4 @@ def logout():
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))  # Use PORT from environment or default to 8080
-    app.run(host='0.0.0.0', port=port)
-
+    app.run(host='0.0.0.0', port=port, debug=True)  # Start the Flask app
