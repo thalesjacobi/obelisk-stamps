@@ -7,17 +7,14 @@
     <p class="text-center">Browse our collection of handcrafted framed stamps.</p>
 
     <div class="catalogue-grid">
-        <div class="catalogue-item">
-            <img src="{{ url_for('static', filename='stamp1.jpg') }}" alt="Stamp 1">
-            <p>Vintage Austrian Stamp</p>
-        </div>
-        <div class="catalogue-item">
-            <img src="{{ url_for('static', filename='stamp2.jpg') }}" alt="Stamp 2">
-            <p>Rare Collector's Edition</p>
-        </div>
-        <div class="catalogue-item">
-            <img src="{{ url_for('static', filename='stamp3.jpg') }}" alt="Stamp 3">
-            <p>Limited Edition Stamp</p>
-        </div>
+        {% for item in catalogue_items %}
+            <div class="catalogue-item">
+                <img src="{{ url_for('static', filename=item[2]) }}" alt="{{ item[7] }}">
+                <p><strong>{{ item[7] }}</strong></p>
+                <p>Price: ${{ item[9] }}</p>
+                <p>{{ item[10] }}</p>
+                <p><strong>{% if item[11] %}Available{% else %}Sold Out{% endif %}</strong></p>
+            </div>
+        {% endfor %}
     </div>
 {% endblock %}
