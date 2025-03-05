@@ -43,44 +43,94 @@ db = mysql.connector.connect(
 
 cursor = db.cursor()
 
+# Flask-Login Setup
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login"
 
-@app.route('/')
-def home():
-    """Home page of the website"""
-    return render_template('home.html')
+# Mock User Model
+class User(UserMixin):
+    def __init__(self, id, username, email, name, active):
+        self.id = id
+        self.username = username
+        self.email = email
+        self.name = name
+        self.active = active
 
-@app.route('/about')
-def about():
-    """About page of the website"""
-    return render_template('about.html')
+@login_manager.user_loader
+def load_user(user_id):
+    cursor.execute("SELECT id, username, email, name, active FROM users WHERE id = %s", (user_id,))
+    user_data = cursor.fetchone()
+    if user_data:
+        return User(*user_data)
+    return None
 
-@app.route('/contact', methods=['GET', 'POST'])
-def contact():
-    """Contact page of the website"""
-    if request.method == 'POST':
-        name = request.form.get('name')
-        email = request.form.get('email')
-        message = request.form.get('message')
+@app.route('/login')
+def login():
+    google_provider_cfg = requests.get(GOOGLE_DISCOVERY_URL).json()
+    authorization_endpoint = google_provider_cfg["authorization_endpoint"]
+    request_uri = client.prepare_request_uri(
+        authorization_endpoint,
+        redirect_uri=url_for("login_callback", _external=True),
+        scope=["openid", "email", "profile"],
+    )
+    return redirect(request_uri)
 
-        # Here, you would handle the form submission, e.g., save to database or send email
-        flash(f"Thank you, {name}. Your message has been sent!", "success")
+@app.route("/login/callback")
+def login_callback():
+    code = request.args.get("code")
+    google_provider_cfg = requests.get(GOOGLE_DISCOVERY_URL).json()
+    token_endpoint = google_provider_cfg["token_endpoint"]
+    token_url, headers, body = client.prepare_token_request(
+        token_endpoint,
+        authorization_response=request.url,
+        redirect_url=request.base_url,
+        code=code,
+    )
+    token_response = requests.post(
+        token_url,
+        headers=headers,
+        data=body,
+        auth=(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET),
+    )
+    client.parse_request_body_response(json.dumps(token_response.json()))
+    userinfo_endpoint = google_provider_cfg["userinfo_endpoint"]
+    uri, headers, body = client.add_token(userinfo_endpoint)
+    userinfo_response = requests.get(uri, headers=headers, data=body)
 
-    return render_template('contact.html')
+    user_info = userinfo_response.json()
+    username = user_info["email"].split("@")[0]
+    email = user_info["email"]
+    name = user_info["name"]
+    
+    cursor.execute("SELECT id, username, email, name, active FROM users WHERE email = %s", (email,))
+    user_data = cursor.fetchone()
+    
+    if user_data:
+        user = User(*user_data)
+        if not user.active:
+            flash("Your account is inactive. Please contact support.", "danger")
+            return redirect(url_for("home"))
+    else:
+        cursor.execute("INSERT INTO users (username, email, name, active, date_created) VALUES (%s, %s, %s, %s, NOW())", (username, email, name, 1))
+        db.commit()
+        user_id = cursor.lastrowid
+        user = User(user_id, username, email, name, 1)
+    
+    login_user(user)
+    return redirect(url_for("account"))
 
-@app.route('/catalogue')
-def catalogue():
-    """Catalogue page of the website"""
-    return render_template('catalogue.html')
+@app.route("/account")
+@login_required
+def account():
+    return f"Welcome, {current_user.name}! This is your account page."
 
-@app.route('/privacy')
-def privacy():
-    """Privacy page of the website"""
-    return render_template('privacy.html')
-
-@app.route('/terms')
-def terms():
-    """Terms page of the website"""
-    return render_template('terms.html')
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash("You have been logged out.", "success")
+    return redirect(url_for("home"))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
