@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt  # Ensure you have a requirements.txt
+          pip install -r requirements.txt
 
       - name: Set environment variables
         run: |
@@ -44,19 +44,26 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
-      - name: Authenticate Docker with GCR
-        run: gcloud auth configure-docker gcr.io
-
+      - name: Authenticate Docker with Artifact Registry
+        run: gcloud auth configure-docker europe-west2-docker.pkg.dev
+  
       - name: Build the container image
-        run: docker build -t gcr.io/obelisk-stamps/your-image-name:latest .
-
+        run: |
+            docker build -t europe-west2-docker.pkg.dev/obelisk-stamps/cloud-run-source-deploy/obelisk-stamps:latest .
+  
       - name: Push the container image
-        run: docker push gcr.io/obelisk-stamps/your-image-name:latest
-
+        run: |
+            docker push europe-west2-docker.pkg.dev/obelisk-stamps/cloud-run-source-deploy/obelisk-stamps:latest
+  
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy your-service-name \
-            --image gcr.io/obelisk-stamps/your-image-name:latest \
-            --platform managed \
-            --region us-central1 \
-            --set-env-vars DB_PASSWORD=${{ secrets.DB_PASSWORD }},MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            gcloud run deploy obelisk-stamps \
+              --image europe-west2-docker.pkg.dev/obelisk-stamps/cloud-run-source-deploy/obelisk-stamps:latest \
+              --platform managed \
+              --region europe-west2 \
+              --set-env-vars DB_PASSWORD=${{ secrets.DB_PASSWORD }},MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}      
+
+      - name: Cleanup orphan processes
+        run: |
+          echo "Cleaning up orphan processes..."
+          git submodule foreach --recursive 'git config --local --unset-all "http.https://github.com" || :'
