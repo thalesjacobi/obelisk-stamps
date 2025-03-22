@@ -38,7 +38,7 @@ jobs:
           echo "Checking if secrets are set..."
           echo "DB_PASSWORD is set? " $(if [ -z "$DB_PASSWORD" ]; then echo "NO"; else echo "YES"; fi)
           echo "MAIL_PASSWORD is set? " $(if [ -z "$MAIL_PASSWORD" ]; then echo "NO"; else echo "YES"; fi)
-
+          
       - name: Authenticate with Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -62,6 +62,13 @@ jobs:
         run: |
             docker push europe-west2-docker.pkg.dev/obelisk-stamps/cloud-run-source-deploy/obelisk-stamps:latest
   
+      - name: Verify Environment Variables
+        run: |
+            echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}"
+            echo "MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}"
+            echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}"
+            echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}"
+
       - name: Deploy to Cloud Run
         run: |
             gcloud run deploy obelisk-stamps \
