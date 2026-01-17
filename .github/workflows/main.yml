@@ -11,6 +11,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      IMAGE: europe-west2-docker.pkg.dev/obelisk-stamps/obelisk-stamps/obelisk-stamps:${{ github.sha }}
 
     steps:
       - name: Checkout repository
@@ -56,23 +58,16 @@ jobs:
   
       - name: Build the container image
         run: |
-            docker build -t europe-west2-docker.pkg.dev/obelisk-stamps/cloud-run-source-deploy/obelisk-stamps:latest .
+            docker build -t "$IMAGE" .
   
       - name: Push the container image
         run: |
-            docker push europe-west2-docker.pkg.dev/obelisk-stamps/cloud-run-source-deploy/obelisk-stamps:latest
+            docker push "$IMAGE"
   
-      - name: Verify Environment Variables
-        run: |
-            echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}"
-            echo "MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}"
-            echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}"
-            echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}"
-
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy obelisk-stamps \
-            --image europe-west2-docker.pkg.dev/obelisk-stamps/obelisk-stamps/obelisk-stamps:${{ github.sha }} \
+            --image "$IMAGE" \
             --platform managed \
             --region europe-west2 \
             --allow-unauthenticated \
