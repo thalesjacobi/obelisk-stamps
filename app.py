@@ -3,6 +3,7 @@
 import os
 import json
 import mysql.connector
+from mysql.connector import Error
 from flask import Flask, render_template, request, flash, redirect, url_for, session
 from flask_mail import Mail, Message
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -33,21 +34,60 @@ GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configura
 client = WebApplicationClient(GOOGLE_CLIENT_ID)
 
 # Database Connection
-db = mysql.connector.connect(
-    host="mysql-28241c40-thalesjacobi-7f99.d.aivencloud.com",
-    port="16042",
-    user="avnadmin",
-    password=os.getenv('DB_PASSWORD'),
-    database="defaultdb"
-)
+def get_db():
+    return mysql.connector.connect(
+        host=os.getenv("DB_HOST"),
+        port=int(os.getenv("DB_PORT", "3306")),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_NAME"),
+    )
 
-cursor = db.cursor()
+def query_one(sql, params=None):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(sql, params or ())
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+def query_all(sql, params=None):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(sql, params or ())
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+def execute(sql, params=None):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(sql, params or ())
+    conn.commit()
+    last_id = cur.lastrowid
+    cur.close()
+    conn.close()
+    return last_id
+
+
+#db = mysql.connector.connect(
+#    host="mysql-28241c40-thalesjacobi-7f99.d.aivencloud.com",
+#    port="16042",
+#    user="avnadmin",
+#    password=os.getenv('DB_PASSWORD'),
+#    database="defaultdb"
+#)
+
+#cursor = db.cursor()
+
 
 # Flask-Login Setup
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
- 
+
 # Mock User Model
 class User(UserMixin):
     def __init__(self, id, username, email, name, active):
@@ -59,10 +99,19 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    cursor.execute("SELECT id, username, email, name, active FROM users WHERE id = %s", (user_id,))
-    user_data = cursor.fetchone()
+    user_data = query_one(
+        "SELECT id, username, email, name, active FROM users WHERE id = %s",
+        (user_id,),
+    )
     if user_data:
         return User(*user_data)
+
+    # OLD jan26
+    #cursor.execute("SELECT id, username, email, name, active FROM users WHERE id = %s", (user_id,))
+    #user_data = cursor.fetchone()
+    #if user_data:
+    #    return User(*user_data)
+
     return None
 
 #-------------------------------------------------------
@@ -78,9 +127,17 @@ def about():
 
 @app.route('/catalogue')
 def catalogue():
-    cursor.execute("SELECT * FROM catalogue")
-    catalogue_items = cursor.fetchall()
+    catalogue_items = query_all("SELECT * FROM catalogue")
     return render_template('catalogue.html', catalogue_items=catalogue_items)
+    
+    # OLD jan26
+    #cursor.execute("SELECT * FROM catalogue")
+    #catalogue_items = cursor.fetchall()
+    #return render_template('catalogue.html', catalogue_items=catalogue_items)
+
+    # DB disabled: show empty catalogue
+    #catalogue_items = []
+    #return render_template('catalogue.html', catalogue_items=catalogue_items)
 
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
@@ -150,8 +207,10 @@ def login_callback():
     email = user_info["email"]
     name = user_info["name"]
 
-    cursor.execute("SELECT id, username, email, name, active FROM users WHERE email = %s", (email,))
-    user_data = cursor.fetchone()
+    user_data = query_one(
+        "SELECT id, username, email, name, active FROM users WHERE email = %s",
+        (email,),
+    )
 
     if user_data:
         user = User(*user_data)
@@ -159,10 +218,26 @@ def login_callback():
             flash("Your account is inactive. Please contact support.", "danger")
             return redirect(url_for("home"))
     else:
-        cursor.execute("INSERT INTO users (username, email, name, active, date_created) VALUES (%s, %s, %s, %s, NOW())", (username, email, name, 1))
-        db.commit()
-        user_id = cursor.lastrowid
-        user = User(user_id, username, email, name, 1)
+        user_id = execute(
+            "INSERT INTO users (username, email, name, active, date_created) VALUES (%s, %s, %s, %s, NOW())",
+            (username, email, name, 1),
+        )
+        user = User(user_id, username, email, name, 1)    
+    
+    # OLD jan26
+    #cursor.execute("SELECT id, username, email, name, active FROM users WHERE email = %s", (email,))
+    #user_data = cursor.fetchone()
+
+    #if user_data:
+    #    user = User(*user_data)
+    #    if not user.active:
+    #        flash("Your account is inactive. Please contact support.", "danger")
+    #        return redirect(url_for("home"))
+    #else:
+    #    cursor.execute("INSERT INTO users (username, email, name, active, date_created) VALUES (%s, %s, %s, %s, NOW())", (username, email, name, 1))
+    #    db.commit()
+    #    user_id = cursor.lastrowid
+    #    user = User(user_id, username, email, name, 1)
 
     login_user(user)
     return redirect(url_for("account"))

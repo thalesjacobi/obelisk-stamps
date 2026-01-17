@@ -71,11 +71,22 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-            gcloud run deploy obelisk-stamps \
-              --image europe-west2-docker.pkg.dev/obelisk-stamps/cloud-run-source-deploy/obelisk-stamps:latest \
-              --platform managed \
-              --region europe-west2 \
-              --set-env-vars DB_PASSWORD=${{ secrets.DB_PASSWORD }},MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}      
+          gcloud run deploy obelisk-stamps \
+            --image europe-west2-docker.pkg.dev/obelisk-stamps/obelisk-stamps/obelisk-stamps:${{ github.sha }} \
+            --platform managed \
+            --region europe-west2 \
+            --allow-unauthenticated \
+            --port 8080 \
+            --set-env-vars DB_HOST=${{ secrets.DB_HOST }},DB_PORT=${{ secrets.DB_PORT }},DB_USER=${{ secrets.DB_USER }},DB_PASSWORD=${{ secrets.DB_PASSWORD }},DB_NAME=${{ secrets.DB_NAME }},MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+
+      # Old Jan26
+      #- name: Deploy to Cloud Run
+      #  run: |
+      #      gcloud run deploy obelisk-stamps \
+      #        --image europe-west2-docker.pkg.dev/obelisk-stamps/cloud-run-source-deploy/obelisk-stamps:latest \
+      #        --platform managed \
+      #        --region europe-west2 \
+      #        --set-env-vars DB_PASSWORD=${{ secrets.DB_PASSWORD }},MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}      
 
       - name: Cleanup orphan processes
         run: |
