@@ -3,7 +3,18 @@
 {% block title %}Home - Framed Stamps{% endblock %}
 
 {% block content %}
-    <h1>Welcome to Our Artisanal Framed Stamps</h1>
-    <p>Discover beautifully crafted framed stamps, a perfect addition to your collection or a thoughtful gift.</p>
+    <h1>Obelisk Stamps</h1>
+
+    <p class="intro">
+        <span class="intro__logo" aria-hidden="true">
+            <img
+                src="{{ url_for('static', filename='logo-374x381.png') }}"
+                alt="Obelisk Stamps logo"
+            >
+        </span>
+        Discover beautifully crafted framed stamps, a perfect addition to your collection or a thoughtful gift.
+    </p>
+
     <a href="/catalogue">View Catalogue</a>
+
 {% endblock %}

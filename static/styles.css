@@ -1,8 +1,16 @@
 /* General Styles */
+html, body {
+  height: 100%;
+}
 body {
     font-family: Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
-
+main {
+  flex: 1;
+}
 /* Navbar */
 .navbar-brand {
     font-weight: bold;
@@ -47,4 +55,80 @@ footer {
 form {
     max-width: 600px;
     margin: 0 auto;
+}
+
+/* LOGO */
+
+/* Brand (sprite-based logo) */
+.navbar .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.navbar .brand__icon {
+  width: 32px;
+  height: 32px;
+  display: inline-block;
+  overflow: hidden;
+  position: relative;
+  flex: 0 0 32px;
+}
+
+/* This is the key: scale the whole sprite by setting width/height (no transform) */
+.navbar .brand__icon img {
+    position: absolute;
+    width: 131.072px;
+    height: 84.36px;
+    left: -70.272px;
+    top: -42.544px;
+}
+
+
+.navbar .brand__text {
+  line-height: 1;
+  visibility: hidden;
+}
+
+/* Footer */
+.footer-link {
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.footer-link:hover {
+  text-decoration: underline;
+  color: #f0f0f0;
+}
+
+/* Home style*/
+
+/* Home intro paragraph with inline logo */
+.intro {
+  line-height: 1.6;
+  position: relative;
+}
+
+/* Home intro paragraph with large inline logo */
+/* Home intro paragraph with large logo */
+.intro__logo {
+  float: left;
+  width: 120px;
+  margin: 0.25rem 1rem 0.5rem 0;
+}
+
+.intro__logo img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.intro + a {
+  display: inline-block;
+  margin-top: 0.5rem;
+}
+.intro + a:hover {
+  text-decoration: underline;
 }
