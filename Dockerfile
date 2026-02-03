@@ -1,5 +1,6 @@
 # Use a Debian-based Python image
-FROM python:3.11-slim
+#FROM python:3.11-slim
+FROM python:3.10-slim
 
 # Set the working directory
 WORKDIR /app
@@ -8,9 +9,9 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install required packages
-RUN apt-get update && \
-    apt-get install -y gcc libpq-dev python3-dev musl-dev && \
-    rm -rf /var/lib/apt/lists/* 
+#RUN apt-get update && \
+#    apt-get install -y gcc libpq-dev python3-dev musl-dev && \
+#    rm -rf /var/lib/apt/lists/* 
 
 # Upgrade pip and install Python dependencies
 RUN pip install --upgrade pip && \
