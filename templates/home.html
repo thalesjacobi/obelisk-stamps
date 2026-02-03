@@ -27,4 +27,173 @@
 
     <a href="/catalogue">View Catalogue</a>
 
+    <!-- Stamp Identifier Section -->
+    <section class="stamp-identifier mt-5 pt-4 border-top">
+        <h2>Stamp Identifier</h2>
+        <p class="text-muted">Upload an image of a stamp to identify it and get estimated pricing.</p>
+
+        <form id="stamp-upload-form" enctype="multipart/form-data" class="mb-4">
+            <div class="row align-items-end">
+                <div class="col-md-6 mb-3">
+                    <label for="stamp-image" class="form-label">Select Stamp Image</label>
+                    <input type="file" class="form-control" id="stamp-image" name="image" accept="image/*" required>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label for="currency" class="form-label">Currency</label>
+                    <select class="form-select" id="currency" name="currency">
+                        <option value="EUR" selected>EUR</option>
+                        <option value="USD">USD</option>
+                        <option value="GBP">GBP</option>
+                    </select>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <button type="submit" class="btn btn-primary w-100" id="identify-btn">
+                        <span id="btn-text">Identify Stamp</span>
+                        <span id="btn-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </div>
+        </form>
+
+        <!-- Image Preview -->
+        <div id="image-preview-container" class="mb-4 d-none">
+            <h5>Uploaded Image:</h5>
+            <img id="image-preview" src="" alt="Uploaded stamp" class="img-thumbnail" style="max-height: 200px;">
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-section" class="d-none">
+            <h3>Top Matches</h3>
+            <div id="results-container" class="row">
+                <!-- Results will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Error Section -->
+        <div id="error-section" class="alert alert-danger d-none" role="alert">
+            <strong>Error:</strong> <span id="error-message"></span>
+        </div>
+    </section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('stamp-upload-form');
+    const imageInput = document.getElementById('stamp-image');
+    const previewContainer = document.getElementById('image-preview-container');
+    const imagePreview = document.getElementById('image-preview');
+    const resultsSection = document.getElementById('results-section');
+    const resultsContainer = document.getElementById('results-container');
+    const errorSection = document.getElementById('error-section');
+    const errorMessage = document.getElementById('error-message');
+    const identifyBtn = document.getElementById('identify-btn');
+    const btnText = document.getElementById('btn-text');
+    const btnSpinner = document.getElementById('btn-spinner');
+
+    // Image preview
+    imageInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                imagePreview.src = e.target.result;
+                previewContainer.classList.remove('d-none');
+            };
+            reader.readAsDataURL(file);
+        } else {
+            previewContainer.classList.add('d-none');
+        }
+    });
+
+    // Form submission
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        // Reset state
+        resultsSection.classList.add('d-none');
+        errorSection.classList.add('d-none');
+
+        // Show loading state
+        identifyBtn.disabled = true;
+        btnText.textContent = 'Identifying...';
+        btnSpinner.classList.remove('d-none');
+
+        const formData = new FormData();
+        formData.append('image', imageInput.files[0]);
+        formData.append('currency', document.getElementById('currency').value);
+
+        try {
+            const response = await fetch('/predict', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Unknown error occurred');
+            }
+
+            // Display results
+            displayResults(data);
+
+        } catch (error) {
+            errorMessage.textContent = error.message;
+            errorSection.classList.remove('d-none');
+        } finally {
+            // Reset button state
+            identifyBtn.disabled = false;
+            btnText.textContent = 'Identify Stamp';
+            btnSpinner.classList.add('d-none');
+        }
+    });
+
+    function displayResults(results) {
+        resultsContainer.innerHTML = '';
+
+        if (!results || results.length === 0) {
+            resultsContainer.innerHTML = '<div class="col-12"><p class="text-muted">No matches found.</p></div>';
+            resultsSection.classList.remove('d-none');
+            return;
+        }
+
+        results.forEach((result, index) => {
+            const similarity = (result.similarity * 100).toFixed(1);
+            const price = result.price_converted ?
+                `${result.price_converted.value.toFixed(2)} ${result.price_converted.currency}` :
+                'N/A';
+
+            const card = document.createElement('div');
+            card.className = 'col-md-4 mb-3';
+            card.innerHTML = `
+                <div class="card h-100 ${index === 0 ? 'border-primary' : ''}">
+                    <div class="card-header ${index === 0 ? 'bg-primary text-white' : 'bg-light'}">
+                        <strong>Match #${index + 1}</strong>
+                        <span class="badge ${index === 0 ? 'bg-light text-primary' : 'bg-secondary'} float-end">${similarity}%</span>
+                    </div>
+                    <div class="card-body">
+                        <h5 class="card-title">${result.title || 'Unknown'}</h5>
+                        <ul class="list-unstyled mb-0">
+                            <li><strong>Country:</strong> ${result.country || 'N/A'}</li>
+                            <li><strong>Year:</strong> ${result.year || 'N/A'}</li>
+                            <li><strong>Condition:</strong> ${result.condition_text || 'N/A'}</li>
+                            <li><strong>Price:</strong> <span class="text-success fw-bold">${price}</span></li>
+                        </ul>
+                    </div>
+                    <div class="card-footer">
+                        <a href="${result.source_url || '#'}" target="_blank" class="btn btn-sm btn-outline-primary w-100">
+                            View on PostBeeld
+                        </a>
+                    </div>
+                </div>
+            `;
+            resultsContainer.appendChild(card);
+        });
+
+        resultsSection.classList.remove('d-none');
+    }
+});
+</script>
 {% endblock %}

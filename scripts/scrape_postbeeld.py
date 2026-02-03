@@ -39,6 +39,11 @@ load_dotenv()
 # ----------------------------
 # Config
 # ----------------------------
+
+# ENABLE_IMAGE_SPLITTING controls whether multi-stamp images are split into individual parts.
+# - False: Images are saved as-is (no splitting). Each scraped item = 1 database row.
+# - True:  Multi-stamp images (2-up, 3-up, 2x2 grids) are detected and split.
+#          Each part becomes a separate database row with group_part/group_count metadata.
 ENABLE_IMAGE_SPLITTING = False
 
 BASE_LIST_URL = "https://www.postbeeld.com/stamps/page/{page}/mode/grid/show/120"
@@ -681,12 +686,26 @@ def upsert_items(items) -> int:
 # Main scrape
 # ----------------------------
 
-def scrape_pages(start_page: int, end_page: int, split_combos: bool = True) -> Tuple[int, int]:
+def scrape_pages(start_page: int, end_page: int, split_combos: bool = ENABLE_IMAGE_SPLITTING) -> Tuple[int, int]:
+    """
+    Scrape PostBeeld stamp pages and save to database.
+
+    Args:
+        start_page: First page number to scrape
+        end_page: Last page number to scrape (inclusive)
+        split_combos: Whether to split multi-stamp images into individual stamps.
+                      Defaults to ENABLE_IMAGE_SPLITTING config value.
+
+    Returns:
+        Tuple of (upsert_count, images_downloaded)
+    """
     ensure_dirs()
     session = get_session()
 
     all_items: List[StampItem] = []
     images_downloaded = 0
+
+    print(f"[config] Image splitting is {'ENABLED' if split_combos else 'DISABLED'}")
 
     for page in range(start_page, end_page + 1):
         url = BASE_LIST_URL.format(page=page)
@@ -710,7 +729,7 @@ def scrape_pages(start_page: int, end_page: int, split_combos: bool = True) -> T
                         images_downloaded += 1
                     it.image_path = p
 
-            # Split combos if applicable
+            # Split combos if enabled and image exists
             if split_combos and it.image_path and os.path.exists(it.image_path):
                 parts = split_combo_image(it.image_path)
                 if parts:
@@ -727,6 +746,7 @@ def scrape_pages(start_page: int, end_page: int, split_combos: bool = True) -> T
                 else:
                     expanded.append(it)
             else:
+                # No splitting - keep image as-is
                 expanded.append(it)
 
         all_items.extend(expanded)
@@ -739,6 +759,20 @@ def scrape_pages(start_page: int, end_page: int, split_combos: bool = True) -> T
 
 
 def main():
+    """
+    Main entry point for the scraper.
+
+    Usage:
+        python scripts/scrape_postbeeld.py [start_page] [end_page]
+
+    Examples:
+        python scripts/scrape_postbeeld.py           # Scrape page 4 only
+        python scripts/scrape_postbeeld.py 1 10      # Scrape pages 1-10
+
+    Configuration:
+        Set ENABLE_IMAGE_SPLITTING = True/False at the top of this file
+        to control whether multi-stamp images are split into parts.
+    """
     # Default: scrape page 4 (your failing case)
     start_page = 4
     end_page = 4
@@ -755,9 +789,11 @@ def main():
         except Exception:
             pass
 
-    upserts, imgs = scrape_pages(start_page, end_page, split_combos=True)
+    # Use the global ENABLE_IMAGE_SPLITTING config
+    upserts, imgs = scrape_pages(start_page, end_page, split_combos=ENABLE_IMAGE_SPLITTING)
     print("Done.")
     print(f"Upserts: {upserts}. Images downloaded: {imgs}. Images folder: {IMAGES_DIR}")
+    print(f"Image splitting was: {'ENABLED' if ENABLE_IMAGE_SPLITTING else 'DISABLED'}")
 
 
 if __name__ == "__main__":
