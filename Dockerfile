@@ -13,9 +13,23 @@ COPY requirements.txt .
 #    apt-get install -y gcc libpq-dev python3-dev musl-dev && \
 #    rm -rf /var/lib/apt/lists/* 
 
-# Upgrade pip and install Python dependencies
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Upgrade pip and install Python dependencies with detailed logging
+RUN echo "=== Step 1: Upgrading pip ===" && \
+    pip install --upgrade pip && \
+    echo "✓ Pip upgraded successfully" && \
+    echo "" && \
+    echo "=== Step 2: Installing Python dependencies from requirements.txt ===" && \
+    pip install --no-cache-dir -r requirements.txt && \
+    echo "✓ All dependencies installed successfully" && \
+    echo "" && \
+    echo "=== Step 3: Verifying installed packages ===" && \
+    pip list && \
+    echo "" && \
+    echo "=== Step 4: Checking pip compatibility ===" && \
+    pip check && \
+    echo "✓ All package dependencies are compatible" && \
+    echo "" && \
+    echo "=== Docker build setup complete ==="
 
 # Copy the rest of the application code
 COPY . .

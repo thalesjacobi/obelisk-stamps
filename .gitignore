@@ -28,6 +28,12 @@ MANIFEST
 
 # Local datasets / scraped images
 data/
+uploads/
+
+# Backup files
+*_old
+*_old.*
+*.bak
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -138,6 +144,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Pip cache
+.pip_cache/
 
 # Spyder project settings
 .spyderproject

@@ -11,8 +11,8 @@ requests==2.32.3
 beautifulsoup4==4.14.3
 Pillow==10.4.0
 
-# ML
-tensorflow==2.19.1
+# ML (using CPU version for smaller image size and faster builds)
+tensorflow-cpu==2.19.1
 numpy==2.1.3
 
 # Database
