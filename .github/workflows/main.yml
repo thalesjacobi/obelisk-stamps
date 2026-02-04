@@ -56,6 +56,13 @@ jobs:
       - name: Authenticate Docker with Artifact Registry
         run: gcloud auth configure-docker europe-west2-docker.pkg.dev
   
+      - name: Debug - List ML files before build
+        run: |
+            echo "=== Checking models/ folder ==="
+            ls -la models/ || echo "models/ folder not found"
+            echo "=== Checking indexes/ folder ==="
+            ls -la indexes/ || echo "indexes/ folder not found"
+
       - name: Build the container image
         run: |
             docker build -t "$IMAGE" .
