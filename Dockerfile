@@ -37,5 +37,5 @@ COPY . .
 # Expose the application port
 EXPOSE 8080
 
-# Run the application
-CMD ["flask", "run", "--host=0.0.0.0", "--port=8080"]
+# Run the application using python directly (reads PORT from environment)
+CMD ["python", "app.py"]
