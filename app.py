@@ -1,36 +1,24 @@
 """
 Main Flask app for Obelisk Stamps.
 
-This version fixes ML asset loading + predict route wiring:
-- Uses one consistent set of ML globals: model/ref_embeddings/ref_rows
-- Loads assets using absolute paths relative to this file
-- Registers custom Keras layer(s) before loading the .keras model
-- Predict route hard-guards against None to avoid crashes
+This version calls a separate ML API service for stamp recognition.
+The ML API handles model loading and inference, keeping the website lightweight.
 """
 
 import os
 import json
-import pickle
 from pathlib import Path
 from typing import Optional
 
 import mysql.connector
-import numpy as np
-import requests
-import tensorflow as tf
-from keras import models as keras_models
+import requests as http_requests
 from mysql.connector import Error
 from oauthlib.oauth2 import WebApplicationClient
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, flash, redirect, url_for, jsonify
+from flask import Flask, render_template, request, flash, redirect, url_for, jsonify, send_from_directory
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
-
-# IMPORTANT: Ensure custom layers are registered BEFORE loading the model
-import ml.model_utils  # noqa: F401
-
-from ml.inference import predict_stamp_value_from_image
 
 # ------------------------------------------------------------
 # ENV + APP
@@ -39,6 +27,11 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
+
+# ------------------------------------------------------------
+# ML API Configuration
+# ------------------------------------------------------------
+ML_API_URL = os.getenv("ML_API_URL", "http://localhost:8081")
 
 # ------------------------------------------------------------
 # MAIL
@@ -66,102 +59,6 @@ BASE_DIR = Path(__file__).resolve().parent
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(BASE_DIR / "uploads")))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-# ML artifact paths (can be overridden via env vars, but default to project folders)
-MODEL_PATH = Path(os.getenv("STAMP_MODEL_PATH", str(BASE_DIR / "models" / "stamp_embed.keras")))
-INDEX_PATH = Path(os.getenv("STAMP_INDEX_PATH", str(BASE_DIR / "indexes" / "ref_embeddings.npy")))
-ROWS_PATH = Path(os.getenv("STAMP_ROWS_PATH", str(BASE_DIR / "indexes" / "ref_rows.pkl")))
-
-# ------------------------------------------------------------
-# ML GLOBALS
-# ------------------------------------------------------------
-model: Optional[tf.keras.Model] = None
-ref_embeddings: Optional[np.ndarray] = None
-ref_rows: Optional[list] = None
-ml_load_error: Optional[str] = None
-
-
-def load_ml_assets() -> bool:
-    """
-    Load model + reference embeddings + rows into globals.
-    Uses absolute paths so it works regardless of where you run `python app.py` from.
-    """
-    global model, ref_embeddings, ref_rows, ml_load_error
-    ml_load_error = None
-
-    expected = [MODEL_PATH, INDEX_PATH, ROWS_PATH]
-    missing = [str(p) for p in expected if not p.exists()]
-    if missing:
-        model = None
-        ref_embeddings = None
-        ref_rows = None
-        ml_load_error = f"Missing ML files: {missing}"
-        print(f"[ML] {ml_load_error}")
-        return False
-
-    try:
-        model = keras_models.load_model(str(MODEL_PATH))
-    except Exception as e:
-        model = None
-        ref_embeddings = None
-        ref_rows = None
-        ml_load_error = f"Model load failed: {repr(e)}"
-        print(f"[ML] {ml_load_error}")
-        return False
-
-    try:
-        ref_embeddings = np.load(str(INDEX_PATH))
-        with open(str(ROWS_PATH), "rb") as f:
-            ref_rows = pickle.load(f)
-    except Exception as e:
-        model = None
-        ref_embeddings = None
-        ref_rows = None
-        ml_load_error = f"Index load failed: {repr(e)}"
-        print(f"[ML] {ml_load_error}")
-        return False
-
-    # Sanity checks (fail fast with useful errors)
-    if not isinstance(ref_embeddings, np.ndarray):
-        ml_load_error = f"ref_embeddings is not a numpy array (got {type(ref_embeddings)})"
-        print(f"[ML] {ml_load_error}")
-        model = None
-        ref_embeddings = None
-        ref_rows = None
-        return False
-
-    if ref_embeddings.ndim != 2:
-        ml_load_error = f"ref_embeddings must be 2D, got shape {ref_embeddings.shape}"
-        print(f"[ML] {ml_load_error}")
-        model = None
-        ref_embeddings = None
-        ref_rows = None
-        return False
-
-    if ref_rows is None or not isinstance(ref_rows, list):
-        ml_load_error = f"ref_rows is not a list (got {type(ref_rows)})"
-        print(f"[ML] {ml_load_error}")
-        model = None
-        ref_embeddings = None
-        ref_rows = None
-        return False
-
-    if ref_embeddings.shape[0] != len(ref_rows):
-        ml_load_error = f"ref_embeddings rows ({ref_embeddings.shape[0]}) != ref_rows ({len(ref_rows)})"
-        print(f"[ML] {ml_load_error}")
-        model = None
-        ref_embeddings = None
-        ref_rows = None
-        return False
-
-    print(f"[ML] Loaded model: {MODEL_PATH}")
-    print(f"[ML] Loaded embeddings: {ref_embeddings.shape} from {INDEX_PATH}")
-    print(f"[ML] Loaded rows: {len(ref_rows)} from {ROWS_PATH}")
-    return True
-
-
-# Load ML once on startup
-load_ml_assets()
 
 # ------------------------------------------------------------
 # DATABASE HELPERS
@@ -296,7 +193,7 @@ def login():
         flash("Google login is not configured. Set GOOGLE_CLIENT_ID/SECRET.", "danger")
         return redirect(url_for("home"))
 
-    google_provider_cfg = requests.get(GOOGLE_DISCOVERY_URL).json()
+    google_provider_cfg = http_requests.get(GOOGLE_DISCOVERY_URL).json()
     authorization_endpoint = google_provider_cfg["authorization_endpoint"]
     request_uri = client.prepare_request_uri(
         authorization_endpoint,
@@ -313,7 +210,7 @@ def login_callback():
         return redirect(url_for("home"))
 
     code = request.args.get("code")
-    google_provider_cfg = requests.get(GOOGLE_DISCOVERY_URL).json()
+    google_provider_cfg = http_requests.get(GOOGLE_DISCOVERY_URL).json()
     token_endpoint = google_provider_cfg["token_endpoint"]
 
     token_url, headers, body = client.prepare_token_request(
@@ -323,7 +220,7 @@ def login_callback():
         code=code,
     )
 
-    token_response = requests.post(
+    token_response = http_requests.post(
         token_url,
         headers=headers,
         data=body,
@@ -334,7 +231,7 @@ def login_callback():
     userinfo_endpoint = google_provider_cfg["userinfo_endpoint"]
 
     uri, headers, body = client.add_token(userinfo_endpoint)
-    userinfo_response = requests.get(uri, headers=headers, data=body)
+    userinfo_response = http_requests.get(uri, headers=headers, data=body)
 
     user_info = userinfo_response.json()
     username = user_info["email"].split("@")[0]
@@ -377,20 +274,40 @@ def logout():
 
 
 # ------------------------------------------------------------
-# ML PREDICT ROUTE
+# ML PREDICT ROUTE (calls external ML API)
 # ------------------------------------------------------------
+def convert_price(price_value, price_currency, target_currency):
+    """Convert price to target currency."""
+    fx_rates = {"EUR": 1.0, "USD": 1.08, "GBP": 0.86}
+
+    if not price_value or not price_currency:
+        return None
+
+    price_currency = price_currency.upper()
+    target_currency = target_currency.upper()
+
+    # Convert to EUR first
+    if price_currency == "EUR":
+        amount_eur = price_value
+    elif price_currency in fx_rates:
+        amount_eur = price_value / fx_rates[price_currency]
+    else:
+        amount_eur = price_value
+
+    # Convert to target
+    if target_currency == "EUR":
+        return round(amount_eur, 2)
+    elif target_currency in fx_rates:
+        return round(amount_eur * fx_rates[target_currency], 2)
+    else:
+        return round(amount_eur, 2)
+
+
 @app.route("/predict", methods=["POST"])
 def predict():
-    # Hard guard: never let None reach inference.py
-    if model is None or ref_embeddings is None or ref_rows is None:
-        return jsonify(
-            {
-                "error": "ML assets not loaded. Train model and build index first.",
-                "expected_files": [str(MODEL_PATH), str(INDEX_PATH), str(ROWS_PATH)],
-                "details": ml_load_error,
-            }
-        ), 500
-
+    """
+    Proxy endpoint that forwards requests to the ML API service.
+    """
     if "image" not in request.files:
         return jsonify({"error": "No image uploaded. Use multipart field name 'image'."}), 400
 
@@ -398,23 +315,103 @@ def predict():
     if not f.filename:
         return jsonify({"error": "Empty filename"}), 400
 
+    # Save uploaded file locally (for preview)
     save_path = UPLOAD_DIR / f.filename
     f.save(str(save_path))
 
     currency = request.form.get("currency", "EUR").upper()
 
+    # Forward to ML API
     try:
-        results = predict_stamp_value_from_image(
-            model=model,
-            ref_embeddings=ref_embeddings,
-            ref_rows=ref_rows,
-            query_image_path=str(save_path),
-            return_currency=currency,
-        )
-    except Exception as e:
-        return jsonify({"error": "Inference failed", "details": repr(e)}), 500
+        with open(save_path, "rb") as img_file:
+            files = {"image": (f.filename, img_file, "image/jpeg")}
+            data = {"top_k": 3, "confidence": 0.3}
 
-    return jsonify(results[:3])
+            response = http_requests.post(
+                f"{ML_API_URL}/predict",
+                files=files,
+                data=data,
+                timeout=60,
+            )
+
+        if response.status_code != 200:
+            return jsonify({
+                "error": "ML API error",
+                "details": response.text,
+            }), response.status_code
+
+        result = response.json()
+
+        # Process the response to add currency conversion
+        if result.get("multi_stamp"):
+            # Multi-stamp response
+            for stamp in result.get("stamps", []):
+                for match in stamp.get("matches", []):
+                    _add_price_conversion(match, currency)
+            return jsonify(result)
+        else:
+            # Single stamp response
+            for match in result.get("matches", []):
+                _add_price_conversion(match, currency)
+            return jsonify(result.get("matches", []))
+
+    except http_requests.exceptions.ConnectionError:
+        return jsonify({
+            "error": "ML API not available",
+            "details": f"Could not connect to {ML_API_URL}",
+        }), 503
+    except http_requests.exceptions.Timeout:
+        return jsonify({
+            "error": "ML API timeout",
+            "details": "The request took too long",
+        }), 504
+    except Exception as e:
+        return jsonify({
+            "error": "Unexpected error",
+            "details": str(e),
+        }), 500
+
+
+def _add_price_conversion(match: dict, target_currency: str):
+    """Add price conversion fields to a match result."""
+    price_value = match.get("price_value")
+    price_currency = match.get("price_currency")
+
+    match["price_original"] = {
+        "value": price_value,
+        "currency": price_currency,
+    }
+
+    converted = convert_price(price_value, price_currency, target_currency)
+    match["price_converted"] = {
+        "value": converted,
+        "currency": target_currency,
+    }
+
+
+# ------------------------------------------------------------
+# SERVE UPLOADED FILES
+# ------------------------------------------------------------
+@app.route("/uploads/<path:filename>")
+def serve_upload(filename):
+    return send_from_directory(str(UPLOAD_DIR), filename)
+
+
+# ------------------------------------------------------------
+# ML API HEALTH CHECK
+# ------------------------------------------------------------
+@app.route("/ml-health")
+def ml_health():
+    """Check if the ML API is available."""
+    try:
+        response = http_requests.get(f"{ML_API_URL}/health", timeout=5)
+        return jsonify(response.json())
+    except Exception as e:
+        return jsonify({
+            "status": "unavailable",
+            "error": str(e),
+            "ml_api_url": ML_API_URL,
+        }), 503
 
 
 # ------------------------------------------------------------
@@ -423,4 +420,6 @@ def predict():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     debug = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    print(f"[Website] Starting on port {port}")
+    print(f"[Website] ML API URL: {ML_API_URL}")
     app.run(host="0.0.0.0", port=port, debug=debug)

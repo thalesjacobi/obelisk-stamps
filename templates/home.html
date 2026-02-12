@@ -150,49 +150,142 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    function displayResults(results) {
+    function displayResults(data) {
         resultsContainer.innerHTML = '';
 
-        if (!results || results.length === 0) {
+        // Check if this is a multi-stamp response
+        if (data.multi_stamp && data.stamps) {
+            displayMultiStampResults(data);
+            return;
+        }
+
+        // Single stamp: data is an array of matches (original behavior)
+        const results = Array.isArray(data) ? data : [];
+
+        if (results.length === 0) {
             resultsContainer.innerHTML = '<div class="col-12"><p class="text-muted">No matches found.</p></div>';
             resultsSection.classList.remove('d-none');
             return;
         }
 
-        results.forEach((result, index) => {
-            const similarity = (result.similarity * 100).toFixed(1);
-            const price = result.price_converted ?
-                `${result.price_converted.value.toFixed(2)} ${result.price_converted.currency}` :
-                'N/A';
+        displaySingleStampMatches(results);
+        resultsSection.classList.remove('d-none');
+    }
 
-            const card = document.createElement('div');
-            card.className = 'col-md-4 mb-3';
-            card.innerHTML = `
-                <div class="card h-100 ${index === 0 ? 'border-primary' : ''}">
-                    <div class="card-header ${index === 0 ? 'bg-primary text-white' : 'bg-light'}">
-                        <strong>Match #${index + 1}</strong>
-                        <span class="badge ${index === 0 ? 'bg-light text-primary' : 'bg-secondary'} float-end">${similarity}%</span>
-                    </div>
-                    <div class="card-body">
-                        <h5 class="card-title">${result.title || 'Unknown'}</h5>
-                        <ul class="list-unstyled mb-0">
-                            <li><strong>Country:</strong> ${result.country || 'N/A'}</li>
-                            <li><strong>Year:</strong> ${result.year || 'N/A'}</li>
-                            <li><strong>Condition:</strong> ${result.condition_text || 'N/A'}</li>
-                            <li><strong>Price:</strong> <span class="text-success fw-bold">${price}</span></li>
-                        </ul>
-                    </div>
-                    <div class="card-footer">
-                        <a href="${result.source_url || '#'}" target="_blank" class="btn btn-sm btn-outline-primary w-100">
-                            View on PostBeeld
-                        </a>
-                    </div>
+    function displayMultiStampResults(data) {
+        const header = document.createElement('div');
+        header.className = 'col-12 mb-3';
+        header.innerHTML = `
+            <div class="alert alert-info">
+                <strong>${data.stamp_count} stamps detected</strong> in this image.
+                Each stamp is shown below with its top matches.
+            </div>
+        `;
+        resultsContainer.appendChild(header);
+
+        data.stamps.forEach((stamp, stampIndex) => {
+            // Stamp section wrapper
+            const stampSection = document.createElement('div');
+            stampSection.className = 'col-12 mb-4';
+
+            // Stamp header with cropped image
+            const stampHeader = document.createElement('div');
+            stampHeader.className = 'row align-items-center mb-3 pb-2 border-bottom';
+            stampHeader.innerHTML = `
+                <div class="col-auto">
+                    <img src="${stamp.stamp_image_url}" alt="Stamp ${stampIndex + 1}"
+                         class="img-thumbnail" style="max-height: 120px; max-width: 120px;">
+                </div>
+                <div class="col">
+                    <h4 class="mb-1">Stamp ${stampIndex + 1} of ${data.stamp_count}</h4>
+                    <span class="text-muted">Detection confidence: ${(stamp.detection_confidence * 100).toFixed(1)}%</span>
                 </div>
             `;
-            resultsContainer.appendChild(card);
+            stampSection.appendChild(stampHeader);
+
+            // Show only the best match for this stamp
+            if (stamp.matches && stamp.matches.length > 0) {
+                const result = stamp.matches[0];
+                const similarity = (result.similarity * 100).toFixed(1);
+                const price = result.price_converted ?
+                    `${result.price_converted.value.toFixed(2)} ${result.price_converted.currency}` :
+                    'N/A';
+
+                const matchCard = document.createElement('div');
+                matchCard.className = 'row';
+                matchCard.innerHTML = `
+                    <div class="col-md-6">
+                        <div class="card h-100 border-primary">
+                            <div class="card-header bg-primary text-white">
+                                <strong>Best Match</strong>
+                                <span class="badge bg-light text-primary float-end">${similarity}%</span>
+                            </div>
+                            <div class="card-body">
+                                <h5 class="card-title">${result.title || 'Unknown'}</h5>
+                                <ul class="list-unstyled mb-0">
+                                    <li><strong>Country:</strong> ${result.country || 'N/A'}</li>
+                                    <li><strong>Year:</strong> ${result.year || 'N/A'}</li>
+                                    <li><strong>Condition:</strong> ${result.condition_text || 'N/A'}</li>
+                                    <li><strong>Price:</strong> <span class="text-success fw-bold">${price}</span></li>
+                                </ul>
+                            </div>
+                            <div class="card-footer">
+                                <a href="${result.source_url || '#'}" target="_blank" class="btn btn-sm btn-outline-primary w-100">
+                                    View on PostBeeld
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                stampSection.appendChild(matchCard);
+            } else {
+                const noMatch = document.createElement('p');
+                noMatch.className = 'text-muted';
+                noMatch.textContent = 'No matches found for this stamp.';
+                stampSection.appendChild(noMatch);
+            }
+
+            resultsContainer.appendChild(stampSection);
         });
 
         resultsSection.classList.remove('d-none');
+    }
+
+    function displaySingleStampMatches(results) {
+        // Only show the first (best) match
+        if (results.length === 0) return;
+
+        const result = results[0];
+        const similarity = (result.similarity * 100).toFixed(1);
+        const price = result.price_converted ?
+            `${result.price_converted.value.toFixed(2)} ${result.price_converted.currency}` :
+            'N/A';
+
+        const card = document.createElement('div');
+        card.className = 'col-md-6 mb-3';
+        card.innerHTML = `
+            <div class="card h-100 border-primary">
+                <div class="card-header bg-primary text-white">
+                    <strong>Best Match</strong>
+                    <span class="badge bg-light text-primary float-end">${similarity}%</span>
+                </div>
+                <div class="card-body">
+                    <h5 class="card-title">${result.title || 'Unknown'}</h5>
+                    <ul class="list-unstyled mb-0">
+                        <li><strong>Country:</strong> ${result.country || 'N/A'}</li>
+                        <li><strong>Year:</strong> ${result.year || 'N/A'}</li>
+                        <li><strong>Condition:</strong> ${result.condition_text || 'N/A'}</li>
+                        <li><strong>Price:</strong> <span class="text-success fw-bold">${price}</span></li>
+                    </ul>
+                </div>
+                <div class="card-footer">
+                    <a href="${result.source_url || '#'}" target="_blank" class="btn btn-sm btn-outline-primary w-100">
+                        View on PostBeeld
+                    </a>
+                </div>
+            </div>
+        `;
+        resultsContainer.appendChild(card);
     }
 });
 </script>

@@ -30,10 +30,13 @@ def build_embedding_index(
     ds = tf.data.Dataset.from_tensor_slices(paths).map(_load, num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
+    total_batches = (len(paths) + batch_size - 1) // batch_size
     embs = []
-    for batch in ds:
+    for i, batch in enumerate(ds):
         z = model(batch, training=False).numpy().astype("float32")
         embs.append(z)
+        if (i + 1) % 50 == 0 or i == 0:
+            print(f"  Processing batch {i + 1}/{total_batches}...")
 
     ref_embeddings = np.concatenate(embs, axis=0)
     ref_embeddings /= np.linalg.norm(ref_embeddings, axis=1, keepdims=True) + 1e-12
@@ -50,11 +53,16 @@ def main():
     ap.add_argument("--out_dir", type=str, default="indexes")
     args = ap.parse_args()
 
+    print("[build_index] Starting...")
+
     if not os.path.exists(args.model):
         raise FileNotFoundError(f"Model not found: {args.model}")
 
+    print(f"[build_index] Loading model from {args.model}...")
     model = tf.keras.models.load_model(args.model)
+    print("[build_index] Model loaded.")
 
+    print("[build_index] Loading stamp rows from database...")
     rows = load_stamp_rows_from_mysql(
         host=os.getenv("DB_HOST"),
         port=int(os.getenv("DB_PORT", "3306")),
@@ -67,6 +75,8 @@ def main():
 
     if not rows:
         raise RuntimeError("No usable rows found (check DB + image_path on disk).")
+
+    print(f"[build_index] Loaded {len(rows)} stamps. Building embeddings...")
 
     ref_embeddings, ref_rows = build_embedding_index(
         model=model,

@@ -71,3 +71,16 @@ tmp/
 
 # Pip cache
 .pip_cache/
+
+# ML training data and artifacts (not needed in Docker)
+ml/stamp_detector/training_data/
+ml/stamp_detector/training_run/
+yolo11*.pt
+*.cache
+debug/
+
+# Local data
+data/
+
+# Claude Code
+.claude/

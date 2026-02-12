@@ -1,0 +1,17 @@
+# YOLO Training Configuration for Stamp Detection
+# This file defines the dataset structure and class names
+
+# Dataset paths (absolute to avoid YOLO resolving relative paths incorrectly)
+path: D:/CodingFolder/obelisk-stamps/ml/stamp_detector/training_data
+train: images        # Training images (relative to path)
+val: images          # Validation images (relative to path) - will be split automatically
+
+# Class names
+names:
+  0: stamp
+
+# Number of classes
+nc: 1
+
+# Training parameters (can be overridden in train.py)
+# These are reasonable defaults for stamp detection

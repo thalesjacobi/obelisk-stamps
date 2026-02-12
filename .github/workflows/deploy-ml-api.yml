@@ -1,0 +1,57 @@
+name: Deploy ML API
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ml_api/**'
+      - 'ml/model_utils.py'
+      - 'ml/__init__.py'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: europe-west2-docker.pkg.dev/obelisk-stamps/obelisk-stamps/ml-api:${{ github.sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: obelisk-stamps
+
+      - name: Authenticate Docker with Artifact Registry
+        run: gcloud auth configure-docker europe-west2-docker.pkg.dev
+
+      - name: Build the container image
+        run: |
+          docker build -t "$IMAGE" -f ml_api/Dockerfile .
+
+      - name: Push the container image
+        run: |
+          docker push "$IMAGE"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy obelisk-stamps-ml-api \
+            --image "$IMAGE" \
+            --platform managed \
+            --region europe-west2 \
+            --allow-unauthenticated \
+            --port 8081 \
+            --memory 2Gi \
+            --cpu 2 \
+            --timeout 120 \
+            --min-instances 0 \
+            --max-instances 3 \
+            --set-env-vars "GCS_MODEL_BUCKET=obelisk-stamps-models"

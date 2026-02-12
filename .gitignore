@@ -184,3 +184,20 @@ cython_debug/
 
 # Claude Code settings
 .claude/
+
+# ML / YOLO training artifacts
+ml/stamp_detector/training_data/
+ml/stamp_detector/training_run/
+yolo11*.pt
+*.cache
+
+# ML models (stored in GCS, too large for git)
+models/
+indexes/
+ml/stamp_detector/weights/
+
+# Verification output (visual detection checks)
+verification_output/
+
+# Debug HTML files
+debug/

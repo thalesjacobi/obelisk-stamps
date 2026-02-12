@@ -1,0 +1,20 @@
+# Flask API
+Flask==3.1.0
+flask-cors==4.0.0
+
+# ML
+tensorflow-cpu==2.19.1
+numpy==2.1.3
+Pillow==10.4.0
+
+# YOLO for stamp detection
+ultralytics>=8.0.0
+
+# Google Cloud Storage
+google-cloud-storage==2.14.0
+
+# Environment
+python-dotenv==1.0.1
+
+# Gunicorn for production
+gunicorn==21.2.0
