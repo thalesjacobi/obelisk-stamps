@@ -34,7 +34,7 @@ MODEL_DIR = Path(os.getenv("MODEL_DIR", "/tmp/models"))
 
 # Model file paths (in GCS and local cache)
 MODEL_FILES = {
-    "embedding_model": "stamp_embed.keras",
+    "embedding_model": "stamp_embed.h5",  # H5 format for better compatibility
     "embeddings_index": "ref_embeddings.npy",
     "embeddings_rows": "ref_rows.pkl",
     "yolo_weights": "stamp_detector.pt",
