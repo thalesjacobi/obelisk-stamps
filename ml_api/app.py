@@ -406,10 +406,25 @@ def predict():
 
 
 # ------------------------------------------------------------
-# STARTUP
+# STARTUP - Lazy loading to avoid worker timeout
 # ------------------------------------------------------------
-print("[ML API] Starting up...")
-load_ml_assets()
+print("[ML API] Starting up (models will load on first request)...")
+
+def ensure_ml_loaded():
+    """Ensure models are loaded before processing requests."""
+    global ml_ready
+    if not ml_ready:
+        print("[ML API] Loading models on first request...")
+        load_ml_assets()
+    return ml_ready
+
+@app.before_request
+def before_request():
+    """Load models on first request if not already loaded."""
+    # Skip loading for health check to allow container to start
+    if request.endpoint == 'health':
+        return
+    ensure_ml_loaded()
 
 
 if __name__ == "__main__":

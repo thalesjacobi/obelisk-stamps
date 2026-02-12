@@ -28,4 +28,7 @@ COPY ml_api/app.py .
 EXPOSE 8081
 
 # Run with gunicorn for production
-CMD ["gunicorn", "--bind", "0.0.0.0:8081", "--workers", "1", "--threads", "4", "--timeout", "120", "app:app"]
+# --timeout 300: Allow long requests (model inference can be slow)
+# --graceful-timeout 300: Allow graceful shutdown time
+# --preload: Load app before forking workers (shares memory)
+CMD ["gunicorn", "--bind", "0.0.0.0:8081", "--workers", "1", "--threads", "4", "--timeout", "300", "--graceful-timeout", "300", "--preload", "app:app"]
