@@ -6,6 +6,7 @@ This is an independent API service that provides:
 2. Stamp matching (EfficientNet embeddings) - find similar stamps
 
 The service loads models from Google Cloud Storage at startup.
+Memory requirement: 4Gi (TensorFlow + YOLO + embeddings index)
 """
 
 import os
