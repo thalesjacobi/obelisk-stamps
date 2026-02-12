@@ -34,11 +34,19 @@ MODEL_DIR = Path(os.getenv("MODEL_DIR", "/tmp/models"))
 
 # Model file paths (in GCS and local cache)
 MODEL_FILES = {
-    "embedding_model": "stamp_embed.h5",  # H5 format for better compatibility
     "embeddings_index": "ref_embeddings.npy",
     "embeddings_rows": "ref_rows.pkl",
     "yolo_weights": "stamp_detector.pt",
 }
+
+# SavedModel directory files (for embedding model)
+SAVEDMODEL_DIR = "stamp_embed_savedmodel"
+SAVEDMODEL_FILES = [
+    "fingerprint.pb",
+    "saved_model.pb",
+    "variables/variables.data-00000-of-00001",
+    "variables/variables.index",
+]
 
 # ------------------------------------------------------------
 # GLOBALS
@@ -75,6 +83,7 @@ def ensure_models_downloaded() -> bool:
     """Download all model files from GCS if not already cached."""
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Download regular model files
     for key, filename in MODEL_FILES.items():
         local_path = MODEL_DIR / filename
         if not local_path.exists():
@@ -83,6 +92,18 @@ def ensure_models_downloaded() -> bool:
                 return False
         else:
             print(f"[ML] Using cached {filename}")
+
+    # Download SavedModel directory files
+    savedmodel_local = MODEL_DIR / SAVEDMODEL_DIR
+    for rel_path in SAVEDMODEL_FILES:
+        local_path = savedmodel_local / rel_path
+        gcs_path = f"{SAVEDMODEL_DIR}/{rel_path}"
+        if not local_path.exists():
+            print(f"[ML] Downloading {gcs_path} from GCS...")
+            if not download_from_gcs(GCS_BUCKET, gcs_path, local_path):
+                return False
+        else:
+            print(f"[ML] Using cached {gcs_path}")
 
     return True
 
@@ -102,19 +123,12 @@ def load_ml_assets() -> bool:
         ml_error = "Failed to download models from GCS"
         return False
 
-    # Load embedding model
+    # Load embedding model (SavedModel format)
     try:
         import tensorflow as tf
-        # Import custom layers
-        import sys
-        sys.path.insert(0, str(Path(__file__).parent.parent))
-        from ml.model_utils import L2Normalize
 
-        model_path = MODEL_DIR / MODEL_FILES["embedding_model"]
-        embedding_model = tf.keras.models.load_model(
-            str(model_path),
-            custom_objects={'L2Normalize': L2Normalize}
-        )
+        model_path = MODEL_DIR / SAVEDMODEL_DIR
+        embedding_model = tf.saved_model.load(str(model_path))
         print(f"[ML] Loaded embedding model from {model_path}")
     except Exception as e:
         ml_error = f"Failed to load embedding model: {e}"
@@ -204,8 +218,12 @@ def get_embedding(image_bytes: bytes) -> np.ndarray:
     img = tf.image.resize(img, (224, 224), antialias=True)
     img = tf.expand_dims(img, axis=0)
 
-    # Get embedding
-    emb = embedding_model(img, training=False).numpy().astype("float32")[0]
+    # Get embedding - SavedModel uses 'serve' signature
+    serve_fn = embedding_model.signatures['serving_default']
+    result = serve_fn(image=img)
+    # Get the output tensor (key may vary, get first output)
+    output_key = list(result.keys())[0]
+    emb = result[output_key].numpy().astype("float32")[0]
     emb /= np.linalg.norm(emb) + 1e-12
     return emb
 
