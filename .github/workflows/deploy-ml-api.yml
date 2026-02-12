@@ -49,9 +49,9 @@ jobs:
             --region europe-west2 \
             --allow-unauthenticated \
             --port 8081 \
-            --memory 2Gi \
+            --memory 4Gi \
             --cpu 2 \
-            --timeout 120 \
+            --timeout 300 \
             --min-instances 0 \
             --max-instances 3 \
             --set-env-vars "GCS_MODEL_BUCKET=obelisk-stamps-models"
