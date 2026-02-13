@@ -1,0 +1,72 @@
+{% extends "layout.html" %}
+
+{% block title %}Stamp Identifier - Obelisk Stamps{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <h1 class="mb-4">Stamp Identifier</h1>
+
+            <p class="lead mb-4">
+                Upload an image of your stamp to identify it using our AI-powered recognition system.
+                We'll match it against our database and provide details including country of origin,
+                year of issue, and estimated value.
+            </p>
+
+            {% include 'partials/_stamp_identifier.html' %}
+
+            <!-- How It Works Section -->
+            <div class="mt-5 pt-4 border-top">
+                <h3 class="mb-4">How It Works</h3>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100 text-center">
+                            <div class="card-body">
+                                <div class="display-4 text-primary mb-3">1</div>
+                                <h5 class="card-title">Upload</h5>
+                                <p class="card-text text-muted">
+                                    Take a clear photo of your stamp or upload an existing image.
+                                    Multiple stamps in one image are supported.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100 text-center">
+                            <div class="card-body">
+                                <div class="display-4 text-primary mb-3">2</div>
+                                <h5 class="card-title">Identify</h5>
+                                <p class="card-text text-muted">
+                                    Our AI analyzes your stamp image and searches through thousands
+                                    of stamps to find the best matches.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100 text-center">
+                            <div class="card-body">
+                                <div class="display-4 text-primary mb-3">3</div>
+                                <h5 class="card-title">Collect</h5>
+                                <p class="card-text text-muted">
+                                    Review the results with details and pricing.
+                                    {% if current_user.is_authenticated %}
+                                    Add stamps to your personal album to track your collection.
+                                    {% else %}
+                                    <a href="/login">Sign in</a> to save stamps to your album.
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% include 'partials/_stamp_identifier_scripts.html' %}
+{% endblock %}

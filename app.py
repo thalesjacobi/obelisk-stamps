@@ -188,6 +188,11 @@ def terms():
     return render_template("terms.html")
 
 
+@app.route("/identifier")
+def identifier():
+    return render_template("identifier.html")
+
+
 # ------------------------------------------------------------
 # LOGIN VIA GOOGLE
 # ------------------------------------------------------------

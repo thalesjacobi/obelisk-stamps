@@ -1,0 +1,52 @@
+<!-- Stamp Identifier Component -->
+<!-- Usage: {% include 'partials/_stamp_identifier.html' %} -->
+<!-- Optionally pass show_title=False to hide the title -->
+
+<section class="stamp-identifier">
+    {% if show_title is not defined or show_title %}
+    <h2>Stamp Identifier</h2>
+    <p class="text-muted">Upload an image of a stamp to identify it and get estimated pricing.</p>
+    {% endif %}
+
+    <form id="stamp-upload-form" enctype="multipart/form-data" class="mb-4">
+        <div class="row align-items-end">
+            <div class="col-md-6 mb-3">
+                <label for="stamp-image" class="form-label">Select Stamp Image</label>
+                <input type="file" class="form-control" id="stamp-image" name="image" accept="image/*" required>
+            </div>
+            <div class="col-md-3 mb-3">
+                <label for="currency" class="form-label">Currency</label>
+                <select class="form-select" id="currency" name="currency">
+                    <option value="EUR" selected>EUR</option>
+                    <option value="USD">USD</option>
+                    <option value="GBP">GBP</option>
+                </select>
+            </div>
+            <div class="col-md-3 mb-3">
+                <button type="submit" class="btn btn-primary w-100" id="identify-btn">
+                    <span id="btn-text">Identify Stamp</span>
+                    <span id="btn-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <!-- Image Preview -->
+    <div id="image-preview-container" class="mb-4 d-none">
+        <h5>Uploaded Image:</h5>
+        <img id="image-preview" src="" alt="Uploaded stamp" class="img-thumbnail" style="max-height: 200px;">
+    </div>
+
+    <!-- Results Section -->
+    <div id="results-section" class="d-none">
+        <h3>Top Matches</h3>
+        <div id="results-container" class="row">
+            <!-- Results will be populated by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Error Section -->
+    <div id="error-section" class="alert alert-danger d-none" role="alert">
+        <strong>Error:</strong> <span id="error-message"></span>
+    </div>
+</section>
