@@ -116,18 +116,19 @@ login_manager.login_view = "login"
 
 
 class User(UserMixin):
-    def __init__(self, id, username, email, name, active):
+    def __init__(self, id, username, email, name, active, picture=None):
         self.id = id
         self.username = username
         self.email = email
         self.name = name
         self.active = active
+        self.picture = picture  # Profile picture as bytes (BLOB)
 
 
 @login_manager.user_loader
 def load_user(user_id):
     user_data = query_one(
-        "SELECT id, username, email, name, active FROM users WHERE id = %s",
+        "SELECT id, username, email, name, active, picture FROM users WHERE id = %s",
         (user_id,),
     )
     if user_data:
@@ -212,6 +213,15 @@ def login_callback():
         flash("Google login is not configured.", "danger")
         return redirect(url_for("home"))
 
+    # Check if user cancelled or there was an error
+    error = request.args.get("error")
+    if error:
+        if error == "access_denied":
+            flash("Login cancelled.", "info")
+        else:
+            flash(f"Login failed: {error}", "danger")
+        return redirect(url_for("home"))
+
     code = request.args.get("code")
     google_provider_cfg = http_requests.get(GOOGLE_DISCOVERY_URL).json()
     token_endpoint = google_provider_cfg["token_endpoint"]
@@ -241,8 +251,19 @@ def login_callback():
     email = user_info["email"]
     name = user_info.get("name", username)
 
+    # Download profile picture from Google
+    picture_bytes = None
+    picture_url = user_info.get("picture")
+    if picture_url:
+        try:
+            picture_response = http_requests.get(picture_url, timeout=10)
+            if picture_response.status_code == 200:
+                picture_bytes = picture_response.content
+        except Exception as e:
+            print(f"Failed to download profile picture: {e}")
+
     user_data = query_one(
-        "SELECT id, username, email, name, active FROM users WHERE email = %s",
+        "SELECT id, username, email, name, active, picture FROM users WHERE email = %s",
         (email,),
     )
 
@@ -251,12 +272,19 @@ def login_callback():
         if not user.active:
             flash("Your account is inactive. Please contact support.", "danger")
             return redirect(url_for("home"))
+        # Update profile picture if we got a new one
+        if picture_bytes:
+            execute(
+                "UPDATE users SET picture = %s WHERE id = %s",
+                (picture_bytes, user.id),
+            )
+            user.picture = picture_bytes
     else:
         user_id = execute(
-            "INSERT INTO users (username, email, name, active, date_created) VALUES (%s, %s, %s, %s, NOW())",
-            (username, email, name, 1),
+            "INSERT INTO users (username, email, name, active, date_created, picture) VALUES (%s, %s, %s, %s, NOW(), %s)",
+            (username, email, name, 1, picture_bytes),
         )
-        user = User(user_id, username, email, name, 1)
+        user = User(user_id, username, email, name, 1, picture_bytes)
 
     login_user(user)
     return redirect(url_for("account"))
@@ -266,6 +294,20 @@ def login_callback():
 @login_required
 def account():
     return f"Welcome, {current_user.name}! This is your account page."
+
+
+@app.route("/user/picture/<int:user_id>")
+def user_picture(user_id):
+    """Serve user profile picture from database."""
+    from flask import Response
+    user_data = query_one(
+        "SELECT picture FROM users WHERE id = %s",
+        (user_id,),
+    )
+    if user_data and user_data[0]:
+        return Response(user_data[0], mimetype='image/jpeg')
+    # Return a default placeholder or 404
+    return '', 404
 
 
 @app.route("/logout")
