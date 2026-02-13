@@ -160,11 +160,43 @@ def load_ml_assets() -> bool:
     # Load YOLO detector
     try:
         from ultralytics import YOLO
+        import torch
+
         weights_path = MODEL_DIR / MODEL_FILES["yolo_weights"]
+        print(f"[ML] Loading YOLO detector from {weights_path}...")
+
+        # Load the model - ultralytics will handle the fusing internally
+        # If there are version issues, we catch them here
         stamp_detector = YOLO(str(weights_path))
-        print(f"[ML] Loaded YOLO detector from {weights_path}")
+
+        # Verify model loaded correctly
+        if stamp_detector.model is not None:
+            print(f"[ML] YOLO detector loaded successfully")
+        else:
+            print(f"[ML] Warning: YOLO model object is None")
+
+    except AttributeError as e:
+        # Handle the bn attribute error from model.fuse()
+        print(f"[ML] Warning: YOLO fuse error (version mismatch): {e}")
+        print(f"[ML] Attempting to load without fusing...")
+        try:
+            # Try loading the raw checkpoint without the YOLO wrapper's fusing
+            import torch
+            weights_path = MODEL_DIR / MODEL_FILES["yolo_weights"]
+            checkpoint = torch.load(str(weights_path), map_location='cpu')
+
+            # Create YOLO model and manually set the weights
+            from ultralytics import YOLO
+            stamp_detector = YOLO('yolov8n.pt')  # Load base model first
+            stamp_detector.model.load_state_dict(checkpoint.get('model', checkpoint).state_dict(), strict=False)
+            print(f"[ML] YOLO detector loaded with fallback method")
+        except Exception as fallback_error:
+            print(f"[ML] Warning: YOLO fallback also failed: {fallback_error}")
+            stamp_detector = None
     except Exception as e:
         print(f"[ML] Warning: YOLO detector not loaded: {e}")
+        import traceback
+        traceback.print_exc()
         stamp_detector = None  # Non-fatal, detection will be skipped
 
     ml_ready = True

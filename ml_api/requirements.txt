@@ -8,7 +8,9 @@ numpy>=1.26.0
 Pillow==10.4.0
 
 # YOLO for stamp detection
-ultralytics>=8.0.0
+# Pin ultralytics to avoid model.fuse() compatibility issues with bn attribute
+ultralytics==8.1.0
+torch>=2.0.0,<2.5.0
 opencv-python-headless>=4.8.0
 
 # Google Cloud Storage
