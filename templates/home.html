@@ -183,17 +183,23 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
         resultsContainer.appendChild(header);
 
+        // Get the original uploaded image to crop stamps from
+        const originalImage = imagePreview;
+
         data.stamps.forEach((stamp, stampIndex) => {
             // Stamp section wrapper
             const stampSection = document.createElement('div');
             stampSection.className = 'col-12 mb-4';
+
+            // Create cropped image from bbox using canvas
+            const croppedImageUrl = cropStampFromImage(originalImage, stamp.bbox);
 
             // Stamp header with cropped image
             const stampHeader = document.createElement('div');
             stampHeader.className = 'row align-items-center mb-3 pb-2 border-bottom';
             stampHeader.innerHTML = `
                 <div class="col-auto">
-                    <img src="${stamp.stamp_image_url}" alt="Stamp ${stampIndex + 1}"
+                    <img src="${croppedImageUrl}" alt="Stamp ${stampIndex + 1}"
                          class="img-thumbnail" style="max-height: 120px; max-width: 120px;">
                 </div>
                 <div class="col">
@@ -249,6 +255,33 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         resultsSection.classList.remove('d-none');
+    }
+
+    function cropStampFromImage(imgElement, bbox) {
+        // bbox is [x1, y1, x2, y2] in original image coordinates
+        const [x1, y1, x2, y2] = bbox;
+        const cropWidth = x2 - x1;
+        const cropHeight = y2 - y1;
+
+        // Create a canvas to crop the image
+        const canvas = document.createElement('canvas');
+        canvas.width = cropWidth;
+        canvas.height = cropHeight;
+        const ctx = canvas.getContext('2d');
+
+        // Use naturalWidth/naturalHeight to get original image dimensions
+        // The bbox coordinates are in original image space
+        const scaleX = imgElement.naturalWidth / imgElement.naturalWidth;  // Always 1, bbox is already in original coords
+        const scaleY = imgElement.naturalHeight / imgElement.naturalHeight;
+
+        // Draw the cropped portion using natural dimensions
+        ctx.drawImage(
+            imgElement,
+            x1, y1, cropWidth, cropHeight,  // Source rectangle (original coords)
+            0, 0, cropWidth, cropHeight      // Destination rectangle
+        );
+
+        return canvas.toDataURL('image/jpeg', 0.9);
     }
 
     function displaySingleStampMatches(results) {
