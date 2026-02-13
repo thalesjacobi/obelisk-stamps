@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from flask import Flask, render_template, request, flash, redirect, url_for, jsonify, send_from_directory
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # ------------------------------------------------------------
 # ENV + APP
@@ -26,6 +27,8 @@ from flask_mail import Mail, Message
 load_dotenv()
 
 app = Flask(__name__)
+# Fix for running behind Cloud Run's load balancer - ensures url_for generates https:// URLs
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
 
 # ------------------------------------------------------------
