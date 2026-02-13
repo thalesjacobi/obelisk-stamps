@@ -293,7 +293,7 @@ def login_callback():
 @app.route("/account")
 @login_required
 def account():
-    return f"Welcome, {current_user.name}! This is your account page."
+    return render_template("account.html")
 
 
 @app.route("/user/picture/<int:user_id>")
