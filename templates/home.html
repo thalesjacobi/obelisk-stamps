@@ -217,6 +217,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     `${result.price_converted.value.toFixed(2)} ${result.price_converted.currency}` :
                     'N/A';
 
+                // Store result data for the add-to-album button
+                const stampData = {
+                    image_base64: croppedImageUrl,
+                    title: result.title,
+                    country: result.country,
+                    year: result.year,
+                    condition_text: result.condition_text,
+                    price_value: result.price_converted?.value || result.price_value,
+                    price_currency: result.price_converted?.currency || result.price_currency,
+                    source_url: result.source_url,
+                    similarity: result.similarity
+                };
+
                 const matchCard = document.createElement('div');
                 matchCard.className = 'row';
                 matchCard.innerHTML = `
@@ -236,9 +249,19 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </ul>
                             </div>
                             <div class="card-footer">
-                                <a href="${result.source_url || '#'}" target="_blank" class="btn btn-sm btn-outline-primary w-100">
-                                    View on PostBeeld
-                                </a>
+                                <div class="d-flex gap-2">
+                                    <a href="${result.source_url || '#'}" target="_blank" class="btn btn-sm btn-outline-primary flex-grow-1">
+                                        View on PostBeeld
+                                    </a>
+                                    {% if current_user.is_authenticated %}
+                                    <button type="button" class="btn btn-sm btn-success add-to-album-btn" data-stamp='${JSON.stringify(stampData).replace(/'/g, "&#39;")}'>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                                            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                                        </svg>
+                                        Album
+                                    </button>
+                                    {% endif %}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -294,6 +317,19 @@ document.addEventListener('DOMContentLoaded', function() {
             `${result.price_converted.value.toFixed(2)} ${result.price_converted.currency}` :
             'N/A';
 
+        // Get the uploaded image as base64 for the album
+        const stampData = {
+            image_base64: imagePreview.src,
+            title: result.title,
+            country: result.country,
+            year: result.year,
+            condition_text: result.condition_text,
+            price_value: result.price_converted?.value || result.price_value,
+            price_currency: result.price_converted?.currency || result.price_currency,
+            source_url: result.source_url,
+            similarity: result.similarity
+        };
+
         const card = document.createElement('div');
         card.className = 'col-md-6 mb-3';
         card.innerHTML = `
@@ -312,14 +348,59 @@ document.addEventListener('DOMContentLoaded', function() {
                     </ul>
                 </div>
                 <div class="card-footer">
-                    <a href="${result.source_url || '#'}" target="_blank" class="btn btn-sm btn-outline-primary w-100">
-                        View on PostBeeld
-                    </a>
+                    <div class="d-flex gap-2">
+                        <a href="${result.source_url || '#'}" target="_blank" class="btn btn-sm btn-outline-primary flex-grow-1">
+                            View on PostBeeld
+                        </a>
+                        {% if current_user.is_authenticated %}
+                        <button type="button" class="btn btn-sm btn-success add-to-album-btn" data-stamp='${JSON.stringify(stampData).replace(/'/g, "&#39;")}'>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                            </svg>
+                            Album
+                        </button>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         `;
         resultsContainer.appendChild(card);
     }
+
+    // Handle Add to Album button clicks
+    document.addEventListener('click', async function(e) {
+        if (e.target.closest('.add-to-album-btn')) {
+            const btn = e.target.closest('.add-to-album-btn');
+            const stampData = JSON.parse(btn.dataset.stamp);
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+            try {
+                const response = await fetch('/album/add', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(stampData)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg> Added!';
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-secondary');
+                } else {
+                    throw new Error(data.error || 'Failed to add stamp');
+                }
+            } catch (error) {
+                alert('Error adding stamp to album: ' + error.message);
+                btn.disabled = false;
+                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/></svg> Album';
+            }
+        }
+    });
 });
 </script>
 {% endblock %}

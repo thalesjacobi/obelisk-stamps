@@ -443,6 +443,120 @@ def serve_upload(filename):
 
 
 # ------------------------------------------------------------
+# USER ALBUM FEATURE
+# ------------------------------------------------------------
+@app.route("/album")
+@login_required
+def my_album():
+    """View user's stamp album."""
+    # Get all stamps for this user
+    stamps = query_all(
+        """SELECT id, stamp_image, title, country, year, condition_text,
+                  price_value, price_currency, source_url, similarity, date_added
+           FROM user_stamps
+           WHERE user_id = %s
+           ORDER BY date_added DESC""",
+        (current_user.id,),
+    )
+
+    # Calculate totals
+    total_stamps = len(stamps) if stamps else 0
+    total_value = sum(s[6] or 0 for s in stamps) if stamps else 0  # price_value is index 6
+
+    # Get the primary currency (use EUR as default, or most common in album)
+    primary_currency = "EUR"
+    if stamps:
+        currencies = [s[7] for s in stamps if s[7]]  # price_currency is index 7
+        if currencies:
+            primary_currency = max(set(currencies), key=currencies.count)
+
+    return render_template("my_album.html",
+                         stamps=stamps,
+                         total_stamps=total_stamps,
+                         total_value=total_value,
+                         primary_currency=primary_currency)
+
+
+@app.route("/album/add", methods=["POST"])
+@login_required
+def add_to_album():
+    """Add a stamp to user's album."""
+    from flask import Response
+    import base64
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    # Get stamp image from base64 or from uploaded file
+    stamp_image = None
+    if data.get("image_base64"):
+        # Remove data URL prefix if present
+        img_data = data["image_base64"]
+        if "," in img_data:
+            img_data = img_data.split(",")[1]
+        stamp_image = base64.b64decode(img_data)
+
+    # Insert stamp into database
+    try:
+        stamp_id = execute(
+            """INSERT INTO user_stamps
+               (user_id, stamp_image, title, country, year, condition_text,
+                price_value, price_currency, source_url, similarity)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                current_user.id,
+                stamp_image,
+                data.get("title"),
+                data.get("country"),
+                data.get("year"),
+                data.get("condition_text"),
+                data.get("price_value"),
+                data.get("price_currency"),
+                data.get("source_url"),
+                data.get("similarity"),
+            ),
+        )
+        return jsonify({"success": True, "stamp_id": stamp_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/album/delete/<int:stamp_id>", methods=["POST"])
+@login_required
+def delete_from_album(stamp_id):
+    """Delete a stamp from user's album."""
+    # Verify the stamp belongs to the current user
+    stamp = query_one(
+        "SELECT id FROM user_stamps WHERE id = %s AND user_id = %s",
+        (stamp_id, current_user.id),
+    )
+
+    if not stamp:
+        return jsonify({"error": "Stamp not found"}), 404
+
+    execute("DELETE FROM user_stamps WHERE id = %s", (stamp_id,))
+    flash("Stamp removed from your album.", "success")
+    return redirect(url_for("my_album"))
+
+
+@app.route("/album/stamp-image/<int:stamp_id>")
+@login_required
+def album_stamp_image(stamp_id):
+    """Serve stamp image from user's album."""
+    from flask import Response
+
+    stamp = query_one(
+        "SELECT stamp_image FROM user_stamps WHERE id = %s AND user_id = %s",
+        (stamp_id, current_user.id),
+    )
+
+    if stamp and stamp[0]:
+        return Response(stamp[0], mimetype='image/jpeg')
+    return '', 404
+
+
+# ------------------------------------------------------------
 # ML API HEALTH CHECK
 # ------------------------------------------------------------
 @app.route("/ml-health")
