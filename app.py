@@ -1,7 +1,7 @@
 """
 Main Flask app for Obelisk Stamps.
 
-This version calls a separate ML API service for stamp recognition.
+This application calls a separate ML API service for stamp recognition.
 The ML API handles model loading and inference, keeping the website lightweight.
 """
 
