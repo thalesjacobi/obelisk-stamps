@@ -32,12 +32,14 @@
                                     <img src="{{ url_for('static', filename=item[2]) }}" alt="{{ item[7] }}" class="img-fluid h-100" style="object-fit: contain;">
                                 </div>
                                 <div class="card-body text-center">
-                                    <h5 class="card-title">{{ item[7] }}</h5>
+                                    <h5 class="card-title">{{ item[7] if item|length > 7 else 'Stamp Collection' }}</h5>
+                                    {% if item|length > 10 and item[10] %}
                                     <p class="card-text text-muted small">{{ item[10][:100] }}{% if item[10]|length > 100 %}...{% endif %}</p>
+                                    {% endif %}
                                     <div class="d-flex justify-content-between align-items-center">
-                                        <span class="h5 text-primary mb-0">${{ item[9] }}</span>
-                                        <span class="badge {% if item[11] %}bg-success{% else %}bg-secondary{% endif %}">
-                                            {% if item[11] %}Available{% else %}Sold Out{% endif %}
+                                        <span class="h5 text-primary mb-0">${{ item[9] if item|length > 9 else '0' }}</span>
+                                        <span class="badge {% if item|length > 11 and item[11] %}bg-success{% else %}bg-secondary{% endif %}">
+                                            {% if item|length > 11 and item[11] %}Available{% else %}Sold Out{% endif %}
                                         </span>
                                     </div>
                                 </div>
