@@ -1,34 +1,71 @@
 {% extends "layout.html" %}
 
-{% block title %}Home - Framed Stamps{% endblock %}
+{% block title %}Home - Obelisk Stamps{% endblock %}
 
 {% block content %}
     <h1>Obelisk Stamps</h1>
-
-    <p class="intro">
-        <span class="intro__logo" aria-hidden="true">
-            <img
-                src="{{ url_for('static', filename='logo-374x381.png') }}"
-                alt="Obelisk Stamps logo"
-            >
-        </span>
-        Obelisk Stamps creates framed collections of genuine postage stamps, carefully arranged around a single, unifying theme. Each piece brings together history, design, and material culture in a form that is both visually striking and intellectually meaningful.
-        <br><br>
-        Long before the digital age, they were miniature works of art—designed to commemorate architecture, nature, scientific achievement, political change, and moments of shared human history. Collected and preserved, they have long been regarded as cultural artefacts with enduring value.
-        <br><br>
-        Every Obelisk Stamps frame is composed using real, authentic stamps, selected individually and arranged by hand. Themes range from birds and wildlife to architecture, cities, and historical events. No two frames are identical. Each is a small, curated archive—designed not to sit hidden in an album, but to be displayed and appreciated.
-        <br><br>
-        These frames are particularly suited as thoughtful gifts. A bird-themed composition for a keen naturalist, an architectural collection for someone who loves travel and design, or a historically focused piece for those with an interest in the past. The result is a gift that is personal, tactile, and lasting—something to be lived with, not consumed.
-        <br><br>
-        While stamps are widely recognised as a traditional collectible asset, Obelisk Stamps makes no claims about future value. Instead, each frame is presented as an object of quiet substance: rooted in history, grounded in authenticity, and created to endure.
-        <br><br>
-        Obelisk Stamps stands at the intersection of collecting and display—where philately becomes part of the home.
+    <p class="lead mb-4">
+        Discover our collection of handcrafted framed stamp displays—unique gifts that transform authentic postage stamps into elegant works of art. Use our AI-powered Stamp Identifier to instantly recognise your stamps, track your collection, and discover their estimated value.
     </p>
 
-    <a href="/catalogue">View Catalogue</a>
+    <!-- Catalogue Carousel -->
+    <div class="mb-5">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h3 class="mb-0">Our Collection</h3>
+            <a href="/catalogue" class="btn btn-outline-primary btn-sm">View All</a>
+        </div>
+
+        {% if catalogue_items and catalogue_items|length > 0 %}
+        <div id="catalogueCarousel" class="carousel slide" data-bs-ride="carousel">
+            <div class="carousel-indicators">
+                {% for item in catalogue_items %}
+                <button type="button" data-bs-target="#catalogueCarousel" data-bs-slide-to="{{ loop.index0 }}" {% if loop.first %}class="active" aria-current="true"{% endif %} aria-label="Slide {{ loop.index }}"></button>
+                {% endfor %}
+            </div>
+            <div class="carousel-inner">
+                {% for item in catalogue_items %}
+                <div class="carousel-item {% if loop.first %}active{% endif %}">
+                    <div class="row justify-content-center">
+                        <div class="col-md-8 col-lg-6">
+                            <div class="card">
+                                <div class="bg-light text-center p-3" style="height: 350px;">
+                                    <img src="{{ url_for('static', filename=item[2]) }}" alt="{{ item[7] }}" class="img-fluid h-100" style="object-fit: contain;">
+                                </div>
+                                <div class="card-body text-center">
+                                    <h5 class="card-title">{{ item[7] }}</h5>
+                                    <p class="card-text text-muted small">{{ item[10][:100] }}{% if item[10]|length > 100 %}...{% endif %}</p>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span class="h5 text-primary mb-0">${{ item[9] }}</span>
+                                        <span class="badge {% if item[11] %}bg-success{% else %}bg-secondary{% endif %}">
+                                            {% if item[11] %}Available{% else %}Sold Out{% endif %}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <button class="carousel-control-prev" type="button" data-bs-target="#catalogueCarousel" data-bs-slide="prev">
+                <span class="carousel-control-prev-icon bg-dark rounded-circle p-3" aria-hidden="true"></span>
+                <span class="visually-hidden">Previous</span>
+            </button>
+            <button class="carousel-control-next" type="button" data-bs-target="#catalogueCarousel" data-bs-slide="next">
+                <span class="carousel-control-next-icon bg-dark rounded-circle p-3" aria-hidden="true"></span>
+                <span class="visually-hidden">Next</span>
+            </button>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <p class="text-muted">No items in catalogue yet.</p>
+            <a href="/catalogue" class="btn btn-primary">Browse Catalogue</a>
+        </div>
+        {% endif %}
+    </div>
 
     <!-- Stamp Identifier Section -->
-    <div class="mt-5 pt-4 border-top">
+    <div class="mt-4">
         {% include 'partials/_stamp_identifier.html' %}
     </div>
 

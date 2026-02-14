@@ -1,8 +1,40 @@
 {% extends "layout.html" %}
 
-{% block title %}About Us{% endblock %}
+{% block title %}About Us - Obelisk Stamps{% endblock %}
 
 {% block content %}
     <h1>About Us</h1>
-    <p>We create handcrafted framed stamp collections, preserving history with artistic presentation.</p>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <p class="lead">
+                Obelisk Stamps creates framed collections of genuine postage stamps, carefully arranged around a single, unifying theme. Each piece brings together history, design, and material culture in a form that is both visually striking and intellectually meaningful.
+            </p>
+
+            <p>
+                Long before the digital age, they were miniature works of art—designed to commemorate architecture, nature, scientific achievement, political change, and moments of shared human history. Collected and preserved, they have long been regarded as cultural artefacts with enduring value.
+            </p>
+
+            <p>
+                Every Obelisk Stamps frame is composed using real, authentic stamps, selected individually and arranged by hand. Themes range from birds and wildlife to architecture, cities, and historical events. No two frames are identical. Each is a small, curated archive—designed not to sit hidden in an album, but to be displayed and appreciated.
+            </p>
+
+            <h3 class="mt-4">The Perfect Gift</h3>
+            <p>
+                These frames are particularly suited as thoughtful gifts. A bird-themed composition for a keen naturalist, an architectural collection for someone who loves travel and design, or a historically focused piece for those with an interest in the past. The result is a gift that is personal, tactile, and lasting—something to be lived with, not consumed.
+            </p>
+
+            <h3 class="mt-4">Our Philosophy</h3>
+            <p>
+                While stamps are widely recognised as a traditional collectible asset, Obelisk Stamps makes no claims about future value. Instead, each frame is presented as an object of quiet substance: rooted in history, grounded in authenticity, and created to endure.
+            </p>
+
+            <p class="fw-bold">
+                Obelisk Stamps stands at the intersection of collecting and display—where philately becomes part of the home.
+            </p>
+        </div>
+        <div class="col-lg-4 text-center">
+            <img src="{{ url_for('static', filename='logo-374x381.png') }}" alt="Obelisk Stamps logo" class="img-fluid mb-4" style="max-width: 280px;">
+        </div>
+    </div>
 {% endblock %}

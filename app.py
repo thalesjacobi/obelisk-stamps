@@ -141,7 +141,8 @@ def load_user(user_id):
 # ------------------------------------------------------------
 @app.route("/")
 def home():
-    return render_template("home.html")
+    catalogue_items = query_all("SELECT * FROM catalogue")
+    return render_template("home.html", catalogue_items=catalogue_items)
 
 
 @app.route("/about")
