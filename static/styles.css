@@ -33,6 +33,11 @@ main {
     font-weight: bold;
 }
 
+/* Smaller Coming Soon badge */
+.list-group-item .badge {
+    --bs-badge-font-size: 0.60em;
+}
+
 /* Footer */
 footer {
     position: relative;
