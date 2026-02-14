@@ -37,13 +37,14 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
 ML_API_URL = os.getenv("ML_API_URL", "http://localhost:8081")
 
 # ------------------------------------------------------------
-# MAIL
+# MAIL (Gmail SMTP with App Password)
 # ------------------------------------------------------------
 app.config["MAIL_SERVER"] = os.getenv("MAIL_SERVER", "smtp.gmail.com")
 app.config["MAIL_PORT"] = int(os.getenv("MAIL_PORT", "587"))
 app.config["MAIL_USE_TLS"] = True
-app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME")
-app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD")
+app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME")  # Your Gmail address
+app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD")  # Gmail App Password (not regular password)
+app.config["MAIL_DEFAULT_SENDER"] = os.getenv("MAIL_USERNAME")
 
 mail = Mail(app)
 
@@ -164,12 +165,25 @@ def contact():
         message = request.form.get("message")
 
         try:
+            # Sender must be the authenticated Gmail account
+            # Reply-To is set to the visitor's email for easy replies
             msg = Message(
-                "New Contact Request",
-                sender=email,
+                subject=f"[Obelisk Stamps] Contact from {name}",
+                sender=os.getenv("MAIL_USERNAME"),
                 recipients=[os.getenv("CONTACT_TO_EMAIL", "thalesjacobi@gmail.com")],
+                reply_to=email,
             )
-            msg.body = f"Name: {name}\nEmail: {email}\nMessage: {message}"
+            msg.body = f"""New contact form submission from Obelisk Stamps website:
+
+Name: {name}
+Email: {email}
+
+Message:
+{message}
+
+---
+You can reply directly to this email to respond to {name}.
+"""
             mail.send(msg)
             flash(f"Thank you, {name}. Your message has been sent!", "success")
         except Exception as e:
