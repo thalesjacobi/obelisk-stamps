@@ -8,55 +8,42 @@
         Discover our collection of handcrafted framed stamp displays—unique gifts that transform authentic postage stamps into elegant works of art. Use our AI-powered Stamp Identifier to instantly recognise your stamps, track your collection, and discover their estimated value.
     </p>
 
-    <!-- Catalogue Carousel -->
+    <!-- Our Collection -->
     <div class="mb-5">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h3 class="mb-0">Our Collection</h3>
-            <a href="/catalogue" class="btn btn-outline-primary btn-sm">View All</a>
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-outline-secondary btn-sm rounded-circle" id="scrollLeft" aria-label="Scroll left">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/>
+                    </svg>
+                </button>
+                <button class="btn btn-outline-secondary btn-sm rounded-circle" id="scrollRight" aria-label="Scroll right">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
+                    </svg>
+                </button>
+                <a href="/catalogue" class="btn btn-outline-primary btn-sm">View All</a>
+            </div>
         </div>
 
         {% if catalogue_items and catalogue_items|length > 0 %}
-        <div id="catalogueCarousel" class="carousel slide" data-bs-ride="carousel">
-            <div class="carousel-indicators">
+        <div class="collection-slider-container">
+            <div class="collection-slider" id="collectionSlider">
                 {% for item in catalogue_items %}
-                <button type="button" data-bs-target="#catalogueCarousel" data-bs-slide-to="{{ loop.index0 }}" {% if loop.first %}class="active" aria-current="true"{% endif %} aria-label="Slide {{ loop.index }}"></button>
-                {% endfor %}
-            </div>
-            <div class="carousel-inner">
-                {% for item in catalogue_items %}
-                <div class="carousel-item {% if loop.first %}active{% endif %}">
-                    <div class="row justify-content-center">
-                        <div class="col-md-8 col-lg-6">
-                            <div class="card">
-                                <div class="bg-light text-center p-3" style="height: 350px;">
-                                    <img src="{{ url_for('static', filename=item[2]) }}" alt="{{ item[7] }}" class="img-fluid h-100" style="object-fit: contain;">
-                                </div>
-                                <div class="card-body text-center">
-                                    <h5 class="card-title">{{ item[7] if item|length > 7 else 'Stamp Collection' }}</h5>
-                                    {% if item|length > 10 and item[10] %}
-                                    <p class="card-text text-muted small">{{ item[10][:100] }}{% if item[10]|length > 100 %}...{% endif %}</p>
-                                    {% endif %}
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <span class="h5 text-primary mb-0">${{ item[9] if item|length > 9 else '0' }}</span>
-                                        <span class="badge {% if item|length > 11 and item[11] %}bg-success{% else %}bg-secondary{% endif %}">
-                                            {% if item|length > 11 and item[11] %}Available{% else %}Sold Out{% endif %}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
+                <div class="collection-card">
+                    <div class="card h-100">
+                        <div class="bg-light text-center p-2" style="height: 200px;">
+                            <img src="{{ url_for('static', filename=item[2]) }}" alt="{{ item[7] if item|length > 7 else 'Stamp' }}" class="img-fluid h-100" style="object-fit: contain;">
+                        </div>
+                        <div class="card-body text-center p-2">
+                            <h6 class="card-title mb-1">{{ item[7] if item|length > 7 else 'Stamp Collection' }}</h6>
+                            <p class="text-primary fw-bold mb-0">${{ item[9] if item|length > 9 else '0' }}</p>
                         </div>
                     </div>
                 </div>
                 {% endfor %}
             </div>
-            <button class="carousel-control-prev" type="button" data-bs-target="#catalogueCarousel" data-bs-slide="prev">
-                <span class="carousel-control-prev-icon bg-dark rounded-circle p-3" aria-hidden="true"></span>
-                <span class="visually-hidden">Previous</span>
-            </button>
-            <button class="carousel-control-next" type="button" data-bs-target="#catalogueCarousel" data-bs-slide="next">
-                <span class="carousel-control-next-icon bg-dark rounded-circle p-3" aria-hidden="true"></span>
-                <span class="visually-hidden">Next</span>
-            </button>
         </div>
         {% else %}
         <div class="text-center py-5">
@@ -75,4 +62,24 @@
 
 {% block scripts %}
 {% include 'partials/_stamp_identifier_scripts.html' %}
+<script>
+// Collection slider scroll buttons
+document.addEventListener('DOMContentLoaded', function() {
+    const slider = document.getElementById('collectionSlider');
+    const scrollLeftBtn = document.getElementById('scrollLeft');
+    const scrollRightBtn = document.getElementById('scrollRight');
+
+    if (slider && scrollLeftBtn && scrollRightBtn) {
+        const scrollAmount = 220; // card width + gap
+
+        scrollLeftBtn.addEventListener('click', function() {
+            slider.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
+        });
+
+        scrollRightBtn.addEventListener('click', function() {
+            slider.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+        });
+    }
+});
+</script>
 {% endblock %}
