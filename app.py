@@ -12,6 +12,7 @@ from typing import Optional
 
 import mysql.connector
 import requests as http_requests
+import stripe
 from mysql.connector import Error
 from oauthlib.oauth2 import WebApplicationClient
 
@@ -47,6 +48,13 @@ app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD")  # Gmail App Password (
 app.config["MAIL_DEFAULT_SENDER"] = os.getenv("MAIL_USERNAME")
 
 mail = Mail(app)
+
+# ------------------------------------------------------------
+# STRIPE PAYMENTS
+# ------------------------------------------------------------
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 # ------------------------------------------------------------
 # GOOGLE OAUTH
@@ -574,6 +582,372 @@ def album_stamp_image(stamp_id):
     if stamp and stamp[0]:
         return Response(stamp[0], mimetype='image/jpeg')
     return '', 404
+
+
+# ------------------------------------------------------------
+# SHOPPING CART
+# ------------------------------------------------------------
+@app.route("/cart")
+@login_required
+def cart():
+    """View shopping cart."""
+    cart_items = query_all(
+        """SELECT ci.id, ci.catalogue_id, ci.quantity, c.title, c.price, c.image_url
+           FROM cart_items ci
+           JOIN catalogue c ON ci.catalogue_id = c.id
+           WHERE ci.user_id = %s""",
+        (current_user.id,),
+    )
+
+    # Calculate total
+    total = sum((item[4] or 0) * item[2] for item in cart_items)  # price * quantity
+
+    return render_template("cart.html",
+                         cart_items=cart_items,
+                         total=total,
+                         stripe_key=STRIPE_PUBLISHABLE_KEY)
+
+
+@app.route("/cart/add/<int:catalogue_id>", methods=["POST"])
+@login_required
+def add_to_cart(catalogue_id):
+    """Add item to cart."""
+    # Check if item exists in catalogue
+    item = query_one("SELECT id, title FROM catalogue WHERE id = %s", (catalogue_id,))
+    if not item:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"error": "Item not found"}), 404
+        flash("Item not found.", "danger")
+        return redirect(url_for("catalogue"))
+
+    # Check if already in cart
+    existing = query_one(
+        "SELECT id, quantity FROM cart_items WHERE user_id = %s AND catalogue_id = %s",
+        (current_user.id, catalogue_id),
+    )
+
+    if existing:
+        # Update quantity
+        execute(
+            "UPDATE cart_items SET quantity = quantity + 1 WHERE id = %s",
+            (existing[0],),
+        )
+    else:
+        # Insert new cart item
+        execute(
+            "INSERT INTO cart_items (user_id, catalogue_id, quantity) VALUES (%s, %s, 1)",
+            (current_user.id, catalogue_id),
+        )
+
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        count = get_cart_count(current_user.id)
+        return jsonify({"success": True, "cart_count": count, "message": f"{item[1]} added to cart"})
+
+    flash(f"{item[1]} added to cart!", "success")
+    return redirect(request.referrer or url_for("catalogue"))
+
+
+@app.route("/cart/remove/<int:cart_item_id>", methods=["POST"])
+@login_required
+def remove_from_cart(cart_item_id):
+    """Remove item from cart."""
+    # Verify the item belongs to the current user
+    item = query_one(
+        "SELECT id FROM cart_items WHERE id = %s AND user_id = %s",
+        (cart_item_id, current_user.id),
+    )
+
+    if not item:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"error": "Item not found"}), 404
+        flash("Item not found.", "danger")
+        return redirect(url_for("cart"))
+
+    execute("DELETE FROM cart_items WHERE id = %s", (cart_item_id,))
+
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        count = get_cart_count(current_user.id)
+        return jsonify({"success": True, "cart_count": count})
+
+    flash("Item removed from cart.", "success")
+    return redirect(url_for("cart"))
+
+
+@app.route("/cart/count")
+def cart_count():
+    """Get cart item count for navbar badge."""
+    if current_user.is_authenticated:
+        count = get_cart_count(current_user.id)
+        return jsonify({"count": count})
+    return jsonify({"count": 0})
+
+
+def get_cart_count(user_id):
+    """Helper to get cart item count."""
+    result = query_one(
+        "SELECT COALESCE(SUM(quantity), 0) FROM cart_items WHERE user_id = %s",
+        (user_id,),
+    )
+    return int(result[0]) if result else 0
+
+
+# ------------------------------------------------------------
+# CHECKOUT & PAYMENTS
+# ------------------------------------------------------------
+@app.route("/checkout")
+@login_required
+def checkout():
+    """Checkout page."""
+    cart_items = query_all(
+        """SELECT ci.id, ci.catalogue_id, ci.quantity, c.title, c.price, c.image_url
+           FROM cart_items ci
+           JOIN catalogue c ON ci.catalogue_id = c.id
+           WHERE ci.user_id = %s""",
+        (current_user.id,),
+    )
+
+    if not cart_items:
+        flash("Your cart is empty.", "info")
+        return redirect(url_for("catalogue"))
+
+    total = sum((item[4] or 0) * item[2] for item in cart_items)
+
+    return render_template("checkout.html",
+                         cart_items=cart_items,
+                         total=total,
+                         stripe_key=STRIPE_PUBLISHABLE_KEY)
+
+
+@app.route("/checkout/create-session", methods=["POST"])
+@login_required
+def create_checkout_session():
+    """Create Stripe Checkout Session."""
+    if not stripe.api_key:
+        return jsonify({"error": "Payment system not configured"}), 500
+
+    cart_items = query_all(
+        """SELECT ci.catalogue_id, ci.quantity, c.title, c.price, c.image_url
+           FROM cart_items ci
+           JOIN catalogue c ON ci.catalogue_id = c.id
+           WHERE ci.user_id = %s""",
+        (current_user.id,),
+    )
+
+    if not cart_items:
+        return jsonify({"error": "Cart is empty"}), 400
+
+    # Build line items for Stripe
+    line_items = []
+    for item in cart_items:
+        catalogue_id, quantity, title, price, image_url = item
+        line_items.append({
+            "price_data": {
+                "currency": "gbp",
+                "product_data": {
+                    "name": title or "Stamp Collection",
+                    "images": [url_for("static", filename=image_url, _external=True)] if image_url else [],
+                },
+                "unit_amount": int((price or 0) * 100),  # Stripe uses cents/pence
+            },
+            "quantity": quantity,
+        })
+
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=line_items,
+            mode="payment",
+            success_url=url_for("checkout_success", _external=True) + "?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url=url_for("checkout_cancel", _external=True),
+            customer_email=current_user.email,
+            shipping_address_collection={
+                "allowed_countries": ["GB", "US", "CA", "AU", "NZ", "IE", "DE", "FR", "ES", "IT", "NL", "BE"],
+            },
+            metadata={
+                "user_id": str(current_user.id),
+            },
+            payment_intent_data={
+                "metadata": {
+                    "user_id": str(current_user.id),
+                },
+            },
+        )
+        return jsonify({"checkout_url": checkout_session.url})
+    except stripe.error.StripeError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/checkout/success")
+@login_required
+def checkout_success():
+    """Payment success page."""
+    session_id = request.args.get("session_id")
+
+    if session_id:
+        try:
+            session = stripe.checkout.Session.retrieve(session_id)
+
+            # Check if order already exists for this session
+            existing_order = query_one(
+                "SELECT id FROM orders WHERE stripe_checkout_session_id = %s",
+                (session_id,),
+            )
+
+            if not existing_order and session.payment_status == "paid":
+                # Create order from session
+                _create_order_from_session(session)
+        except stripe.error.StripeError:
+            pass  # Webhook will handle it
+
+    return render_template("checkout_success.html")
+
+
+@app.route("/checkout/cancel")
+@login_required
+def checkout_cancel():
+    """Payment cancelled page."""
+    return render_template("checkout_cancel.html")
+
+
+def _create_order_from_session(session):
+    """Create order record from Stripe session."""
+    user_id = session.metadata.get("user_id")
+    if not user_id:
+        return None
+
+    user_id = int(user_id)
+
+    # Get shipping details
+    shipping = session.shipping_details or {}
+    shipping_address = shipping.get("address", {})
+    address_str = ", ".join(filter(None, [
+        shipping_address.get("line1"),
+        shipping_address.get("line2"),
+        shipping_address.get("city"),
+        shipping_address.get("state"),
+        shipping_address.get("postal_code"),
+        shipping_address.get("country"),
+    ]))
+
+    # Get cart items
+    cart_items = query_all(
+        """SELECT ci.catalogue_id, ci.quantity, c.title, c.price
+           FROM cart_items ci
+           JOIN catalogue c ON ci.catalogue_id = c.id
+           WHERE ci.user_id = %s""",
+        (user_id,),
+    )
+
+    if not cart_items:
+        return None
+
+    total = sum((item[3] or 0) * item[1] for item in cart_items)
+
+    # Create order
+    order_id = execute(
+        """INSERT INTO orders
+           (user_id, stripe_checkout_session_id, stripe_payment_intent_id, status,
+            total_amount, currency, shipping_name, shipping_email, shipping_address)
+           VALUES (%s, %s, %s, 'paid', %s, 'GBP', %s, %s, %s)""",
+        (
+            user_id,
+            session.id,
+            session.payment_intent,
+            total,
+            shipping.get("name"),
+            session.customer_email,
+            address_str,
+        ),
+    )
+
+    # Create order items
+    for item in cart_items:
+        catalogue_id, quantity, title, price = item
+        execute(
+            """INSERT INTO order_items (order_id, catalogue_id, quantity, price_at_purchase, title)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (order_id, catalogue_id, quantity, price, title),
+        )
+
+    # Clear cart
+    execute("DELETE FROM cart_items WHERE user_id = %s", (user_id,))
+
+    return order_id
+
+
+@app.route("/webhook/stripe", methods=["POST"])
+def stripe_webhook():
+    """Handle Stripe webhooks."""
+    payload = request.get_data()
+    sig_header = request.headers.get("Stripe-Signature")
+
+    if not STRIPE_WEBHOOK_SECRET:
+        # If no webhook secret, skip signature verification (dev mode)
+        event = json.loads(payload)
+    else:
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+        except ValueError:
+            return jsonify({"error": "Invalid payload"}), 400
+        except stripe.error.SignatureVerificationError:
+            return jsonify({"error": "Invalid signature"}), 400
+
+    # Handle the event
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        if session.get("payment_status") == "paid":
+            _create_order_from_session(stripe.checkout.Session.retrieve(
+                session["id"],
+                expand=["shipping_details"],
+            ))
+
+    return jsonify({"status": "success"})
+
+
+# ------------------------------------------------------------
+# ORDERS
+# ------------------------------------------------------------
+@app.route("/orders")
+@login_required
+def orders():
+    """View order history."""
+    user_orders = query_all(
+        """SELECT id, status, total_amount, currency, shipping_name, created_at
+           FROM orders
+           WHERE user_id = %s
+           ORDER BY created_at DESC""",
+        (current_user.id,),
+    )
+    return render_template("orders.html", orders=user_orders)
+
+
+@app.route("/orders/<int:order_id>")
+@login_required
+def order_detail(order_id):
+    """View single order details."""
+    order = query_one(
+        """SELECT id, status, total_amount, currency, shipping_name, shipping_email,
+                  shipping_address, created_at, stripe_checkout_session_id
+           FROM orders
+           WHERE id = %s AND user_id = %s""",
+        (order_id, current_user.id),
+    )
+
+    if not order:
+        flash("Order not found.", "danger")
+        return redirect(url_for("orders"))
+
+    order_items = query_all(
+        """SELECT oi.quantity, oi.price_at_purchase, oi.title, c.image_url
+           FROM order_items oi
+           LEFT JOIN catalogue c ON oi.catalogue_id = c.id
+           WHERE oi.order_id = %s""",
+        (order_id,),
+    )
+
+    return render_template("order_detail.html", order=order, order_items=order_items)
 
 
 # ------------------------------------------------------------

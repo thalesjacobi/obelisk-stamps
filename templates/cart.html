@@ -1,0 +1,129 @@
+{% extends "layout.html" %}
+
+{% block title %}Shopping Cart - Obelisk Stamps{% endblock %}
+
+{% block content %}
+    <h1>Shopping Cart</h1>
+
+    {% if cart_items %}
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-body">
+                    {% for item in cart_items %}
+                    <div class="row align-items-center py-3 {% if not loop.last %}border-bottom{% endif %}" id="cart-item-{{ item[0] }}">
+                        <div class="col-3 col-md-2">
+                            {% if item[5] %}
+                            <img src="{{ url_for('static', filename=item[5]) }}" alt="{{ item[3] }}" class="img-fluid rounded">
+                            {% else %}
+                            <div class="bg-light rounded d-flex align-items-center justify-content-center" style="height: 80px;">
+                                <span class="text-muted small">No image</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-5 col-md-6">
+                            <h6 class="mb-1">{{ item[3] }}</h6>
+                            <p class="text-muted mb-0 small">Qty: {{ item[2] }}</p>
+                        </div>
+                        <div class="col-2 col-md-2 text-end">
+                            <span class="fw-bold">&pound;{{ "%.2f"|format(item[4] * item[2]) }}</span>
+                        </div>
+                        <div class="col-2 col-md-2 text-end">
+                            <form action="{{ url_for('remove_from_cart', cart_item_id=item[0]) }}" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" title="Remove">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                                        <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                                    </svg>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <a href="{{ url_for('catalogue') }}" class="btn btn-outline-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-2" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z"/>
+                </svg>
+                Continue Shopping
+            </a>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Order Summary</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Subtotal</span>
+                        <span>&pound;{{ "%.2f"|format(total) }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Shipping</span>
+                        <span class="text-muted">Calculated at checkout</span>
+                    </div>
+                    <hr>
+                    <div class="d-flex justify-content-between mb-3">
+                        <span class="fw-bold">Total</span>
+                        <span class="fw-bold h5 mb-0">&pound;{{ "%.2f"|format(total) }}</span>
+                    </div>
+                    <button id="checkout-btn" class="btn btn-primary w-100 btn-lg">
+                        Proceed to Checkout
+                    </button>
+                    <p class="text-muted small text-center mt-2 mb-0">
+                        Secure payment powered by Stripe
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center py-5">
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" fill="currentColor" class="text-muted mb-4" viewBox="0 0 16 16">
+            <path d="M0 1.5A.5.5 0 0 1 .5 1H2a.5.5 0 0 1 .485.379L2.89 3H14.5a.5.5 0 0 1 .491.592l-1.5 8A.5.5 0 0 1 13 12H4a.5.5 0 0 1-.491-.408L2.01 3.607 1.61 2H.5a.5.5 0 0 1-.5-.5zM3.102 4l1.313 7h8.17l1.313-7H3.102zM5 12a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-7 1a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm7 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+        </svg>
+        <h3>Your cart is empty</h3>
+        <p class="text-muted">Browse our collection and add items to your cart.</p>
+        <a href="{{ url_for('catalogue') }}" class="btn btn-primary">Browse Catalogue</a>
+    </div>
+    {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const checkoutBtn = document.getElementById('checkout-btn');
+    if (checkoutBtn) {
+        checkoutBtn.addEventListener('click', function() {
+            checkoutBtn.disabled = true;
+            checkoutBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+
+            fetch('{{ url_for("create_checkout_session") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.checkout_url) {
+                    window.location.href = data.checkout_url;
+                } else if (data.error) {
+                    alert('Error: ' + data.error);
+                    checkoutBtn.disabled = false;
+                    checkoutBtn.innerHTML = 'Proceed to Checkout';
+                }
+            })
+            .catch(error => {
+                alert('An error occurred. Please try again.');
+                checkoutBtn.disabled = false;
+                checkoutBtn.innerHTML = 'Proceed to Checkout';
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -240,3 +240,26 @@ form {
   align-items: center;
   justify-content: center;
 }
+
+/* Cart badge in navbar */
+.cart-badge {
+  font-size: 0.65rem;
+  padding: 0.25em 0.5em;
+  min-width: 18px;
+}
+
+/* Catalogue grid improvements */
+.catalogue-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.catalogue-item h5 {
+  min-height: 2.5em;
+}
+
+/* Cart page styling */
+.cart-item-image {
+  max-height: 80px;
+  object-fit: contain;
+}

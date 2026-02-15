@@ -6,15 +6,87 @@
     <h1>Catalogue</h1>
     <p class="text-muted">Browse our collection of handcrafted framed stamps.</p>
 
+    {% if catalogue_items %}
     <div class="catalogue-grid">
         {% for item in catalogue_items %}
             <div class="catalogue-item">
-                <img src="{{ url_for('static', filename=item[2]) }}" alt="{{ item[7] }}">
-                <p><strong>{{ item[7] }}</strong></p>
-                <p>Price: ${{ item[9] }}</p>
-                <p>{{ item[10] }}</p>
-                <p><strong>{% if item[11] %}Available{% else %}Sold Out{% endif %}</strong></p>
+                {% if item[4] %}
+                <img src="{{ url_for('static', filename=item[4]) }}" alt="{{ item[1] }}">
+                {% else %}
+                <div class="bg-light d-flex align-items-center justify-content-center" style="height: 200px;">
+                    <span class="text-muted">No image</span>
+                </div>
+                {% endif %}
+                <h5 class="mt-3 mb-2">{{ item[1] }}</h5>
+                <p class="text-primary fw-bold mb-2">&pound;{{ "%.2f"|format(item[3] or 0) }}</p>
+                {% if item[2] %}
+                <p class="small text-muted mb-3">{{ item[2][:100] }}{% if item[2]|length > 100 %}...{% endif %}</p>
+                {% endif %}
+                {% if current_user.is_authenticated %}
+                <button class="btn btn-primary btn-sm w-100 add-to-cart-btn" data-catalogue-id="{{ item[0] }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
+                        <path d="M9 5.5a.5.5 0 0 0-1 0V7H6.5a.5.5 0 0 0 0 1H8v1.5a.5.5 0 0 0 1 0V8h1.5a.5.5 0 0 0 0-1H9V5.5z"/>
+                        <path d="M.5 1a.5.5 0 0 0 0 1h1.11l.401 1.607 1.498 7.985A.5.5 0 0 0 4 12h1a2 2 0 1 0 0 4 2 2 0 0 0 0-4h7a2 2 0 1 0 0 4 2 2 0 0 0 0-4h1a.5.5 0 0 0 .491-.408l1.5-8A.5.5 0 0 0 14.5 3H2.89l-.405-1.621A.5.5 0 0 0 2 1H.5zm3.915 10L3.102 4h10.796l-1.313 7h-8.17zM6 14a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm7 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+                    </svg>
+                    Add to Cart
+                </button>
+                {% else %}
+                <a href="{{ url_for('login') }}" class="btn btn-outline-primary btn-sm w-100">Login to Purchase</a>
+                {% endif %}
             </div>
         {% endfor %}
     </div>
+    {% else %}
+    <div class="text-center py-5">
+        <p class="text-muted">No items in catalogue yet. Check back soon!</p>
+    </div>
+    {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.add-to-cart-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const catalogueId = this.dataset.catalogueId;
+            const originalText = this.innerHTML;
+
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+            fetch('/cart/add/' + catalogueId, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    this.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg> Added!';
+                    this.classList.remove('btn-primary');
+                    this.classList.add('btn-success');
+                    // Update cart badge
+                    if (typeof updateCartBadge === 'function') updateCartBadge();
+                    setTimeout(() => {
+                        this.innerHTML = originalText;
+                        this.classList.remove('btn-success');
+                        this.classList.add('btn-primary');
+                        this.disabled = false;
+                    }, 2000);
+                } else {
+                    alert(data.error || 'Failed to add to cart');
+                    this.innerHTML = originalText;
+                    this.disabled = false;
+                }
+            })
+            .catch(() => {
+                alert('An error occurred');
+                this.innerHTML = originalText;
+                this.disabled = false;
+            });
+        });
+    });
+});
+</script>
 {% endblock %}

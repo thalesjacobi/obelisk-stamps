@@ -33,12 +33,23 @@
                 {% for item in catalogue_items %}
                 <div class="collection-card">
                     <div class="card h-100">
-                        <div class="bg-light text-center p-2" style="height: 200px;">
-                            <img src="{{ url_for('static', filename=item[2]) }}" alt="{{ item[7] if item|length > 7 else 'Stamp' }}" class="img-fluid h-100" style="object-fit: contain;">
+                        <div class="bg-light text-center p-2" style="height: 160px;">
+                            {% if item[4] %}
+                            <img src="{{ url_for('static', filename=item[4]) }}" alt="{{ item[1] }}" class="img-fluid h-100" style="object-fit: contain;">
+                            {% else %}
+                            <div class="d-flex align-items-center justify-content-center h-100">
+                                <span class="text-muted small">No image</span>
+                            </div>
+                            {% endif %}
                         </div>
                         <div class="card-body text-center p-2">
-                            <h6 class="card-title mb-1">{{ item[7] if item|length > 7 else 'Stamp Collection' }}</h6>
-                            <p class="text-primary fw-bold mb-0">${{ item[9] if item|length > 9 else '0' }}</p>
+                            <h6 class="card-title mb-1">{{ item[1] }}</h6>
+                            <p class="text-primary fw-bold mb-2">&pound;{{ "%.2f"|format(item[3] or 0) }}</p>
+                            {% if current_user.is_authenticated %}
+                            <button class="btn btn-primary btn-sm w-100 add-to-cart-btn" data-catalogue-id="{{ item[0] }}">Add to Cart</button>
+                            {% else %}
+                            <a href="{{ url_for('login') }}" class="btn btn-outline-primary btn-sm w-100">Login to Buy</a>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -80,6 +91,48 @@ document.addEventListener('DOMContentLoaded', function() {
             slider.scrollBy({ left: scrollAmount, behavior: 'smooth' });
         });
     }
+
+    // Add to Cart buttons
+    document.querySelectorAll('.add-to-cart-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const catalogueId = this.dataset.catalogueId;
+            const originalText = this.innerHTML;
+
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+            fetch('/cart/add/' + catalogueId, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    this.innerHTML = 'Added!';
+                    this.classList.remove('btn-primary');
+                    this.classList.add('btn-success');
+                    if (typeof updateCartBadge === 'function') updateCartBadge();
+                    setTimeout(() => {
+                        this.innerHTML = originalText;
+                        this.classList.remove('btn-success');
+                        this.classList.add('btn-primary');
+                        this.disabled = false;
+                    }, 2000);
+                } else {
+                    alert(data.error || 'Failed to add to cart');
+                    this.innerHTML = originalText;
+                    this.disabled = false;
+                }
+            })
+            .catch(() => {
+                alert('An error occurred');
+                this.innerHTML = originalText;
+                this.disabled = false;
+            });
+        });
+    });
 });
 </script>
 {% endblock %}
