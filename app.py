@@ -32,6 +32,10 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
 
+# Custom domain configuration
+SITE_URL = os.getenv("SITE_URL", "").rstrip("/")  # e.g. https://obelisk-stamps.com
+app.config["PREFERRED_URL_SCHEME"] = "https"
+
 # ------------------------------------------------------------
 # ML API Configuration
 # ------------------------------------------------------------
@@ -227,9 +231,16 @@ def login():
 
     google_provider_cfg = http_requests.get(GOOGLE_DISCOVERY_URL).json()
     authorization_endpoint = google_provider_cfg["authorization_endpoint"]
+
+    # Use explicit SITE_URL for the callback to ensure correct domain
+    if SITE_URL:
+        callback_url = f"{SITE_URL}/login/callback"
+    else:
+        callback_url = url_for("login_callback", _external=True)
+
     request_uri = client.prepare_request_uri(
         authorization_endpoint,
-        redirect_uri=url_for("login_callback", _external=True),
+        redirect_uri=callback_url,
         scope=["openid", "email", "profile"],
     )
     return redirect(request_uri)
@@ -254,10 +265,19 @@ def login_callback():
     google_provider_cfg = http_requests.get(GOOGLE_DISCOVERY_URL).json()
     token_endpoint = google_provider_cfg["token_endpoint"]
 
+    # Use explicit SITE_URL for token exchange to match the redirect_uri sent during login
+    if SITE_URL:
+        callback_url = f"{SITE_URL}/login/callback"
+        # Reconstruct authorization_response with correct domain
+        auth_response = request.url.replace(request.host_url.rstrip("/"), SITE_URL)
+    else:
+        callback_url = request.base_url
+        auth_response = request.url
+
     token_url, headers, body = client.prepare_token_request(
         token_endpoint,
-        authorization_response=request.url,
-        redirect_url=request.base_url,
+        authorization_response=auth_response,
+        redirect_url=callback_url,
         code=code,
     )
 
