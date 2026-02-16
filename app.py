@@ -261,6 +261,18 @@ def login_callback():
             flash(f"Login failed: {error}", "danger")
         return redirect(url_for("home"))
 
+    try:
+        return _handle_oauth_callback()
+    except Exception as e:
+        import traceback
+        print(f"[OAuth Error] {e}")
+        traceback.print_exc()
+        flash("Login failed. Please try again.", "danger")
+        return redirect(url_for("home"))
+
+
+def _handle_oauth_callback():
+
     code = request.args.get("code")
     google_provider_cfg = http_requests.get(GOOGLE_DISCOVERY_URL).json()
     token_endpoint = google_provider_cfg["token_endpoint"]
@@ -269,7 +281,21 @@ def login_callback():
     if SITE_URL:
         callback_url = f"{SITE_URL}/login/callback"
         # Reconstruct authorization_response with correct domain
-        auth_response = request.url.replace(request.host_url.rstrip("/"), SITE_URL)
+        # Replace the scheme+host portion with SITE_URL
+        from urllib.parse import urlparse, urlunparse
+        parsed = urlparse(request.url)
+        site_parsed = urlparse(SITE_URL)
+        auth_response = urlunparse((
+            site_parsed.scheme,
+            site_parsed.netloc,
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        ))
+        print(f"[OAuth Debug] callback_url: {callback_url}")
+        print(f"[OAuth Debug] auth_response: {auth_response}")
+        print(f"[OAuth Debug] original request.url: {request.url}")
     else:
         callback_url = request.base_url
         auth_response = request.url
