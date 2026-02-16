@@ -277,48 +277,36 @@ def _handle_oauth_callback():
     google_provider_cfg = http_requests.get(GOOGLE_DISCOVERY_URL).json()
     token_endpoint = google_provider_cfg["token_endpoint"]
 
-    # Use explicit SITE_URL for token exchange to match the redirect_uri sent during login
+    # Use explicit SITE_URL for the redirect_uri to match what was sent during login
     if SITE_URL:
         callback_url = f"{SITE_URL}/login/callback"
-        # Reconstruct authorization_response with correct domain
-        # Replace the scheme+host portion with SITE_URL
-        from urllib.parse import urlparse, urlunparse
-        parsed = urlparse(request.url)
-        site_parsed = urlparse(SITE_URL)
-        auth_response = urlunparse((
-            site_parsed.scheme,
-            site_parsed.netloc,
-            parsed.path,
-            parsed.params,
-            parsed.query,
-            parsed.fragment,
-        ))
-        print(f"[OAuth Debug] callback_url: {callback_url}")
-        print(f"[OAuth Debug] auth_response: {auth_response}")
-        print(f"[OAuth Debug] original request.url: {request.url}")
     else:
         callback_url = request.base_url
-        auth_response = request.url
 
-    token_url, headers, body = client.prepare_token_request(
-        token_endpoint,
-        authorization_response=auth_response,
-        redirect_url=callback_url,
-        code=code,
-    )
-
+    # Exchange authorization code for tokens directly (avoid stateful client issues)
     token_response = http_requests.post(
-        token_url,
-        headers=headers,
-        data=body,
-        auth=(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET),
+        token_endpoint,
+        data={
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": callback_url,
+            "grant_type": "authorization_code",
+        },
     )
 
-    client.parse_request_body_response(json.dumps(token_response.json()))
-    userinfo_endpoint = google_provider_cfg["userinfo_endpoint"]
+    token_data = token_response.json()
+    if "error" in token_data:
+        print(f"[OAuth Error] Token exchange failed: {token_data}")
+        raise Exception(f"Token exchange failed: {token_data.get('error_description', token_data.get('error'))}")
 
-    uri, headers, body = client.add_token(userinfo_endpoint)
-    userinfo_response = http_requests.get(uri, headers=headers, data=body)
+    # Get user info using the access token
+    access_token = token_data["access_token"]
+    userinfo_endpoint = google_provider_cfg["userinfo_endpoint"]
+    userinfo_response = http_requests.get(
+        userinfo_endpoint,
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
 
     user_info = userinfo_response.json()
     username = user_info["email"].split("@")[0]
