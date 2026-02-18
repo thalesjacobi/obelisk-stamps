@@ -8,6 +8,7 @@ on:
       - 'ml_api/**'
       - 'ml/model_utils.py'
       - 'ml/__init__.py'
+      - '.github/workflows/deploy-ml-api.yml'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
@@ -69,4 +70,5 @@ jobs:
             --max-instances 3 \
             --cpu-boost \
             --no-cpu-throttling \
+            --startup-cpu-boost \
             --set-env-vars "GCS_MODEL_BUCKET=obelisk-stamps-models"
