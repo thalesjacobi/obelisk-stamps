@@ -70,5 +70,4 @@ jobs:
             --max-instances 3 \
             --cpu-boost \
             --no-cpu-throttling \
-            --startup-cpu-boost \
             --set-env-vars "GCS_MODEL_BUCKET=obelisk-stamps-models"
