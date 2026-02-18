@@ -489,6 +489,8 @@ def convert_price(price_value, price_currency, target_currency):
     if not price_value or not price_currency:
         return None
 
+    # Ensure price_value is a float (MySQL returns decimal.Decimal)
+    price_value = float(price_value)
     price_currency = price_currency.upper()
     target_currency = target_currency.upper()
 
