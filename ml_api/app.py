@@ -438,25 +438,29 @@ def predict():
 
 
 # ------------------------------------------------------------
-# STARTUP - Lazy loading to avoid worker timeout
+# STARTUP - Eager loading for min-instances warmth
 # ------------------------------------------------------------
-print("[ML API] Starting up (models will load on first request)...")
+print("[ML API] Starting up, loading models eagerly...")
 
 def ensure_ml_loaded():
     """Ensure models are loaded before processing requests."""
     global ml_ready
     if not ml_ready:
-        print("[ML API] Loading models on first request...")
+        print("[ML API] Loading models...")
         load_ml_assets()
     return ml_ready
 
 @app.before_request
 def before_request():
-    """Load models on first request if not already loaded."""
-    # Skip loading for health check to allow container to start
+    """Ensure models are loaded (fallback if startup load failed)."""
     if request.endpoint == 'health':
         return
-    ensure_ml_loaded()
+    if not ml_ready:
+        ensure_ml_loaded()
+
+# Load models at import time so gunicorn --preload warms them up
+# before the container starts accepting traffic.
+ensure_ml_loaded()
 
 
 if __name__ == "__main__":
