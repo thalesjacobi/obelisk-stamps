@@ -74,7 +74,7 @@
                             <span class="badge bg-warning">Pending</span>
                             {% endif %}
                         </td>
-                        <td>&pound;{{ "%.2f"|format(order[2]) }}</td>
+                        <td>{% if order[3] == 'USD' %}${% elif order[3] == 'EUR' %}&euro;{% else %}&pound;{% endif %}{{ "%.2f"|format(order[2]) }}</td>
                         <td>
                             <a href="{{ url_for('order_detail', order_id=order[0]) }}" class="btn btn-outline-primary btn-sm">View Details</a>
                         </td>

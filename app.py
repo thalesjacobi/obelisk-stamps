@@ -17,7 +17,7 @@ from mysql.connector import Error
 from oauthlib.oauth2 import WebApplicationClient
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, flash, redirect, url_for, jsonify, send_from_directory
+from flask import Flask, render_template, request, flash, redirect, url_for, jsonify, send_from_directory, session
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -129,19 +129,63 @@ login_manager.login_view = "login"
 
 
 class User(UserMixin):
-    def __init__(self, id, username, email, name, active, picture=None):
+    def __init__(self, id, username, email, name, active, picture=None, currency="GBP", country=None):
         self.id = id
         self.username = username
         self.email = email
         self.name = name
         self.active = active
         self.picture = picture  # Profile picture as bytes (BLOB)
+        self.currency = currency or "GBP"
+        self.country = country
+
+
+# Mapping of country codes to default currencies
+COUNTRY_CURRENCY_MAP = {
+    "US": "USD", "CA": "USD", "AU": "USD",
+    "GB": "GBP", "IE": "GBP",
+    "DE": "EUR", "FR": "EUR", "ES": "EUR", "IT": "EUR", "NL": "EUR",
+    "BE": "EUR", "AT": "EUR", "PT": "EUR", "GR": "EUR", "FI": "EUR",
+    "LU": "EUR", "EE": "EUR", "LV": "EUR", "LT": "EUR", "SK": "EUR",
+    "SI": "EUR", "CY": "EUR", "MT": "EUR", "HR": "EUR",
+}
+
+
+def detect_currency_from_request():
+    """Detect the user's likely currency based on their IP geolocation."""
+    try:
+        # Use the CF-IPCountry header (available on Cloud Run behind Cloud Load Balancer)
+        # or X-AppEngine-Country, or fall back to an external lookup
+        country_code = (
+            request.headers.get("CF-IPCountry")
+            or request.headers.get("X-AppEngine-Country")
+            or request.headers.get("X-Country-Code")
+        )
+
+        if not country_code:
+            # Lightweight fallback: use a free IP geolocation API
+            forwarded_for = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+            client_ip = forwarded_for or request.remote_addr
+            if client_ip and client_ip not in ("127.0.0.1", "::1"):
+                resp = http_requests.get(f"https://ipapi.co/{client_ip}/country/", timeout=3)
+                if resp.status_code == 200 and len(resp.text.strip()) == 2:
+                    country_code = resp.text.strip()
+
+        if country_code:
+            country_code = country_code.upper()
+            currency = COUNTRY_CURRENCY_MAP.get(country_code, "EUR")
+            return currency, country_code
+
+    except Exception as e:
+        print(f"[GeoIP] Could not detect location: {e}")
+
+    return "GBP", None  # Default for a UK-based business
 
 
 @login_manager.user_loader
 def load_user(user_id):
     user_data = query_one(
-        "SELECT id, username, email, name, active, picture FROM users WHERE id = %s",
+        "SELECT id, username, email, name, active, picture, currency, country FROM users WHERE id = %s",
         (user_id,),
     )
     if user_data:
@@ -150,12 +194,42 @@ def load_user(user_id):
 
 
 # ------------------------------------------------------------
+# CURRENCY HELPERS
+# ------------------------------------------------------------
+CURRENCY_SYMBOLS = {"GBP": "\u00a3", "EUR": "\u20ac", "USD": "$"}
+
+
+def get_active_currency():
+    """Return the active currency code for the current user or visitor."""
+    if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
+        return current_user.currency or "GBP"
+    return "GBP"  # Default for anonymous visitors
+
+
+def convert_catalogue_price(price_gbp, target_currency):
+    """Convert a catalogue price (stored in GBP) to the target currency."""
+    return convert_price(price_gbp, "GBP", target_currency)
+
+
+@app.context_processor
+def inject_currency_helpers():
+    """Make currency helpers available in all templates."""
+    currency = get_active_currency()
+    return {
+        "active_currency": currency,
+        "currency_symbol": CURRENCY_SYMBOLS.get(currency, currency),
+        "convert_catalogue_price": convert_catalogue_price,
+    }
+
+
+# ------------------------------------------------------------
 # PAGES
 # ------------------------------------------------------------
 @app.route("/")
 def home():
     catalogue_items = query_all("SELECT * FROM catalogue")
-    return render_template("home.html", catalogue_items=catalogue_items)
+    currency = get_active_currency()
+    return render_template("home.html", catalogue_items=catalogue_items, user_currency=currency)
 
 
 @app.route("/about")
@@ -166,7 +240,8 @@ def about():
 @app.route("/catalogue")
 def catalogue():
     catalogue_items = query_all("SELECT * FROM catalogue")
-    return render_template("catalogue.html", catalogue_items=catalogue_items)
+    currency = get_active_currency()
+    return render_template("catalogue.html", catalogue_items=catalogue_items, user_currency=currency)
 
 
 @app.route("/contact", methods=["GET", "POST"])
@@ -228,6 +303,11 @@ def login():
     if client is None:
         flash("Google login is not configured. Set GOOGLE_CLIENT_ID/SECRET.", "danger")
         return redirect(url_for("home"))
+
+    # Store the page the user came from so we can redirect back after login
+    next_url = request.args.get("next")
+    if next_url:
+        session["login_next"] = next_url
 
     google_provider_cfg = http_requests.get(GOOGLE_DISCOVERY_URL).json()
     authorization_endpoint = google_provider_cfg["authorization_endpoint"]
@@ -325,7 +405,7 @@ def _handle_oauth_callback():
             print(f"Failed to download profile picture: {e}")
 
     user_data = query_one(
-        "SELECT id, username, email, name, active, picture FROM users WHERE email = %s",
+        "SELECT id, username, email, name, active, picture, currency, country FROM users WHERE email = %s",
         (email,),
     )
 
@@ -342,20 +422,39 @@ def _handle_oauth_callback():
             )
             user.picture = picture_bytes
     else:
+        # New user: detect their location to set default currency
+        detected_currency, detected_country = detect_currency_from_request()
         user_id = execute(
-            "INSERT INTO users (username, email, name, active, date_created, picture) VALUES (%s, %s, %s, %s, NOW(), %s)",
-            (username, email, name, 1, picture_bytes),
+            "INSERT INTO users (username, email, name, active, date_created, picture, currency, country) VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s)",
+            (username, email, name, 1, picture_bytes, detected_currency, detected_country),
         )
-        user = User(user_id, username, email, name, 1, picture_bytes)
+        user = User(user_id, username, email, name, 1, picture_bytes, detected_currency, detected_country)
 
     login_user(user)
-    return redirect(url_for("account"))
+    next_url = session.pop("login_next", None)
+    return redirect(next_url or url_for("account"))
 
 
 @app.route("/account")
 @login_required
 def account():
     return render_template("account.html")
+
+
+@app.route("/account/update-currency", methods=["POST"])
+@login_required
+def update_currency():
+    """Update user's preferred currency."""
+    data = request.get_json()
+    currency = data.get("currency", "").upper()
+    if currency not in ("EUR", "GBP", "USD"):
+        return jsonify({"error": "Invalid currency"}), 400
+    execute(
+        "UPDATE users SET currency = %s WHERE id = %s",
+        (currency, current_user.id),
+    )
+    current_user.currency = currency
+    return jsonify({"success": True, "currency": currency})
 
 
 @app.route("/user/picture/<int:user_id>")
@@ -770,18 +869,20 @@ def create_checkout_session():
     if not cart_items:
         return jsonify({"error": "Cart is empty"}), 400
 
-    # Build line items for Stripe
+    # Build line items for Stripe in user's preferred currency
+    user_currency = get_active_currency().lower()
     line_items = []
     for item in cart_items:
         catalogue_id, quantity, title, price, image_url = item
+        converted_price = convert_catalogue_price(price or 0, user_currency.upper()) or 0
         line_items.append({
             "price_data": {
-                "currency": "gbp",
+                "currency": user_currency,
                 "product_data": {
                     "name": title or "Stamp Collection",
                     "images": [url_for("static", filename=image_url, _external=True)] if image_url else [],
                 },
-                "unit_amount": int((price or 0) * 100),  # Stripe uses cents/pence
+                "unit_amount": int(converted_price * 100),  # Stripe uses smallest currency unit
             },
             "quantity": quantity,
         })
@@ -875,19 +976,21 @@ def _create_order_from_session(session):
     if not cart_items:
         return None
 
-    total = sum((item[3] or 0) * item[1] for item in cart_items)
+    total = session.amount_total / 100 if session.amount_total else sum((item[3] or 0) * item[1] for item in cart_items)
+    order_currency = (session.currency or "gbp").upper()
 
     # Create order
     order_id = execute(
         """INSERT INTO orders
            (user_id, stripe_checkout_session_id, stripe_payment_intent_id, status,
             total_amount, currency, shipping_name, shipping_email, shipping_address)
-           VALUES (%s, %s, %s, 'paid', %s, 'GBP', %s, %s, %s)""",
+           VALUES (%s, %s, %s, 'paid', %s, %s, %s, %s, %s)""",
         (
             user_id,
             session.id,
             session.payment_intent,
             total,
+            order_currency,
             shipping.get("name"),
             session.customer_email,
             address_str,

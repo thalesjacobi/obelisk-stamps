@@ -84,6 +84,22 @@
                         {{ current_user.username }}
                     </div>
                 </div>
+                <div class="row mb-3">
+                    <div class="col-sm-3">
+                        <strong>Currency:</strong>
+                    </div>
+                    <div class="col-sm-9">
+                        <form id="currency-form" class="d-flex align-items-center gap-2" style="max-width: 280px;">
+                            <select class="form-select form-select-sm" id="user-currency" name="currency">
+                                <option value="EUR" {% if current_user.currency == 'EUR' %}selected{% endif %}>EUR - Euro</option>
+                                <option value="GBP" {% if current_user.currency == 'GBP' %}selected{% endif %}>GBP - British Pound</option>
+                                <option value="USD" {% if current_user.currency == 'USD' %}selected{% endif %}>USD - US Dollar</option>
+                            </select>
+                            <button type="submit" class="btn btn-sm btn-outline-primary" id="save-currency-btn">Save</button>
+                        </form>
+                        <small class="text-muted">Prices across the site will be shown in this currency.</small>
+                    </div>
+                </div>
                 <div class="row">
                     <div class="col-sm-3">
                         <strong>Account Status:</strong>
@@ -110,4 +126,52 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('currency-form');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const btn = document.getElementById('save-currency-btn');
+            const currency = document.getElementById('user-currency').value;
+            const originalText = btn.textContent;
+
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+
+            fetch('/account/update-currency', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ currency: currency })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    btn.textContent = 'Saved!';
+                    btn.classList.remove('btn-outline-primary');
+                    btn.classList.add('btn-success');
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.classList.remove('btn-success');
+                        btn.classList.add('btn-outline-primary');
+                        btn.disabled = false;
+                    }, 2000);
+                } else {
+                    alert(data.error || 'Failed to update currency');
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }
+            })
+            .catch(() => {
+                alert('An error occurred');
+                btn.textContent = originalText;
+                btn.disabled = false;
+            });
+        });
+    }
+});
+</script>
 {% endblock %}

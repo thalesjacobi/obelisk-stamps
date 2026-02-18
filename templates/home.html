@@ -44,11 +44,11 @@
                         </div>
                         <div class="card-body text-center p-2">
                             <h6 class="card-title mb-1">{{ item[1] }}</h6>
-                            <p class="text-primary fw-bold mb-2">&pound;{{ "%.2f"|format(item[3] or 0) }}</p>
+                            <p class="text-primary fw-bold mb-2">{{ currency_symbol }}{{ "%.2f"|format(convert_catalogue_price(item[3] or 0, active_currency) or 0) }}</p>
                             {% if current_user.is_authenticated %}
                             <button class="btn btn-primary btn-sm w-100 add-to-cart-btn" data-catalogue-id="{{ item[0] }}">Add to Cart</button>
                             {% else %}
-                            <a href="{{ url_for('login') }}" class="btn btn-outline-primary btn-sm w-100">Login to Buy</a>
+                            <a href="{{ url_for('login', next=request.path) }}" class="btn btn-outline-primary btn-sm w-100">Login to Buy</a>
                             {% endif %}
                         </div>
                     </div>

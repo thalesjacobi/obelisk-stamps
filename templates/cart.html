@@ -26,7 +26,7 @@
                             <p class="text-muted mb-0 small">Qty: {{ item[2] }}</p>
                         </div>
                         <div class="col-2 col-md-2 text-end">
-                            <span class="fw-bold">&pound;{{ "%.2f"|format(item[4] * item[2]) }}</span>
+                            <span class="fw-bold">{{ currency_symbol }}{{ "%.2f"|format(convert_catalogue_price(item[4] * item[2], active_currency) or 0) }}</span>
                         </div>
                         <div class="col-2 col-md-2 text-end">
                             <form action="{{ url_for('remove_from_cart', cart_item_id=item[0]) }}" method="POST" class="d-inline">
@@ -59,7 +59,7 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between mb-2">
                         <span>Subtotal</span>
-                        <span>&pound;{{ "%.2f"|format(total) }}</span>
+                        <span>{{ currency_symbol }}{{ "%.2f"|format(convert_catalogue_price(total, active_currency) or 0) }}</span>
                     </div>
                     <div class="d-flex justify-content-between mb-2">
                         <span>Shipping</span>
@@ -68,7 +68,7 @@
                     <hr>
                     <div class="d-flex justify-content-between mb-3">
                         <span class="fw-bold">Total</span>
-                        <span class="fw-bold h5 mb-0">&pound;{{ "%.2f"|format(total) }}</span>
+                        <span class="fw-bold h5 mb-0">{{ currency_symbol }}{{ "%.2f"|format(convert_catalogue_price(total, active_currency) or 0) }}</span>
                     </div>
                     <button id="checkout-btn" class="btn btn-primary w-100 btn-lg">
                         Proceed to Checkout
