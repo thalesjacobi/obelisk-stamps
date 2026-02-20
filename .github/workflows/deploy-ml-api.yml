@@ -60,7 +60,7 @@ jobs:
           gcloud run deploy obelisk-stamps-ml-api \
             --image "$IMAGE" \
             --platform managed \
-            --region europe-west2 \
+            --region europe-west1 \
             --allow-unauthenticated \
             --port 8081 \
             --memory 4Gi \

@@ -1,0 +1,16 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'europe-west2-docker.pkg.dev/obelisk-stamps/obelisk-stamps/ml-api:manual'
+      - '-f'
+      - 'ml_api/Dockerfile'
+      - '.'
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'europe-west2-docker.pkg.dev/obelisk-stamps/obelisk-stamps/ml-api:manual'
+timeout: 1800s
+images:
+  - 'europe-west2-docker.pkg.dev/obelisk-stamps/obelisk-stamps/ml-api:manual'
