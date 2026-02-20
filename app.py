@@ -1112,6 +1112,6 @@ def ml_health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     debug = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
-    print(f"[Website] Starting on port {port}")
+    print(f"[Website] Starting on port {port} (europe-west1)")
     print(f"[Website] ML API URL: {ML_API_URL}")
     app.run(host="0.0.0.0", port=port, debug=debug)
