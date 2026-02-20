@@ -141,6 +141,7 @@ celerybeat.pid
 .venv
 env/
 venv/
+ml_env/
 ENV/
 env.bak/
 venv.bak/

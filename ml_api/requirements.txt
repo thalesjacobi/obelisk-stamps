@@ -8,8 +8,8 @@ numpy>=1.26.0
 Pillow==10.4.0
 
 # YOLO for stamp detection
-# Pin ultralytics to avoid model.fuse() compatibility issues with bn attribute
-ultralytics==8.1.0
+# Requires >=8.3.0 for C3k2 module (YOLO11 architecture used in trained model)
+ultralytics>=8.3.0
 torch>=2.0.0,<2.5.0
 opencv-python-headless>=4.8.0
 
