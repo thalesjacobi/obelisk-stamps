@@ -30,5 +30,5 @@ EXPOSE 8081
 # Run with gunicorn for production
 # --timeout 300: Allow long requests (model inference can be slow)
 # --graceful-timeout 300: Allow graceful shutdown time
-# --preload: Load app before forking workers (shares memory)
-CMD ["gunicorn", "--bind", "0.0.0.0:8081", "--workers", "1", "--threads", "4", "--timeout", "300", "--graceful-timeout", "300", "--preload", "app:app"]
+# NOTE: Do NOT use --preload — TensorFlow sessions don't survive fork()
+CMD ["gunicorn", "--bind", "0.0.0.0:8081", "--workers", "1", "--threads", "4", "--timeout", "300", "--graceful-timeout", "300", "app:app"]

@@ -294,9 +294,10 @@ def find_similar_stamps(query_embedding: np.ndarray, top_k: int = 5) -> List[dic
 # ------------------------------------------------------------
 @app.route("/health", methods=["GET"])
 def health():
-    """Health check endpoint."""
+    """Health check endpoint. Returns 503 until models are loaded (used by startup probe)."""
+    status_code = 200 if ml_ready else 503
     return jsonify({
-        "status": "healthy" if ml_ready else "unhealthy",
+        "status": "healthy" if ml_ready else "loading",
         "ml_ready": ml_ready,
         "error": ml_error,
         "models_loaded": {
@@ -305,7 +306,7 @@ def health():
             "yolo_detector": stamp_detector is not None,
         },
         "index_size": len(ref_rows) if ref_rows else 0,
-    })
+    }), status_code
 
 
 @app.route("/detect", methods=["POST"])
