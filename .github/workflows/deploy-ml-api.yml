@@ -9,6 +9,7 @@ on:
       - 'ml/model_utils.py'
       - 'ml/__init__.py'
       - '.github/workflows/deploy-ml-api.yml'
+      - 'ml_api/service.yaml'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
@@ -55,21 +56,18 @@ jobs:
         run: |
           docker push "$IMAGE"
 
+      - name: Prepare service manifest
+        run: |
+          sed "s|IMAGE_PLACEHOLDER|$IMAGE|" ml_api/service.yaml > /tmp/service-deploy.yaml
+          cat /tmp/service-deploy.yaml
+
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy obelisk-stamps-ml-api \
-            --image "$IMAGE" \
-            --platform managed \
+          gcloud run services replace /tmp/service-deploy.yaml --region europe-west1
+
+      - name: Allow unauthenticated access
+        run: |
+          gcloud run services add-iam-policy-binding obelisk-stamps-ml-api \
             --region europe-west1 \
-            --allow-unauthenticated \
-            --port 8081 \
-            --memory 4Gi \
-            --cpu 2 \
-            --timeout 300 \
-            --concurrency 4 \
-            --min-instances 1 \
-            --max-instances 3 \
-            --cpu-boost \
-            --no-cpu-throttling \
-            --startup-probe=initialDelaySeconds=0,timeoutSeconds=240,periodSeconds=10,failureThreshold=24,http-path=/health \
-            --set-env-vars "GCS_MODEL_BUCKET=obelisk-stamps-models"
+            --member="allUsers" \
+            --role="roles/run.invoker"
