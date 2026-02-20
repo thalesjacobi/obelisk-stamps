@@ -13,6 +13,7 @@ import os
 import io
 import pickle
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional, List
 
@@ -372,6 +373,8 @@ def predict():
         Single stamp: {"matches": [...]}
         Multi-stamp: {"multi_stamp": true, "stamps": [{"bbox": ..., "matches": [...]}, ...]}
     """
+    t0 = time.perf_counter()
+
     if not ml_ready:
         return jsonify({"error": "ML models not loaded", "details": ml_error}), 503
 
@@ -384,8 +387,12 @@ def predict():
     top_k = int(request.form.get("top_k", 3))
     confidence = float(request.form.get("confidence", 0.3))
 
+    t1 = time.perf_counter()
+    app.logger.info("predict: validation took %.3fs", t1 - t0)
+
     # Detect stamps
     detections = detect_stamps(image_bytes, confidence)
+    app.logger.info("predict: detect_stamps took %.3fs", time.perf_counter() - t1)
 
     if len(detections) > 1:
         # Multi-stamp image: match each detected stamp
@@ -393,7 +400,7 @@ def predict():
         w, h = img.size
 
         stamps_results = []
-        for det in detections:
+        for i, det in enumerate(detections):
             x1, y1, x2, y2 = det["bbox"]
 
             # Crop stamp
@@ -411,9 +418,14 @@ def predict():
 
             # Get matches for this crop
             try:
+                t2 = time.perf_counter()
                 embedding = get_embedding(crop_bytes)
+                app.logger.info("predict: get_embedding[%d] took %.3fs", i, time.perf_counter() - t2)
+                t3 = time.perf_counter()
                 matches = find_similar_stamps(embedding, top_k)
+                app.logger.info("predict: find_similar_stamps[%d] took %.3fs", i, time.perf_counter() - t3)
             except Exception as e:
+                app.logger.error("predict: matching failed for stamp %d: %s", i, str(e))
                 matches = []
 
             stamps_results.append({
@@ -422,6 +434,7 @@ def predict():
                 "matches": matches,
             })
 
+        app.logger.info("predict: total took %.3fs", time.perf_counter() - t0)
         return jsonify({
             "multi_stamp": True,
             "stamp_count": len(detections),
@@ -430,10 +443,16 @@ def predict():
     else:
         # Single stamp (or no detection): match the whole image
         try:
+            t3 = time.perf_counter()
             embedding = get_embedding(image_bytes)
+            app.logger.info("predict: get_embedding took %.3fs", time.perf_counter() - t3)
+            t4 = time.perf_counter()
             matches = find_similar_stamps(embedding, top_k)
+            app.logger.info("predict: find_similar_stamps took %.3fs", time.perf_counter() - t4)
+            app.logger.info("predict: total took %.3fs", time.perf_counter() - t0)
             return jsonify({"matches": matches})
         except Exception as e:
+            app.logger.error("predict: matching failed: %s", str(e))
             return jsonify({"error": "Matching failed", "details": str(e)}), 500
 
 
