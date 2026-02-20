@@ -1,5 +1,5 @@
 """
-ML API Service for Stamp Recognition (europe-west1)
+ML API Service for Stamp Recognition
 
 This is an independent API service that provides:
 1. Stamp detection (YOLO) - detect individual stamps in images
