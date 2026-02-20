@@ -71,10 +71,5 @@ jobs:
             --max-instances 3 \
             --cpu-boost \
             --no-cpu-throttling \
-            --startup-probe-type=http \
-            --startup-probe-path=/health \
-            --startup-probe-initial-delay=0 \
-            --startup-probe-timeout=240 \
-            --startup-probe-period=10 \
-            --startup-probe-failure-threshold=24 \
+            --startup-probe='path=/health,initialDelaySeconds=0,timeout=240,period=10,failureThreshold=24' \
             --set-env-vars "GCS_MODEL_BUCKET=obelisk-stamps-models"
