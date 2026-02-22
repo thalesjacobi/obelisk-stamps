@@ -7,8 +7,12 @@ The ML API handles model loading and inference, keeping the website lightweight.
 
 import os
 import json
+import time
+import base64
 from pathlib import Path
 from typing import Optional
+from functools import wraps
+from datetime import datetime, timedelta
 
 import mysql.connector
 import requests as http_requests
@@ -142,12 +146,22 @@ class User(UserMixin):
 
 # Mapping of country codes to default currencies
 COUNTRY_CURRENCY_MAP = {
-    "US": "USD", "CA": "USD", "AU": "USD",
+    # Americas
+    "US": "USD", "BR": "BRL", "AR": "ARS", "CA": "CAD",
+    # Europe (non-EUR)
     "GB": "GBP", "IE": "GBP",
+    "CH": "CHF", "LI": "CHF",
+    "SE": "SEK", "NO": "NOK", "DK": "DKK",
+    "PL": "PLN", "CZ": "CZK", "HU": "HUF", "TR": "TRY",
+    # Eurozone
     "DE": "EUR", "FR": "EUR", "ES": "EUR", "IT": "EUR", "NL": "EUR",
     "BE": "EUR", "AT": "EUR", "PT": "EUR", "GR": "EUR", "FI": "EUR",
     "LU": "EUR", "EE": "EUR", "LV": "EUR", "LT": "EUR", "SK": "EUR",
     "SI": "EUR", "CY": "EUR", "MT": "EUR", "HR": "EUR",
+    # Asia-Pacific
+    "AU": "AUD", "NZ": "NZD", "JP": "JPY", "CN": "CNY", "IN": "INR",
+    # Africa
+    "ZA": "ZAR",
 }
 
 
@@ -194,9 +208,130 @@ def load_user(user_id):
 
 
 # ------------------------------------------------------------
+# ADMIN CONFIG
+# ------------------------------------------------------------
+ADMIN_EMAIL = "thalesjacobi@gmail.com"
+
+
+def is_admin():
+    """Check if the current user is an admin."""
+    return (
+        hasattr(current_user, "is_authenticated")
+        and current_user.is_authenticated
+        and current_user.email == ADMIN_EMAIL
+    )
+
+
+def admin_required(f):
+    """Decorator that requires admin access. Must be used after @login_required."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_admin():
+            flash("Access denied.", "danger")
+            return redirect(url_for("home"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# ------------------------------------------------------------
 # CURRENCY HELPERS
 # ------------------------------------------------------------
-CURRENCY_SYMBOLS = {"GBP": "\u00a3", "EUR": "\u20ac", "USD": "$"}
+CURRENCY_SYMBOLS = {
+    "EUR": "\u20ac", "GBP": "\u00a3", "USD": "$",
+    "BRL": "R$", "ARS": "AR$", "HUF": "Ft", "ZAR": "R",
+    "AUD": "A$", "JPY": "\u00a5", "NZD": "NZ$",
+    "CHF": "CHF", "SEK": "kr", "NOK": "kr", "DKK": "kr",
+    "PLN": "z\u0142", "CZK": "K\u010d", "CAD": "C$",
+    "CNY": "\u00a5", "INR": "\u20b9", "TRY": "\u20ba",
+}
+
+# In-memory cache for exchange rates: {"rates": {...}, "fetched_at": timestamp}
+_fx_cache = {"rates": None, "fetched_at": 0}
+FX_CACHE_TTL = 300  # 5 minutes
+
+
+def get_fx_rates():
+    """
+    Return a dict of currency -> rate (EUR-based) from the database.
+    Uses an in-memory cache with a 5-minute TTL.
+    Falls back to hardcoded defaults if the database is unavailable.
+    """
+    now = time.time()
+    if _fx_cache["rates"] and (now - _fx_cache["fetched_at"]) < FX_CACHE_TTL:
+        return _fx_cache["rates"]
+
+    try:
+        # Get the latest rate for each currency
+        rows = query_all(
+            """SELECT currency, rate
+               FROM exchange_rates e1
+               WHERE fetched_at = (
+                   SELECT MAX(fetched_at) FROM exchange_rates e2
+                   WHERE e2.currency = e1.currency
+               )"""
+        )
+        rates = {"EUR": 1.0}
+        for currency, rate in rows:
+            rates[currency] = float(rate)
+
+        _fx_cache["rates"] = rates
+        _fx_cache["fetched_at"] = now
+        return rates
+
+    except Exception as e:
+        print(f"[FX] Failed to load rates from DB: {e}")
+        # Fallback to hardcoded rates
+        return {"EUR": 1.0, "USD": 1.08, "GBP": 0.86}
+
+
+def fetch_ecb_rates():
+    """
+    Fetch latest exchange rates from the ECB Data API.
+    Returns a dict like {"USD": 1.08, "GBP": 0.86, ...} (EUR-based).
+    Raises an exception on failure so the caller can handle it.
+    """
+    # ECB SDMX-JSON endpoint for daily exchange rates (EUR base)
+    ecb_url = (
+        "https://data-api.ecb.europa.eu/service/data/EXR/"
+        "D.USD+GBP+BRL+ARS+HUF+ZAR+AUD+JPY+NZD"
+        "+CHF+SEK+NOK+DKK+PLN+CZK+CAD+CNY+INR+TRY"
+        ".EUR.SP00.A"
+        "?lastNObservations=1&format=jsondata"
+    )
+    resp = http_requests.get(ecb_url, timeout=15)
+    resp.raise_for_status()
+
+    data = resp.json()
+    rates = {}
+
+    # Navigate the SDMX-JSON structure
+    datasets = data["dataSets"][0]["series"]
+    dimensions = data["structure"]["dimensions"]["series"]
+
+    # Find the CURRENCY dimension (usually index 1)
+    currency_dim = None
+    for dim in dimensions:
+        if dim["id"] == "CURRENCY":
+            currency_dim = dim
+            break
+
+    if not currency_dim:
+        raise ValueError("Could not find CURRENCY dimension in ECB response")
+
+    for series_key, series_data in datasets.items():
+        # series_key is like "0:0:0:0:0" — extract currency dimension index
+        key_parts = series_key.split(":")
+        currency_idx = int(key_parts[1])  # CURRENCY is dimension index 1
+        currency_code = currency_dim["values"][currency_idx]["id"]
+
+        # Get the latest observation value
+        observations = series_data["observations"]
+        if observations:
+            latest_key = max(observations.keys(), key=int)
+            rate_value = observations[latest_key][0]
+            rates[currency_code] = float(rate_value)
+
+    return rates
 
 
 def get_active_currency():
@@ -218,7 +353,9 @@ def inject_currency_helpers():
     return {
         "active_currency": currency,
         "currency_symbol": CURRENCY_SYMBOLS.get(currency, currency),
+        "currency_symbols": CURRENCY_SYMBOLS,
         "convert_catalogue_price": convert_catalogue_price,
+        "is_admin": is_admin(),
     }
 
 
@@ -244,9 +381,47 @@ def catalogue():
     return render_template("catalogue.html", catalogue_items=catalogue_items, user_currency=currency)
 
 
+RECAPTCHA_SITE_KEY = "6LdO7nMsAAAAAFfZQbtr3vbztflfcyNA0uYL2opK"
+RECAPTCHA_API_KEY = os.getenv("RECAPTCHA_API_KEY", "")
+RECAPTCHA_GCP_PROJECT = os.getenv("GCP_PROJECT_ID", "")
+
+
+def verify_recaptcha(token, expected_action="contact_submit"):
+    """Verify reCAPTCHA Enterprise token. Returns True if valid, False otherwise."""
+    if not RECAPTCHA_API_KEY or not RECAPTCHA_GCP_PROJECT:
+        print("WARNING: reCAPTCHA not configured (missing RECAPTCHA_API_KEY or GCP_PROJECT_ID). Skipping verification.")
+        return True  # allow through if not configured yet
+
+    url = f"https://recaptchaenterprise.googleapis.com/v1/projects/{RECAPTCHA_GCP_PROJECT}/assessments?key={RECAPTCHA_API_KEY}"
+    body = {
+        "event": {
+            "token": token,
+            "siteKey": RECAPTCHA_SITE_KEY,
+            "expectedAction": expected_action,
+        }
+    }
+    try:
+        resp = http_requests.post(url, json=body, timeout=5)
+        result = resp.json()
+        token_valid = result.get("tokenProperties", {}).get("valid", False)
+        action_match = result.get("tokenProperties", {}).get("action") == expected_action
+        score = result.get("riskAnalysis", {}).get("score", 0)
+        print(f"reCAPTCHA assessment: valid={token_valid}, action_match={action_match}, score={score}")
+        return token_valid and action_match and score >= 0.5
+    except Exception as e:
+        print(f"reCAPTCHA verification error: {e}")
+        return True  # fail open to avoid blocking legit users if API is down
+
+
 @app.route("/contact", methods=["GET", "POST"])
 def contact():
     if request.method == "POST":
+        # Verify reCAPTCHA Enterprise token
+        recaptcha_token = request.form.get("g-recaptcha-response", "")
+        if not verify_recaptcha(recaptcha_token):
+            flash("reCAPTCHA verification failed. Please try again.", "danger")
+            return render_template("contact.html")
+
         name = request.form.get("name")
         email = request.form.get("email")
         message = request.form.get("message")
@@ -290,9 +465,9 @@ def terms():
     return render_template("terms.html")
 
 
-@app.route("/identifier")
-def identifier():
-    return render_template("identifier.html")
+@app.route("/stamp-quest-ai")
+def stamp_quest_ai():
+    return render_template("stamp_quest_ai.html")
 
 
 # ------------------------------------------------------------
@@ -304,10 +479,9 @@ def login():
         flash("Google login is not configured. Set GOOGLE_CLIENT_ID/SECRET.", "danger")
         return redirect(url_for("home"))
 
-    # Store the page the user came from so we can redirect back after login
-    next_url = request.args.get("next")
-    if next_url:
-        session["login_next"] = next_url
+    # Pass the return URL through OAuth state so it survives the redirect
+    next_url = request.args.get("next", "")
+    state_data = base64.urlsafe_b64encode(json.dumps({"next": next_url}).encode()).decode()
 
     google_provider_cfg = http_requests.get(GOOGLE_DISCOVERY_URL).json()
     authorization_endpoint = google_provider_cfg["authorization_endpoint"]
@@ -322,6 +496,7 @@ def login():
         authorization_endpoint,
         redirect_uri=callback_url,
         scope=["openid", "email", "profile"],
+        state=state_data,
     )
     return redirect(request_uri)
 
@@ -431,7 +606,16 @@ def _handle_oauth_callback():
         user = User(user_id, username, email, name, 1, picture_bytes, detected_currency, detected_country)
 
     login_user(user)
-    next_url = session.pop("login_next", None)
+
+    # Retrieve return URL from OAuth state parameter
+    next_url = None
+    state_param = request.args.get("state")
+    if state_param:
+        try:
+            state_data = json.loads(base64.urlsafe_b64decode(state_param))
+            next_url = state_data.get("next")
+        except Exception:
+            pass
     return redirect(next_url or url_for("account"))
 
 
@@ -483,8 +667,8 @@ def logout():
 # ML PREDICT ROUTE (calls external ML API)
 # ------------------------------------------------------------
 def convert_price(price_value, price_currency, target_currency):
-    """Convert price to target currency."""
-    fx_rates = {"EUR": 1.0, "USD": 1.08, "GBP": 0.86}
+    """Convert price to target currency using DB-backed rates."""
+    fx_rates = get_fx_rates()
 
     if not price_value or not price_currency:
         return None
@@ -622,22 +806,23 @@ def my_album():
         (current_user.id,),
     )
 
-    # Calculate totals
+    # Calculate totals — convert each stamp's value to the user's preferred currency
     total_stamps = len(stamps) if stamps else 0
-    total_value = sum(s[6] or 0 for s in stamps) if stamps else 0  # price_value is index 6
-
-    # Get the primary currency (use EUR as default, or most common in album)
-    primary_currency = "EUR"
+    user_currency = current_user.currency or "EUR"
+    total_value = 0.0
     if stamps:
-        currencies = [s[7] for s in stamps if s[7]]  # price_currency is index 7
-        if currencies:
-            primary_currency = max(set(currencies), key=currencies.count)
+        for s in stamps:
+            price_val = s[6]   # price_value
+            price_cur = s[7]   # price_currency
+            if price_val:
+                converted = convert_price(price_val, price_cur or "EUR", user_currency)
+                total_value += converted if converted else float(price_val)
 
     return render_template("my_album.html",
                          stamps=stamps,
                          total_stamps=total_stamps,
                          total_value=total_value,
-                         primary_currency=primary_currency)
+                         primary_currency=user_currency)
 
 
 @app.route("/album/add", methods=["POST"])
@@ -1087,6 +1272,99 @@ def order_detail(order_id):
     )
 
     return render_template("order_detail.html", order=order, order_items=order_items)
+
+
+# ------------------------------------------------------------
+# ADMIN PANEL
+# ------------------------------------------------------------
+@app.route("/admin")
+@login_required
+@admin_required
+def admin_panel():
+    """Admin panel — redirects to the first tab (currency exchange)."""
+    return redirect(url_for("admin_currency"))
+
+
+@app.route("/admin/currency")
+@login_required
+@admin_required
+def admin_currency():
+    """Currency exchange management page."""
+    # Get the latest rate for each currency
+    rates = query_all(
+        """SELECT e1.currency, e1.rate, e1.source, e1.fetched_at
+           FROM exchange_rates e1
+           WHERE e1.fetched_at = (
+               SELECT MAX(e2.fetched_at) FROM exchange_rates e2
+               WHERE e2.currency = e1.currency
+           )
+           ORDER BY e1.currency"""
+    )
+
+    # Get recent history (last 20 entries)
+    history = query_all(
+        """SELECT currency, rate, source, fetched_at
+           FROM exchange_rates
+           ORDER BY fetched_at DESC, currency
+           LIMIT 20"""
+    )
+
+    return render_template("admin.html",
+                         active_tab="currency",
+                         rates=rates,
+                         history=history)
+
+
+@app.route("/admin/currency/fetch", methods=["POST"])
+@login_required
+@admin_required
+def admin_currency_fetch():
+    """Fetch latest rates from ECB API (AJAX endpoint)."""
+    try:
+        rates = fetch_ecb_rates()
+        return jsonify({"success": True, "rates": rates})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/admin/currency/save", methods=["POST"])
+@login_required
+@admin_required
+def admin_currency_save():
+    """Save exchange rates to the database (AJAX endpoint)."""
+    data = request.get_json()
+    if not data or "rates" not in data:
+        return jsonify({"success": False, "error": "No rates provided"}), 400
+
+    source = data.get("source", "manual")
+    now = datetime.now()
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        for currency, rate in data["rates"].items():
+            currency = currency.upper().strip()
+            if len(currency) != 3:
+                continue
+            rate = float(rate)
+            if rate <= 0:
+                continue
+            cur.execute(
+                """INSERT INTO exchange_rates (currency, rate, source, fetched_at)
+                   VALUES (%s, %s, %s, %s)""",
+                (currency, rate, source, now),
+            )
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        # Invalidate the in-memory cache so new rates take effect immediately
+        _fx_cache["rates"] = None
+        _fx_cache["fetched_at"] = 0
+
+        return jsonify({"success": True, "message": f"Saved {len(data['rates'])} rate(s)."})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # ------------------------------------------------------------

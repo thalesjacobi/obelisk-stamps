@@ -7,7 +7,9 @@
     <p class="text-muted">Have any questions? Fill out the form below, and we'll get back to you soon.</p>
 
     <div class="container">
-        <form action="{{ url_for('contact') }}" method="POST" class="mt-4">
+        <form id="contact-form" action="{{ url_for('contact') }}" method="POST" class="mt-4">
+            <input type="hidden" id="recaptcha-token" name="g-recaptcha-response">
+
             <div class="mb-3">
                 <label for="name" class="form-label">Your Name</label>
                 <input type="text" class="form-control" id="name" name="name" required>
@@ -26,4 +28,20 @@
             <button type="submit" class="btn btn-primary">Send Message</button>
         </form>
     </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('contact-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = this;
+    grecaptcha.enterprise.ready(function() {
+        grecaptcha.enterprise.execute('6LdO7nMsAAAAAFfZQbtr3vbztflfcyNA0uYL2opK', {action: 'contact_submit'})
+            .then(function(token) {
+                document.getElementById('recaptcha-token').value = token;
+                form.submit();
+            });
+    });
+});
+</script>
 {% endblock %}

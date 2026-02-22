@@ -1,4 +1,4 @@
-<!-- Stamp Identifier JavaScript -->
+<!-- Stamp Quest AI JavaScript -->
 <!-- Usage: include 'partials/_stamp_identifier_scripts.html' in the scripts block -->
 
 <script>
@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const btnText = document.getElementById('btn-text');
     const btnSpinner = document.getElementById('btn-spinner');
 
-    if (!form) return; // Exit if stamp identifier is not on this page
+    if (!form) return; // Exit if Stamp Quest AI is not on this page
 
     // Image preview
     imageInput.addEventListener('change', function(e) {
@@ -86,7 +86,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function showRetryableError() {
         errorSection.className = 'alert alert-warning d-none';
         errorSection.classList.remove('d-none');
-        errorContent.innerHTML = '<strong>The Stamp Identifier is warming up.</strong><br>This can happen when the service hasn\'t been used for a while. Please try again — it should work right away.';
+        errorContent.innerHTML = '<strong>Stamp Quest AI is warming up.</strong><br>This can happen when the service hasn\'t been used for a while. Please try again — it should work right away.';
         errorRetry.classList.remove('d-none');
     }
 
@@ -194,11 +194,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 matchCard.className = 'row';
                 matchCard.innerHTML = `
                     <div class="col-md-6">
-                        <div class="card h-100 border-primary">
-                            <div class="card-header bg-primary text-white">
-                                <strong>Best Match</strong>
-                                <span class="badge bg-light text-primary float-end">${similarity}%</span>
-                            </div>
+                        <div class="card h-100">
                             <div class="card-body">
                                 <h5 class="card-title">${result.title || 'Unknown'}</h5>
                                 <ul class="list-unstyled mb-0">
@@ -208,21 +204,16 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <li><strong>Price:</strong> <span class="text-success fw-bold">${price}</span></li>
                                 </ul>
                             </div>
+                            ${window.userIsAuthenticated ? `
                             <div class="card-footer">
-                                <div class="d-flex gap-2">
-                                    <a href="${result.source_url || '#'}" target="_blank" class="btn btn-sm btn-outline-primary flex-grow-1">
-                                        View on PostBeeld
-                                    </a>
-                                    ${window.userIsAuthenticated ? `
-                                    <button type="button" class="btn btn-sm btn-success add-to-album-btn" data-stamp='${JSON.stringify(stampData).replace(/'/g, "&#39;")}'>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-                                            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                                        </svg>
-                                        Album
-                                    </button>
-                                    ` : ''}
-                                </div>
+                                <button type="button" class="btn btn-sm btn-success add-to-album-btn" data-stamp='${JSON.stringify(stampData).replace(/'/g, "&#39;")}'>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                                    </svg>
+                                    Add to my album
+                                </button>
                             </div>
+                            ` : ''}
                         </div>
                     </div>
                 `;
@@ -288,11 +279,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const card = document.createElement('div');
         card.className = 'col-md-6 mb-3';
         card.innerHTML = `
-            <div class="card h-100 border-primary">
-                <div class="card-header bg-primary text-white">
-                    <strong>Best Match</strong>
-                    <span class="badge bg-light text-primary float-end">${similarity}%</span>
-                </div>
+            <div class="card h-100">
                 <div class="card-body">
                     <h5 class="card-title">${result.title || 'Unknown'}</h5>
                     <ul class="list-unstyled mb-0">
@@ -302,21 +289,16 @@ document.addEventListener('DOMContentLoaded', function() {
                         <li><strong>Price:</strong> <span class="text-success fw-bold">${price}</span></li>
                     </ul>
                 </div>
+                ${window.userIsAuthenticated ? `
                 <div class="card-footer">
-                    <div class="d-flex gap-2">
-                        <a href="${result.source_url || '#'}" target="_blank" class="btn btn-sm btn-outline-primary flex-grow-1">
-                            View on PostBeeld
-                        </a>
-                        ${window.userIsAuthenticated ? `
-                        <button type="button" class="btn btn-sm btn-success add-to-album-btn" data-stamp='${JSON.stringify(stampData).replace(/'/g, "&#39;")}'>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-                                <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                            </svg>
-                            Album
-                        </button>
-                        ` : ''}
-                    </div>
+                    <button type="button" class="btn btn-sm btn-success add-to-album-btn" data-stamp='${JSON.stringify(stampData).replace(/'/g, "&#39;")}'>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                        </svg>
+                        Add to my album
+                    </button>
                 </div>
+                ` : ''}
             </div>
         `;
         resultsContainer.appendChild(card);
@@ -352,7 +334,7 @@ document.addEventListener('DOMContentLoaded', function() {
             } catch (error) {
                 alert('Error adding stamp to album: ' + error.message);
                 btn.disabled = false;
-                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/></svg> Album';
+                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/></svg> Add to my album';
             }
         }
     });
