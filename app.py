@@ -356,6 +356,7 @@ def inject_currency_helpers():
         "currency_symbols": CURRENCY_SYMBOLS,
         "convert_catalogue_price": convert_catalogue_price,
         "is_admin": is_admin(),
+        "contact_email": os.getenv("CONTACT_TO_EMAIL", "thalesjacobi@gmail.com"),
     }
 
 

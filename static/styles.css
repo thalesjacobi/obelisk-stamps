@@ -263,3 +263,51 @@ form {
   max-height: 80px;
   object-fit: contain;
 }
+
+/* Trust Banner Section */
+.trust-banner {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 2rem;
+}
+
+.trust-banner-item {
+    text-align: center;
+    padding: 0.5rem;
+}
+
+.trust-banner-item svg {
+    color: #198754;
+    margin-bottom: 0.5rem;
+}
+
+.trust-banner-item p {
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin: 0;
+    color: #495057;
+}
+
+/* Trust Accordion */
+.trust-accordion .accordion-button:not(.collapsed) {
+    background-color: #f8f9fa;
+    color: #212529;
+    box-shadow: none;
+}
+
+.trust-accordion .accordion-button:focus {
+    box-shadow: none;
+    border-color: #dee2e6;
+}
+
+/* Cart Trust Card */
+.trust-card .list-unstyled li {
+    padding: 0.35rem 0;
+    font-size: 0.875rem;
+}
+
+.trust-card .trust-check {
+    color: #198754;
+    font-weight: bold;
+    margin-right: 0.5rem;
+}

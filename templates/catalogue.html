@@ -41,6 +41,11 @@
         <p class="text-muted">No items in catalogue yet. Check back soon!</p>
     </div>
     {% endif %}
+
+    <!-- Trust & Delivery Information -->
+    <hr class="my-5">
+    {% set trust_variant = "catalogue" %}
+    {% include 'partials/_trust_info.html' %}
 {% endblock %}
 
 {% block scripts %}
