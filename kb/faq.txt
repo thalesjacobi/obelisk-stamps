@@ -1,0 +1,43 @@
+Frequently Asked Questions - Obelisk Stamps
+
+Q: What does Obelisk Stamps sell?
+A: Obelisk Stamps sells handcrafted framed stamp displays. Each frame contains authentic postage stamps arranged by theme, such as birds, flowers, fishing, wine, royalty, and more.
+
+Q: How long does delivery take?
+A: UK orders are prepared within 2-4 working days and delivered in 2-3 working days after dispatch. European orders take 5-10 working days. Rest of World takes 7-14 working days.
+
+Q: Is shipping free?
+A: UK delivery is free on orders over £75. Standard UK shipping costs £4.95. International shipping is calculated at checkout.
+
+Q: Can I return an item?
+A: Yes, you can return items within 14 days of delivery. The item must be unused and in its original packaging. Contact us to initiate a return.
+
+Q: What if my item arrives damaged?
+A: Contact us within 48 hours with photos of the damage. We will arrange a replacement or full refund.
+
+Q: Are the stamps authentic?
+A: Yes, every stamp in our framed displays is an authentic postage stamp sourced from reputable dealers and collections.
+
+Q: What payment methods do you accept?
+A: We accept Visa, Mastercard, American Express, PayPal, Apple Pay, and Google Pay. All payments are processed securely through Stripe.
+
+Q: Do you ship internationally?
+A: Yes, we ship to Europe and the rest of the world. Shipping costs are calculated at checkout. Customs duties are the buyer's responsibility.
+
+Q: Can I add a gift message?
+A: Yes, all frames are presentation-ready and you can add a gift note at checkout.
+
+Q: How can I contact Obelisk Stamps?
+A: You can reach us via our contact form at obelisk-stamps.com/contact or by email.
+
+Q: What is Stamp Quest AI?
+A: Stamp Quest AI is our AI-powered stamp recognition tool. Upload a photo of a stamp and it will identify it and provide information about its estimated value.
+
+Q: Is Obelisk Stamps based in the UK?
+A: Yes, Obelisk Stamps is a UK-based business.
+
+Q: Why can't I change my currency?
+A: Due to technical constraints, you can only set your preferred display currency once. If you need to change it, please contact our support team via the contact form at obelisk-stamps.com/contact and we will adjust it for you manually.
+
+Q: Can I change my currency preference?
+A: You can set your preferred currency once from your account profile. After saving, the change is permanent. If you need to update it later, our support team can help — just reach out through the contact form.

@@ -46,6 +46,174 @@ app.config["PREFERRED_URL_SCHEME"] = "https"
 ML_API_URL = os.getenv("ML_API_URL", "http://localhost:8081")
 
 # ------------------------------------------------------------
+# AI CHATBOT (OpenAI + ChromaDB RAG)
+# ------------------------------------------------------------
+try:
+    import openai as _openai_module
+except ImportError:
+    _openai_module = None
+    print("WARNING: openai package not installed — chatbot disabled")
+
+try:
+    import chromadb as _chromadb_module
+except ImportError:
+    _chromadb_module = None
+    print("WARNING: chromadb package not installed — chatbot KB disabled")
+
+_openai_client = None
+_chroma_collection = None
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if OPENAI_API_KEY and _openai_module:
+    try:
+        _openai_client = _openai_module.OpenAI(api_key=OPENAI_API_KEY.strip())
+        print("Chatbot: OpenAI client initialised")
+    except Exception as e:
+        print(f"WARNING: Failed to init OpenAI client: {e}")
+else:
+    if not OPENAI_API_KEY:
+        print("WARNING: OPENAI_API_KEY not set — chatbot disabled")
+
+# --- Knowledge Base (ChromaDB) ---
+KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb")
+
+
+def _chunk_text(text, chunk_size=500, overlap=50):
+    """Split text into overlapping chunks for better retrieval."""
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start = end - overlap
+    return [c.strip() for c in chunks if c.strip()]
+
+
+def _load_knowledge_base():
+    """Load all .txt files from kb/ into ChromaDB with OpenAI embeddings."""
+    global _chroma_collection
+    if not _chromadb_module or not _openai_client:
+        return
+
+    try:
+        chroma_client = _chromadb_module.Client()
+        # Delete and recreate to pick up any file changes
+        try:
+            chroma_client.delete_collection("obelisk_kb")
+        except Exception:
+            pass
+        _chroma_collection = chroma_client.create_collection(
+            name="obelisk_kb",
+            metadata={"hnsw:space": "cosine"},
+        )
+
+        if not os.path.isdir(KB_DIR):
+            print(f"Chatbot: No kb/ directory found at {KB_DIR}")
+            return
+
+        documents = []
+        metadatas = []
+        ids = []
+        idx = 0
+
+        for filename in sorted(os.listdir(KB_DIR)):
+            if not filename.endswith(".txt"):
+                continue
+            filepath = os.path.join(KB_DIR, filename)
+            with open(filepath, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if not content:
+                continue
+            chunks = _chunk_text(content)
+            for chunk in chunks:
+                documents.append(chunk)
+                metadatas.append({"source": filename})
+                ids.append(f"chunk_{idx}")
+                idx += 1
+
+        if not documents:
+            print("Chatbot: No knowledge base documents found")
+            return
+
+        # Embed all chunks using OpenAI
+        embed_response = _openai_client.embeddings.create(
+            model="text-embedding-3-small",
+            input=documents,
+        )
+        embeddings = [item.embedding for item in embed_response.data]
+
+        _chroma_collection.add(
+            documents=documents,
+            embeddings=embeddings,
+            metadatas=metadatas,
+            ids=ids,
+        )
+        print(f"Chatbot: Loaded {len(documents)} knowledge base chunks from {idx and len(set(m['source'] for m in metadatas))} files")
+    except Exception as e:
+        print(f"WARNING: Failed to load knowledge base: {e}")
+        _chroma_collection = None
+
+
+def _search_knowledge(query, n_results=3):
+    """Search the knowledge base for relevant chunks."""
+    if not _chroma_collection or not _openai_client:
+        return []
+    try:
+        embed_response = _openai_client.embeddings.create(
+            model="text-embedding-3-small",
+            input=[query],
+        )
+        query_embedding = embed_response.data[0].embedding
+        results = _chroma_collection.query(
+            query_embeddings=[query_embedding],
+            n_results=n_results,
+        )
+        return results["documents"][0] if results["documents"] else []
+    except Exception as e:
+        print(f"[Chatbot] KB search error: {e}")
+        return []
+
+
+# Load knowledge base at startup
+_load_knowledge_base()
+
+CHATBOT_SYSTEM_PROMPT = """You are the Obelisk Stamps assistant, a friendly and knowledgeable expert in stamps and philately, working for a UK-based e-commerce site that sells handcrafted framed stamp displays.
+
+You have access to the company's business information provided as context below. Use it to answer questions about delivery, returns, payments, and products accurately.
+
+For questions about stamp history, values, collecting tips, and philately in general, use your own knowledge.
+
+Guidelines:
+- Be concise — keep responses under 3 short paragraphs
+- Be warm, enthusiastic, and encouraging to collectors of all levels
+- When relevant, mention that Obelisk Stamps offers curated framed stamp displays as gifts or collection pieces
+- If asked about specific product pricing or availability, suggest the user check the catalogue at obelisk-stamps.com
+- Do not provide financial investment advice — you can discuss historical trends but always note that values can fluctuate
+- If a question is completely unrelated to stamps, philately, or Obelisk Stamps, politely redirect the conversation back to stamps
+- Always answer based on the provided context when the question is about business policies"""
+
+# In-memory rate limiting for chatbot
+_chat_rate_limits = {}
+CHAT_RATE_LIMIT = 10   # max messages per window
+CHAT_RATE_WINDOW = 60   # window in seconds
+
+
+def _check_chat_rate_limit(ip_address):
+    """Return True if the IP is within rate limits, False if exceeded."""
+    now = time.time()
+    if ip_address not in _chat_rate_limits:
+        _chat_rate_limits[ip_address] = []
+    _chat_rate_limits[ip_address] = [
+        ts for ts in _chat_rate_limits[ip_address]
+        if now - ts < CHAT_RATE_WINDOW
+    ]
+    if len(_chat_rate_limits[ip_address]) >= CHAT_RATE_LIMIT:
+        return False
+    _chat_rate_limits[ip_address].append(now)
+    return True
+
+
+# ------------------------------------------------------------
 # MAIL (Gmail SMTP with App Password)
 # ------------------------------------------------------------
 app.config["MAIL_SERVER"] = os.getenv("MAIL_SERVER", "smtp.gmail.com")
@@ -133,7 +301,7 @@ login_manager.login_view = "login"
 
 
 class User(UserMixin):
-    def __init__(self, id, username, email, name, active, picture=None, currency="GBP", country=None):
+    def __init__(self, id, username, email, name, active, picture=None, currency="GBP", country=None, currency_locked=False):
         self.id = id
         self.username = username
         self.email = email
@@ -142,6 +310,7 @@ class User(UserMixin):
         self.picture = picture  # Profile picture as bytes (BLOB)
         self.currency = currency or "GBP"
         self.country = country
+        self.currency_locked = bool(currency_locked)
 
 
 # Mapping of country codes to default currencies
@@ -199,7 +368,7 @@ def detect_currency_from_request():
 @login_manager.user_loader
 def load_user(user_id):
     user_data = query_one(
-        "SELECT id, username, email, name, active, picture, currency, country FROM users WHERE id = %s",
+        "SELECT id, username, email, name, active, picture, currency, country, currency_locked FROM users WHERE id = %s",
         (user_id,),
     )
     if user_data:
@@ -472,6 +641,66 @@ def stamp_quest_ai():
 
 
 # ------------------------------------------------------------
+# AI CHATBOT ENDPOINT
+# ------------------------------------------------------------
+@app.route("/chat", methods=["POST"])
+def chat():
+    """AI chatbot endpoint — accepts a conversation and returns a response."""
+    if not _openai_client:
+        return jsonify({"error": "Chatbot is not configured."}), 503
+
+    # Rate limiting by IP
+    client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.remote_addr
+    if not _check_chat_rate_limit(client_ip):
+        return jsonify({"error": "Too many messages. Please wait a moment and try again."}), 429
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided."}), 400
+
+    user_message = (data.get("message") or "").strip()
+    if not user_message:
+        return jsonify({"error": "Message cannot be empty."}), 400
+    if len(user_message) > 500:
+        return jsonify({"error": "Message is too long (max 500 characters)."}), 400
+
+    # Retrieve relevant knowledge base context
+    kb_docs = _search_knowledge(user_message, n_results=3)
+    context_block = ""
+    if kb_docs:
+        context_block = "\n\nRelevant business information:\n" + "\n---\n".join(kb_docs)
+
+    system_message = CHATBOT_SYSTEM_PROMPT + context_block
+
+    # Build conversation from client-side history (last 10 messages)
+    history = data.get("history", [])
+    messages = [{"role": "system", "content": system_message}]
+    for msg in history[-10:]:
+        role = msg.get("role")
+        content = msg.get("content", "").strip()
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user_message})
+
+    try:
+        response = _openai_client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=messages,
+            max_tokens=400,
+        )
+        assistant_reply = response.choices[0].message.content
+        return jsonify({"reply": assistant_reply})
+    except _openai_module.RateLimitError:
+        return jsonify({"error": "The chatbot is busy. Please try again in a moment."}), 429
+    except _openai_module.APIError as e:
+        print(f"[Chatbot] OpenAI API error: {e}")
+        return jsonify({"error": "Something went wrong. Please try again."}), 500
+    except Exception as e:
+        print(f"[Chatbot] Unexpected error: {e}")
+        return jsonify({"error": "Something went wrong. Please try again."}), 500
+
+
+# ------------------------------------------------------------
 # LOGIN VIA GOOGLE
 # ------------------------------------------------------------
 @app.route("/login")
@@ -581,7 +810,7 @@ def _handle_oauth_callback():
             print(f"Failed to download profile picture: {e}")
 
     user_data = query_one(
-        "SELECT id, username, email, name, active, picture, currency, country FROM users WHERE email = %s",
+        "SELECT id, username, email, name, active, picture, currency, country, currency_locked FROM users WHERE email = %s",
         (email,),
     )
 
@@ -629,16 +858,20 @@ def account():
 @app.route("/account/update-currency", methods=["POST"])
 @login_required
 def update_currency():
-    """Update user's preferred currency."""
+    """Update user's preferred currency (one-time only)."""
+    if current_user.currency_locked:
+        return jsonify({"error": "Currency has already been set and cannot be changed. Please contact us via the contact form."}), 403
+
     data = request.get_json()
     currency = data.get("currency", "").upper()
-    if currency not in ("EUR", "GBP", "USD"):
+    if currency not in CURRENCY_SYMBOLS:
         return jsonify({"error": "Invalid currency"}), 400
     execute(
-        "UPDATE users SET currency = %s WHERE id = %s",
+        "UPDATE users SET currency = %s, currency_locked = 1 WHERE id = %s",
         (currency, current_user.id),
     )
     current_user.currency = currency
+    current_user.currency_locked = True
     return jsonify({"success": True, "currency": currency})
 
 

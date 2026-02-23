@@ -1,0 +1,15 @@
+Payments & Security - Obelisk Stamps
+
+All orders are processed on a first-come, first-served basis. Full payment is required before dispatch. Orders are confirmed via email once payment has been received.
+
+We accept the following payment methods:
+- Visa
+- Mastercard
+- American Express
+- PayPal
+- Apple Pay & Google Pay
+
+All payments are securely processed through Stripe using encrypted payment gateways. We do not store your card details on our servers.
+
+Currency Preferences:
+Users can select their preferred display currency once from their account profile. This affects how prices are shown across the site. The selection is permanent — any future changes must be requested through the contact form. Please note that all payments are processed in GBP regardless of your display currency preference. Exchange rates are updated daily from the European Central Bank.

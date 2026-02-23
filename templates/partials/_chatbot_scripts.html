@@ -1,0 +1,145 @@
+<!-- AI Chatbot JavaScript -->
+<!-- Usage: include 'partials/_chatbot_scripts.html' in the scripts block -->
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const chatForm = document.getElementById('chatbot-form');
+    const chatInput = document.getElementById('chatbot-input');
+    const chatMessages = document.getElementById('chatbot-messages');
+    const chatSendBtn = document.getElementById('chatbot-send');
+    const charCount = document.getElementById('chatbot-char-count');
+
+    const chatToggle = document.getElementById('chatbot-toggle');
+    const chatPanel = document.getElementById('chatbot-panel');
+    const chatClose = document.getElementById('chatbot-close');
+
+    if (!chatForm) return; // Exit if chatbot is not on this page
+
+    // Toggle open
+    if (chatToggle && chatPanel) {
+        chatToggle.addEventListener('click', function() {
+            chatPanel.style.display = 'block';
+            chatToggle.style.display = 'none';
+            chatInput.focus();
+        });
+    }
+
+    // Toggle close
+    if (chatClose && chatPanel && chatToggle) {
+        chatClose.addEventListener('click', function() {
+            chatPanel.style.display = 'none';
+            chatToggle.style.display = 'flex';
+        });
+    }
+
+    // Conversation history (client-side, last 10 messages)
+    let conversationHistory = [];
+    const MAX_HISTORY = 10;
+
+    // Character counter
+    chatInput.addEventListener('input', function() {
+        const len = this.value.length;
+        charCount.textContent = len + '/500';
+        if (len >= 490) {
+            charCount.className = 'text-danger';
+        } else if (len >= 450) {
+            charCount.className = 'text-warning';
+        } else {
+            charCount.className = 'text-muted';
+        }
+    });
+
+    function appendMessage(role, text) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'chatbot-msg chatbot-msg-' + role;
+
+        const bubble = document.createElement('div');
+        bubble.className = 'chatbot-bubble';
+        bubble.textContent = text;
+
+        wrapper.appendChild(bubble);
+        chatMessages.appendChild(wrapper);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function appendTypingIndicator() {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'chatbot-msg chatbot-msg-assistant';
+        wrapper.id = 'chatbot-typing';
+
+        const bubble = document.createElement('div');
+        bubble.className = 'chatbot-bubble chatbot-typing';
+        bubble.innerHTML = '<span></span><span></span><span></span>';
+
+        wrapper.appendChild(bubble);
+        chatMessages.appendChild(wrapper);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function removeTypingIndicator() {
+        const typing = document.getElementById('chatbot-typing');
+        if (typing) typing.remove();
+    }
+
+    async function sendMessage(userText) {
+        // Add user message to UI and history
+        appendMessage('user', userText);
+        conversationHistory.push({ role: 'user', content: userText });
+
+        // Disable input during request
+        chatInput.disabled = true;
+        chatSendBtn.disabled = true;
+        appendTypingIndicator();
+
+        try {
+            const response = await fetch('/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: userText,
+                    history: conversationHistory.slice(-MAX_HISTORY)
+                })
+            });
+
+            const data = await response.json();
+            removeTypingIndicator();
+
+            if (!response.ok) {
+                appendMessage('assistant',
+                    data.error || 'Sorry, something went wrong. Please try again.');
+                return;
+            }
+
+            const reply = data.reply || 'Sorry, I could not generate a response.';
+            appendMessage('assistant', reply);
+            conversationHistory.push({ role: 'assistant', content: reply });
+
+            // Trim history
+            if (conversationHistory.length > MAX_HISTORY) {
+                conversationHistory = conversationHistory.slice(-MAX_HISTORY);
+            }
+
+        } catch (error) {
+            removeTypingIndicator();
+            appendMessage('assistant',
+                'Sorry, I could not connect. Please check your connection and try again.');
+        } finally {
+            chatInput.disabled = false;
+            chatSendBtn.disabled = false;
+            chatInput.focus();
+        }
+    }
+
+    // Form submission
+    chatForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const text = chatInput.value.trim();
+        if (!text || text.length > 500) return;
+
+        chatInput.value = '';
+        charCount.textContent = '0/500';
+        charCount.className = 'text-muted';
+        sendMessage(text);
+    });
+});
+</script>

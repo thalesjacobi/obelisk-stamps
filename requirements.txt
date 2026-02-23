@@ -34,3 +34,7 @@ gunicorn==21.2.0
 
 # Payment processing
 stripe==8.0.0
+
+# AI chatbot (OpenAI + vector search)
+openai>=1.0.0
+chromadb>=0.4.0

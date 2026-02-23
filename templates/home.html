@@ -113,6 +113,29 @@
         {% include 'partials/_stamp_identifier.html' %}
     </div>
 
+    <!-- Stamps Expert AI Section -->
+    <div class="mt-5">
+        <h2>Stamps Expert AI</h2>
+        <p class="text-muted">
+            Curious about the world of stamps? We've built an AI-powered expert assistant to help you explore
+            philately. Ask questions like <em>"How long was the Penny Black in circulation?"</em> or
+            <em>"Which were the first 5 countries to adopt postage stamps?"</em> &mdash; whether you're a
+            seasoned collector or just getting started, our assistant can help with stamp history, values,
+            collecting tips, and everything about our handcrafted framed displays.
+        </p>
+        <div class="row align-items-end">
+            <div class="col-md-4 mb-3">
+                <button type="button" class="btn btn-primary w-100" id="open-chatbot-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
+                        <path d="M14 1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4.414A2 2 0 0 0 3 11.586l-2 2V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v12.793a.5.5 0 0 0 .854.353l2.853-2.853A1 1 0 0 1 4.414 12H14a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/>
+                        <path d="M3 3.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zM3 6a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9A.5.5 0 0 1 3 6zm0 2.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5z"/>
+                    </svg>
+                    Chat With Our Expert AI
+                </button>
+            </div>
+        </div>
+    </div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -133,6 +156,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
         scrollRightBtn.addEventListener('click', function() {
             slider.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+        });
+    }
+
+    // "Chat With Our Expert AI" button — opens the floating chatbot
+    const openChatbotBtn = document.getElementById('open-chatbot-btn');
+    if (openChatbotBtn) {
+        openChatbotBtn.addEventListener('click', function() {
+            const chatToggle = document.getElementById('chatbot-toggle');
+            const chatPanel = document.getElementById('chatbot-panel');
+            const chatInput = document.getElementById('chatbot-input');
+            if (chatToggle && chatPanel) {
+                chatPanel.style.display = 'block';
+                chatToggle.style.display = 'none';
+                if (chatInput) chatInput.focus();
+            }
         });
     }
 

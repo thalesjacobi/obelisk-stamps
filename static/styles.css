@@ -311,3 +311,226 @@ form {
     font-weight: bold;
     margin-right: 0.5rem;
 }
+
+/* ── AI Chatbot (Floating Widget) ── */
+
+/* Fixed container — bottom-right, above footer */
+.chatbot-container {
+    position: fixed;
+    bottom: 120px;
+    right: 40px;
+    z-index: 1050;
+}
+
+/* Toggle wrapper — positions circle + arc text */
+.chatbot-toggle-wrapper {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Curved arc label SVG — overlays the circle */
+.chatbot-arc-label {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 120px;
+    height: 120px;
+    pointer-events: none;
+}
+
+.chatbot-arc-label text {
+    font-family: 'Comic Neue', cursive;
+    font-weight: 700;
+    font-size: 14px;
+    fill: #0d6efd;
+    letter-spacing: 1.5px;
+}
+
+/* Toggle button — round circle (blue) */
+.chatbot-toggle {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: #0d6efd;
+    color: #fff;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(13, 110, 253, 0.35);
+    transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+    position: relative;
+    z-index: 1;
+}
+
+.chatbot-toggle-wrapper:hover .chatbot-toggle {
+    background: #0b5ed7;
+    transform: scale(1.06);
+    box-shadow: 0 6px 20px rgba(13, 110, 253, 0.5);
+}
+
+/* Chat panel */
+.chatbot-panel .card {
+    width: 370px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+/* Messages container */
+.chatbot-messages {
+    height: 340px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    padding: 1rem;
+}
+
+/* Message row */
+.chatbot-msg {
+    display: flex;
+    margin-bottom: 0.75rem;
+}
+
+.chatbot-msg-user {
+    justify-content: flex-end;
+}
+
+.chatbot-msg-assistant {
+    justify-content: flex-start;
+}
+
+/* Bubble */
+.chatbot-bubble {
+    max-width: 80%;
+    padding: 0.6rem 0.9rem;
+    border-radius: 1rem;
+    font-size: 0.88rem;
+    line-height: 1.45;
+    word-wrap: break-word;
+}
+
+.chatbot-msg-user .chatbot-bubble {
+    background: #0d6efd;
+    color: #fff;
+    border-bottom-right-radius: 0.25rem;
+}
+
+.chatbot-msg-assistant .chatbot-bubble {
+    background: #fff;
+    color: #212529;
+    border: 1px solid #dee2e6;
+    border-bottom-left-radius: 0.25rem;
+}
+
+/* Typing indicator (three bouncing dots) */
+.chatbot-typing {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.6rem 1rem !important;
+}
+
+.chatbot-typing span {
+    width: 8px;
+    height: 8px;
+    background: #adb5bd;
+    border-radius: 50%;
+    display: inline-block;
+    animation: chatbot-dot 1.2s ease-in-out infinite;
+}
+
+.chatbot-typing span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.chatbot-typing span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes chatbot-dot {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-6px); }
+}
+
+/* Override global form max-width inside chatbot */
+.chatbot-input-area form {
+    max-width: none;
+}
+
+/* Input area styling */
+.chatbot-input-area {
+    background: #fff;
+    border-top: 1px solid #dee2e6;
+    padding: 0.75rem;
+}
+
+/* Scrollbar for chat messages */
+.chatbot-messages::-webkit-scrollbar {
+    width: 6px;
+}
+
+.chatbot-messages::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.chatbot-messages::-webkit-scrollbar-thumb {
+    background: #ced4da;
+    border-radius: 3px;
+}
+
+.chatbot-messages::-webkit-scrollbar-thumb:hover {
+    background: #adb5bd;
+}
+
+/* Mobile responsive — full width on small screens */
+@media (max-width: 576px) {
+    .chatbot-container {
+        bottom: 0;
+        right: 0;
+        left: 0;
+    }
+
+    .chatbot-panel .card {
+        width: 100%;
+        border-radius: 12px 12px 0 0;
+        max-height: 80vh;
+    }
+
+    .chatbot-toggle-wrapper {
+        position: fixed;
+        bottom: 100px;
+        right: 16px;
+        width: 52px;
+        height: 52px;
+    }
+
+    .chatbot-toggle {
+        width: 52px;
+        height: 52px;
+    }
+
+    .chatbot-arc-label {
+        display: none;
+    }
+
+    .chatbot-messages {
+        height: 55vh;
+    }
+}
+
+/* Tablet / medium screens */
+@media (min-width: 577px) and (max-width: 768px) {
+    .chatbot-panel .card {
+        width: 340px;
+    }
+
+    .chatbot-container {
+        right: 30px;
+    }
+}
