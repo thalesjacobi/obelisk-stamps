@@ -315,7 +315,7 @@
          Component A — Browser Animation Preview (client-side)
          ══════════════════════════════════════════════════════════ -->
     <div class="card mt-3 mb-4" id="preview-card">
-        <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="card-header position-relative d-flex align-items-center justify-content-between flex-wrap gap-2 pe-5">
             <div>
                 <h5 class="mb-0">Animation Preview</h5>
                 <p class="text-muted small mb-0 mt-1">
@@ -323,7 +323,8 @@
                 </p>
             </div>
             <div class="d-flex gap-2 align-items-center flex-wrap">
-                <select id="preview-duration" class="form-select form-select-sm" style="width:auto;">
+                <select id="preview-duration" class="form-select form-select-sm" style="width:auto;"
+                        onchange="_previewDurationChanged(this.value)">
                     <option value="60">60 s</option>
                     <option value="90" selected>90 s</option>
                     <option value="120">120 s</option>
@@ -332,6 +333,28 @@
                 <button type="button" id="preview-play-btn" class="btn btn-sm btn-primary" disabled onclick="previewPlay()">▶ Play</button>
                 <button type="button" id="preview-pause-btn" class="btn btn-sm btn-outline-secondary d-none" onclick="previewPause()">⏸ Pause</button>
                 <button type="button" id="preview-restart-btn" class="btn btn-sm btn-outline-secondary d-none" onclick="previewRestart()">↺ Restart</button>
+            </div>
+            <!-- Kebab menu -->
+            <div class="dropdown position-absolute" style="top:0.6rem;right:0.75rem;">
+                <button type="button" class="btn btn-sm btn-link text-muted p-1 lh-1"
+                        style="font-size:1.25rem; text-decoration:none;"
+                        data-bs-toggle="dropdown" aria-expanded="false"
+                        title="Preview options">&#8942;</button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li>
+                        <button type="button" class="dropdown-item small"
+                                onclick="openPreviewSettings()">⚙ Settings…</button>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <button type="button" class="dropdown-item small" id="preview-shuffle-item"
+                                onclick="togglePreviewShuffle()">☐ Shuffle slides</button>
+                    </li>
+                    <li>
+                        <button type="button" class="dropdown-item small" id="preview-punchlines-item"
+                                onclick="togglePreviewPunchlines()">☑ Show punchlines</button>
+                    </li>
+                </ul>
             </div>
         </div>
         <div class="card-body">
@@ -346,6 +369,104 @@
                     <div id="preview-counter"></div>
                 </div>
                 <div id="preview-scrub"><div id="preview-scrub-fill"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Animation Preview — Settings Modal -->
+    <div class="modal fade" id="preview-settings-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Animation Settings</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+
+                    <!-- Duration -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">Total Duration</label>
+                        <select id="preview-settings-duration" class="form-select form-select-sm">
+                            <option value="60">60 seconds</option>
+                            <option value="90">90 seconds (default)</option>
+                            <option value="120">120 seconds</option>
+                            <option value="180">180 seconds</option>
+                        </select>
+                    </div>
+
+                    <!-- Zoom -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted d-flex justify-content-between">
+                            Zoom Amount
+                            <span id="preview-settings-zoom-val" class="fw-normal text-body">1.15×</span>
+                        </label>
+                        <input type="range" id="preview-settings-zoom" class="form-range"
+                               min="1.02" max="1.50" step="0.01" value="1.15"
+                               oninput="document.getElementById('preview-settings-zoom-val').textContent = (+this.value).toFixed(2) + '×'">
+                        <div class="d-flex justify-content-between text-muted" style="font-size:0.7rem;">
+                            <span>Subtle</span><span>Strong</span>
+                        </div>
+                    </div>
+
+                    <!-- Pan -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted d-flex justify-content-between">
+                            Pan Distance
+                            <span id="preview-settings-pan-val" class="fw-normal text-body">4%</span>
+                        </label>
+                        <input type="range" id="preview-settings-pan" class="form-range"
+                               min="0" max="12" step="1" value="4"
+                               oninput="document.getElementById('preview-settings-pan-val').textContent = this.value + '%'">
+                        <div class="d-flex justify-content-between text-muted" style="font-size:0.7rem;">
+                            <span>No pan</span><span>Wide pan</span>
+                        </div>
+                    </div>
+
+                    <!-- Crossfade -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">Crossfade Speed</label>
+                        <select id="preview-settings-crossfade" class="form-select form-select-sm">
+                            <option value="0.3">Fast (0.3 s)</option>
+                            <option value="0.6">Medium (0.6 s)</option>
+                            <option value="0.9">Slow (0.9 s) — default</option>
+                            <option value="1.5">Very Slow (1.5 s)</option>
+                        </select>
+                    </div>
+
+                    <!-- Slide order -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">Slide Order</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="preview-order"
+                                       id="preview-order-seq" value="seq" checked>
+                                <label class="form-check-label small" for="preview-order-seq">Sequential</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="preview-order"
+                                       id="preview-order-shuffle" value="shuffle">
+                                <label class="form-check-label small" for="preview-order-shuffle">Shuffle</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Punchlines -->
+                    <div class="mb-0">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">Punchlines</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox"
+                                   id="preview-settings-punchlines" checked>
+                            <label class="form-check-label small" for="preview-settings-punchlines">
+                                Show punchline text overlay
+                            </label>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="applyPreviewSettings()">Apply</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1047,6 +1168,102 @@ let _previewSlideStart = 0;       // performance.now() when current slide began
 let _previewScrubRaf = null;
 let _previewNextTimer = null;
 
+// Settings state
+let _previewZoom         = 1.15;  // final scale factor  (1.02 – 1.50)
+let _previewPan          = 4;     // pan offset in %     (0 – 12)
+let _previewCrossfade    = 0.9;   // crossfade seconds   (0.3 / 0.6 / 0.9 / 1.5)
+let _previewShuffle      = false;
+let _previewShowPunchlines = true;
+
+/** Inject/update a dynamic <style> that overrides the static keyframes with current settings. */
+function _previewApplyDynamicStyles() {
+    let styleEl = document.getElementById('preview-dynamic-style');
+    if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'preview-dynamic-style';
+        document.head.appendChild(styleEl);
+    }
+    const z  = _previewZoom.toFixed(3);
+    const p  = _previewPan;
+    const zz = (_previewZoom * 1.025).toFixed(3);   // zoom-only animation goes a touch further
+    const cf = _previewCrossfade;
+    styleEl.textContent = [
+        `@keyframes kb-tl  { from{transform:scale(1.0) translate(0,0)} to{transform:scale(${z}) translate(-${p}%,-${p}%)} }`,
+        `@keyframes kb-tr  { from{transform:scale(1.0) translate(0,0)} to{transform:scale(${z}) translate(${p}%,-${p}%)} }`,
+        `@keyframes kb-bl  { from{transform:scale(1.0) translate(0,0)} to{transform:scale(${z}) translate(-${p}%,${p}%)} }`,
+        `@keyframes kb-br  { from{transform:scale(1.0) translate(0,0)} to{transform:scale(${z}) translate(${p}%,${p}%)} }`,
+        `@keyframes kb-zoom{ from{transform:scale(1.0)} to{transform:scale(${zz})} }`,
+        `.preview-layer { transition: opacity ${cf}s ease-in-out; }`,
+    ].join('\n');
+}
+_previewApplyDynamicStyles();   // apply defaults on load
+
+/** Pick the next slide index (sequential or shuffle). */
+function _previewNextIndex() {
+    const n = _previewImages.length;
+    if (!_previewShuffle || n <= 1) return (_previewIdx + 1) % n;
+    let next;
+    do { next = Math.floor(Math.random() * n); } while (next === _previewIdx);
+    return next;
+}
+
+/** Open settings modal, pre-filling controls from current state. */
+function openPreviewSettings() {
+    const dur = parseInt(document.getElementById('preview-duration').value) || 90;
+    document.getElementById('preview-settings-duration').value = dur;
+    document.getElementById('preview-settings-zoom').value     = _previewZoom;
+    document.getElementById('preview-settings-zoom-val').textContent = _previewZoom.toFixed(2) + '×';
+    document.getElementById('preview-settings-pan').value      = _previewPan;
+    document.getElementById('preview-settings-pan-val').textContent  = _previewPan + '%';
+    document.getElementById('preview-settings-crossfade').value = _previewCrossfade;
+    document.getElementById(_previewShuffle ? 'preview-order-shuffle' : 'preview-order-seq').checked = true;
+    document.getElementById('preview-settings-punchlines').checked = _previewShowPunchlines;
+    new bootstrap.Modal(document.getElementById('preview-settings-modal')).show();
+}
+
+/** Read modal controls → apply settings → close modal. */
+function applyPreviewSettings() {
+    const dur = parseInt(document.getElementById('preview-settings-duration').value) || 90;
+    document.getElementById('preview-duration').value = dur;   // keep header dropdown in sync
+
+    _previewZoom      = parseFloat(document.getElementById('preview-settings-zoom').value);
+    _previewPan       = parseInt(document.getElementById('preview-settings-pan').value);
+    _previewCrossfade = parseFloat(document.getElementById('preview-settings-crossfade').value);
+    _previewShuffle   = document.getElementById('preview-order-shuffle').checked;
+    _previewShowPunchlines = document.getElementById('preview-settings-punchlines').checked;
+
+    _previewApplyDynamicStyles();
+    _syncPreviewDropdownItems();
+
+    const pl = document.getElementById('preview-punchline');
+    if (pl) pl.style.display = _previewShowPunchlines ? '' : 'none';
+
+    bootstrap.Modal.getInstance(document.getElementById('preview-settings-modal'))?.hide();
+
+    if (_previewActive) previewRestart();   // restart so new keyframes take effect immediately
+}
+
+/** Quick toggles from the dropdown (no modal needed). */
+function togglePreviewShuffle() {
+    _previewShuffle = !_previewShuffle;
+    _syncPreviewDropdownItems();
+}
+function togglePreviewPunchlines() {
+    _previewShowPunchlines = !_previewShowPunchlines;
+    const pl = document.getElementById('preview-punchline');
+    if (pl) pl.style.display = _previewShowPunchlines ? '' : 'none';
+    _syncPreviewDropdownItems();
+}
+function _previewDurationChanged(val) {
+    // header dropdown changed — no restart needed, takes effect on next slide advance
+}
+function _syncPreviewDropdownItems() {
+    const si = document.getElementById('preview-shuffle-item');
+    const pi = document.getElementById('preview-punchlines-item');
+    if (si) si.textContent = (_previewShuffle      ? '☑' : '☐') + ' Shuffle slides';
+    if (pi) pi.textContent = (_previewShowPunchlines ? '☑' : '☐') + ' Show punchlines';
+}
+
 function _previewSlideDuration() {
     const total = parseInt(document.getElementById('preview-duration').value) || 90;
     const n = Math.max(1, _previewImages.length);
@@ -1091,14 +1308,19 @@ function _previewAdvance(idx) {
         _previewLayerAFront = true;
     }
 
-    // Fade punchline in at 0.6 s, out 1.5 s before slide ends
-    setTimeout(() => { if (_previewActive && !_previewPaused) pl.style.opacity = '1'; }, 600);
-    setTimeout(() => { pl.style.opacity = '0'; }, Math.max(600, slideDur - 1500));
+    // Fade punchline in at 0.6 s, out 1.5 s before slide ends (respects show/hide setting)
+    if (_previewShowPunchlines) {
+        pl.style.display = '';
+        setTimeout(() => { if (_previewActive && !_previewPaused) pl.style.opacity = '1'; }, 600);
+        setTimeout(() => { pl.style.opacity = '0'; }, Math.max(600, slideDur - 1500));
+    } else {
+        pl.style.display = 'none';
+    }
 
     if (_previewNextTimer) clearTimeout(_previewNextTimer);
     if (_previewActive && !_previewPaused) {
         _previewNextTimer = setTimeout(() => {
-            if (_previewActive && !_previewPaused) _previewAdvance(_previewIdx + 1);
+            if (_previewActive && !_previewPaused) _previewAdvance(_previewNextIndex());
         }, slideDur);
     }
 }
