@@ -10,6 +10,42 @@
     #source-editor { min-height: 600px; font-family: monospace; font-size: 0.85rem; resize: vertical; }
     .ql-toolbar { border-radius: 4px 4px 0 0; }
     .ql-container { border-radius: 0 0 4px 4px; }
+
+    /* Instagram Carousel Generator */
+    #carousel-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    #carousel-grid .carousel-col { flex: 0 0 calc(20% - 0.4rem); }
+    @media (max-width: 768px) { #carousel-grid .carousel-col { flex: 0 0 calc(33% - 0.4rem); } }
+    @media (max-width: 480px) { #carousel-grid .carousel-col { flex: 0 0 calc(50% - 0.4rem); } }
+    .carousel-thumb { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 6px; }
+    .carousel-placeholder {
+        width: 100%; aspect-ratio: 1/1; border-radius: 6px; background: #f0f0f0;
+        display: flex; align-items: center; justify-content: center;
+        color: #bbb; font-size: 0.8rem; font-weight: 600;
+    }
+    .carousel-col { position: relative; border-radius: 6px; overflow: hidden; }
+    .carousel-info-btn {
+        position: absolute; top: 4px; right: 4px; width: 22px; height: 22px;
+        border-radius: 50%; border: none; background: rgba(0,0,0,0.55); color: #fff;
+        font-size: 12px; font-weight: 700; line-height: 22px; text-align: center;
+        cursor: pointer; padding: 0; z-index: 2; opacity: 0.7; transition: opacity 0.15s;
+    }
+    .carousel-info-btn:hover { opacity: 1; }
+    /* Removed images — dimmed with a small label */
+    #carousel-removed-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    #carousel-removed-grid .carousel-col { flex: 0 0 calc(20% - 0.4rem); }
+    @media (max-width: 768px) { #carousel-removed-grid .carousel-col { flex: 0 0 calc(33% - 0.4rem); } }
+    @media (max-width: 480px) { #carousel-removed-grid .carousel-col { flex: 0 0 calc(50% - 0.4rem); } }
+    #carousel-removed-grid .carousel-thumb { opacity: 0.5; }
+    #carousel-removed-grid .carousel-col::after {
+        content: 'removed'; position: absolute; bottom: 4px; left: 4px;
+        font-size: 10px; background: rgba(0,0,0,0.55); color: #fff;
+        padding: 1px 5px; border-radius: 3px; pointer-events: none;
+    }
+    /* Carousel tabs */
+    #carousel-tabs .nav-link { font-size: 0.85rem; padding: 0.3rem 0.75rem; cursor: pointer; border: none; }
+    #carousel-tabs .nav-link.active { border-bottom: 2px solid #0d6efd; color: #0d6efd; font-weight: 600; }
+    #carousel-tabs .nav-link:not(.active) { color: #6c757d; }
+    #carousel-tabs { border-bottom: 1px solid #dee2e6; margin-bottom: 0.75rem; }
 </style>
 {% endblock %}
 
@@ -80,6 +116,153 @@
             </div>
         </div>
     </div>
+
+    {% if article %}
+    <!-- Instagram Carousel Generator -->
+    <div class="card mt-3 mb-4">
+        <div class="card-header position-relative d-flex align-items-center justify-content-between flex-wrap gap-2 pe-5">
+            <div>
+                <h5 class="mb-0">Instagram Carousel Generator</h5>
+                <p class="text-muted small mb-0 mt-1">
+                    Generates up to 10 square images via DALL-E 3 from this article's content.
+                    Takes ~60–90 seconds. Costs ~$0.40 per run.
+                </p>
+            </div>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <button type="button" class="btn btn-sm btn-outline-secondary d-none"
+                        id="carousel-error-btn"
+                        data-bs-toggle="modal" data-bs-target="#carousel-error-modal">View errors</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary d-none"
+                        id="carousel-archive-btn"
+                        onclick="archiveAllCarousel()">Archive All</button>
+                <button type="button" class="btn btn-outline-danger d-none" id="carousel-stop-btn"
+                        onclick="stopCarousel()">Stop</button>
+                <button type="button" class="btn btn-outline-primary d-none" id="carousel-btn"
+                        onclick="startCarousel()">Generate Carousel</button>
+            </div>
+            <!-- Kebab menu — top-right corner of card header -->
+            <div class="dropdown position-absolute" style="top:0.6rem;right:0.75rem;">
+                <button type="button" class="btn btn-sm btn-link text-muted p-1 lh-1"
+                        style="font-size:1.25rem; text-decoration:none;"
+                        data-bs-toggle="dropdown" aria-expanded="false"
+                        title="More options">&#8942;</button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li>
+                        <button type="button" id="carousel-menu-generate"
+                                class="dropdown-item small disabled"
+                                onclick="startCarousel()">Generate Carousel</button>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <button type="button" class="dropdown-item small"
+                                onclick="openCarouselStyleModal()">View Style</button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="carousel-status" class="d-none mb-3">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <div class="spinner-border spinner-border-sm text-primary" id="carousel-spinner" role="status"></div>
+                    <span id="carousel-status-text" class="text-muted small">Starting…</span>
+                </div>
+                <div class="progress" style="height: 5px;">
+                    <div id="carousel-progress" class="progress-bar progress-bar-striped progress-bar-animated"
+                         role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+            <!-- Tabs: Current / Removed -->
+            <ul class="nav" id="carousel-tabs">
+                <li class="nav-item">
+                    <button class="nav-link active" id="tab-current" onclick="showCarouselTab('current')">
+                        Current <span id="tab-current-count" class="badge bg-secondary ms-1">0</span>
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" id="tab-removed" onclick="showCarouselTab('removed')">
+                        Removed <span id="tab-removed-count" class="badge bg-secondary ms-1">0</span>
+                    </button>
+                </li>
+            </ul>
+            <div id="carousel-grid"></div>
+            <div id="carousel-removed-grid" class="d-none"></div>
+            <div id="carousel-empty" class="text-muted small text-center py-3">
+                No carousel images yet. Click <strong>Generate Carousel</strong> to create them.
+            </div>
+        </div>
+    </div>
+
+    <!-- Carousel Error Modal -->
+    <div class="modal fade" id="carousel-error-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Generation Errors</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <ul id="carousel-error-list" class="mb-0 ps-3 small text-danger"></ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Carousel Edit Modal -->
+    <div class="modal fade" id="carousel-edit-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><span id="carousel-edit-action">Edit</span> Slide <span id="carousel-edit-slide-num"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label fw-semibold small text-uppercase text-muted">Punchline</label>
+                    <textarea id="carousel-edit-punchline" class="form-control mb-3" rows="2"
+                              placeholder="Short Instagram caption…"></textarea>
+                    <label class="form-label fw-semibold small text-uppercase text-muted">DALL-E Prompt</label>
+                    <textarea id="carousel-edit-prompt" class="form-control" rows="6"
+                              placeholder="Image generation prompt…"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <span class="text-muted small me-auto">Old image will be archived to Removed</span>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" id="carousel-rerun-btn" class="btn btn-primary"
+                            onclick="rerunCarouselImage()">
+                        <span id="carousel-rerun-spinner"
+                              class="spinner-border spinner-border-sm me-1 d-none" role="status"></span>
+                        Re-run this prompt
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Carousel Style Modal -->
+    <div class="modal fade" id="carousel-style-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">DALL-E Image Style</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-2">
+                        This style description is appended to every prompt in the carousel,
+                        ensuring all images share a consistent visual language.
+                    </p>
+                    <textarea id="carousel-style-text" class="form-control font-monospace small"
+                              rows="7" readonly></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Title -->
     <div class="mb-3">
@@ -152,6 +335,12 @@ const ARTICLE_ID = parseInt(document.getElementById('article-form').dataset.arti
 const SAVE_URL = ARTICLE_ID
     ? '/admin/articles/' + ARTICLE_ID + '/save'
     : '/admin/articles/new';
+const CAROUSEL_STYLE = {{ carousel_style | tojson }};
+
+function openCarouselStyleModal() {
+    document.getElementById('carousel-style-text').value = CAROUSEL_STYLE;
+    new bootstrap.Modal(document.getElementById('carousel-style-modal')).show();
+}
 
 // Initialise Quill
 const quill = new Quill('#quill-editor', {
@@ -305,6 +494,368 @@ function showStatus(msg, success) {
     el.textContent = msg;
     el.classList.remove('d-none');
     if (success) setTimeout(() => el.classList.add('d-none'), 3000);
+}
+
+// ── Instagram Carousel Generator ───────────────────────────────────────────
+let carouselAbortCtrl = null;
+let carouselErrors = [];
+let carouselEditIndex = null;   // 0-based index of the slide currently being edited in the modal
+
+(function loadCarousel() {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/carousel-images')
+        .then(r => r.json())
+        .then(d => {
+            if (d.images && d.images.length) {
+                const prompts = d.prompts || [];
+                const punchlines = d.punchlines || [];
+                d.images.forEach((url, i) => {
+                    if (i < 10) {
+                        // Current images (slots 0-9)
+                        if (url) addCarouselImage(i + 1, url, true, prompts[i] || '', punchlines[i] || '');
+                    } else {
+                        // Archived/removed images (slot 10+)
+                        if (url) {
+                            const col = document.createElement('div');
+                            col.className = 'carousel-col';
+                            const img = document.createElement('img');
+                            img.src = url; img.className = 'carousel-thumb';
+                            img.alt = 'Removed slide';
+                            col.appendChild(img);
+                            const p  = prompts[i]    || '';
+                            const pl = punchlines[i] || '';
+                            if (p || pl) {
+                                const iBtn = document.createElement('button');
+                                iBtn.type = 'button';
+                                iBtn.className = 'carousel-info-btn';
+                                iBtn.textContent = 'i';
+                                iBtn.title = 'View prompt & punchline';
+                                iBtn.dataset.prompt    = p;
+                                iBtn.dataset.punchline = pl;
+                                iBtn.onclick = (function(_p, _pl) {
+                                    return function() { openCarouselEditModal(-1, _p, _pl, true); };
+                                })(p, pl);
+                                col.appendChild(iBtn);
+                            }
+                            document.getElementById('carousel-removed-grid').appendChild(col);
+                        }
+                    }
+                });
+                document.getElementById('carousel-empty').classList.add('d-none');
+            }
+            updateCarouselTabCounts();
+        }).catch(() => {});
+})();
+
+function addCarouselPlaceholder(i) {
+    const g = document.getElementById('carousel-grid');
+    const col = document.createElement('div');
+    col.className = 'carousel-col'; col.id = 'cph-' + i;
+    col.innerHTML = '<div class="carousel-placeholder">' + i + '</div>';
+    g.appendChild(col);
+}
+
+function addCarouselImage(i, url, initial, prompt, punchline) {
+    const g = document.getElementById('carousel-grid');
+    const ph = document.getElementById('cph-' + i);
+    if (ph) ph.remove();
+    const old = document.getElementById('cimg-' + i);
+    if (old) old.remove();
+    const col = document.createElement('div');
+    col.className = 'carousel-col'; col.id = 'cimg-' + i;
+    const img = document.createElement('img');
+    img.src = url + (initial ? '' : '?t=' + Date.now());
+    img.className = 'carousel-thumb';
+    img.alt = 'Slide ' + i;
+    col.appendChild(img);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'carousel-info-btn';
+    btn.textContent = 'i';
+    btn.title = 'Edit prompt & punchline';
+    btn.dataset.prompt = prompt || '';
+    btn.dataset.punchline = punchline || '';
+    btn.onclick = (function(slideIndex, p, pl) {
+        return function() { openCarouselEditModal(slideIndex, p, pl, false); };
+    })(i - 1, prompt, punchline);
+    col.appendChild(btn);
+    g.appendChild(col);
+}
+
+function startCarousel() {
+    if (!ARTICLE_ID) return;
+    carouselAbortCtrl = new AbortController();
+    carouselErrors = [];
+    document.getElementById('carousel-error-btn').classList.add('d-none');
+
+    const btn = document.getElementById('carousel-btn');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    document.getElementById('carousel-stop-btn').classList.remove('d-none');
+    document.getElementById('carousel-empty').classList.add('d-none');
+    document.getElementById('carousel-status').classList.remove('d-none');
+    document.getElementById('carousel-status-text').textContent = 'Generating prompts…';
+    document.getElementById('carousel-progress').style.width = '0%';
+    document.getElementById('carousel-progress').classList.add('progress-bar-striped', 'progress-bar-animated');
+    document.getElementById('carousel-spinner').classList.remove('d-none');
+    const menuGenBtn = document.getElementById('carousel-menu-generate');
+    if (menuGenBtn) { menuGenBtn.disabled = true; menuGenBtn.classList.add('disabled'); }
+    // Only add placeholders for slots that don't yet have an image
+    for (let i = 1; i <= 10; i++) {
+        if (!document.getElementById('cimg-' + i)) addCarouselPlaceholder(i);
+    }
+
+    // EventSource only supports GET; use fetch + ReadableStream to consume SSE
+    fetch('/admin/articles/' + ARTICLE_ID + '/generate-carousel', {
+        method: 'POST',
+        signal: carouselAbortCtrl.signal
+    })
+        .then(res => {
+            if (!res.ok) return res.json().then(d => { throw new Error(d.error || 'Server error'); });
+            const reader = res.body.getReader();
+            const dec = new TextDecoder();
+            let buf = '';
+            function read({ done, value }) {
+                if (done) { carouselDone(-1); return; }
+                buf += dec.decode(value, { stream: true });
+                const parts = buf.split('\n\n');
+                buf = parts.pop();
+                parts.forEach(part => {
+                    let ev = 'message', data = '';
+                    part.split('\n').forEach(line => {
+                        if (line.startsWith('event: ')) ev = line.slice(7).trim();
+                        if (line.startsWith('data: '))  data = line.slice(6).trim();
+                    });
+                    if (!data) return;
+                    try { handleCarouselEvent(ev, JSON.parse(data)); } catch(e) {}
+                });
+                reader.read().then(read);
+            }
+            reader.read().then(read);
+        })
+        .catch(err => {
+            if (err.name === 'AbortError') {
+                carouselStopped();
+            } else {
+                document.getElementById('carousel-status-text').textContent = 'Error: ' + err.message;
+                document.getElementById('carousel-spinner').classList.add('d-none');
+                document.getElementById('carousel-stop-btn').classList.add('d-none');
+                btn.disabled = false;
+                btn.textContent = 'Generate Carousel';
+                updateCarouselTabCounts();
+            }
+        });
+}
+
+function stopCarousel() {
+    if (carouselAbortCtrl) carouselAbortCtrl.abort();
+}
+
+function handleCarouselEvent(ev, p) {
+    if (ev === 'prompts') {
+        document.getElementById('carousel-status-text').textContent = 'Generating images…';
+    } else if (ev === 'image') {
+        addCarouselImage(p.index, p.url, false, p.prompt || '', p.punchline || '');
+        const pct = p.of ? Math.round((p.seq / p.of) * 100) : (p.index * 10);
+        document.getElementById('carousel-progress').style.width = pct + '%';
+        document.getElementById('carousel-status-text').textContent =
+            'Generated ' + (p.seq || p.index) + ' of ' + (p.of || 10) + '…';
+    } else if (ev === 'error') {
+        carouselErrors.push('Slide ' + p.index + ': ' + p.message);
+        const ph = document.getElementById('cph-' + p.index);
+        if (ph) {
+            const inner = ph.querySelector('.carousel-placeholder');
+            inner.textContent = '✕';
+            inner.style.color = '#dc3545';
+        }
+    } else if (ev === 'done') {
+        carouselDone(p.count);
+    }
+}
+
+function showCarouselErrorBtn() {
+    const list = document.getElementById('carousel-error-list');
+    list.innerHTML = '';
+    carouselErrors.forEach(msg => {
+        const li = document.createElement('li');
+        li.textContent = msg;
+        list.appendChild(li);
+    });
+    const btn = document.getElementById('carousel-error-btn');
+    btn.textContent = 'View ' + carouselErrors.length + ' error(s)';
+    btn.classList.remove('d-none');
+}
+
+function carouselDone(count) {
+    document.getElementById('carousel-spinner').classList.add('d-none');
+    document.getElementById('carousel-stop-btn').classList.add('d-none');
+    document.getElementById('carousel-progress').style.width = '100%';
+    document.getElementById('carousel-progress').classList.remove(
+        'progress-bar-striped', 'progress-bar-animated');
+    document.getElementById('carousel-status-text').textContent =
+        count > 0 ? 'Done! ' + count + ' image' + (count !== 1 ? 's' : '') + ' generated.'
+                  : 'Finished with errors.';
+    const btn = document.getElementById('carousel-btn');
+    btn.disabled = false;
+    btn.textContent = 'Generate Carousel';
+    document.querySelectorAll('[id^="cph-"]').forEach(el => el.remove());
+    if (!document.getElementById('carousel-grid').children.length)
+        document.getElementById('carousel-empty').classList.remove('d-none');
+    if (carouselErrors.length) showCarouselErrorBtn();
+    updateCarouselTabCounts();
+}
+
+function carouselStopped() {
+    document.getElementById('carousel-spinner').classList.add('d-none');
+    document.getElementById('carousel-stop-btn').classList.add('d-none');
+    document.getElementById('carousel-progress').classList.remove(
+        'progress-bar-striped', 'progress-bar-animated');
+    document.getElementById('carousel-status-text').textContent = 'Generation stopped.';
+    const btn = document.getElementById('carousel-btn');
+    btn.disabled = false;
+    btn.textContent = 'Generate Carousel';
+    document.querySelectorAll('[id^="cph-"]').forEach(el => el.remove());
+    if (!document.getElementById('carousel-grid').children.length)
+        document.getElementById('carousel-empty').classList.remove('d-none');
+    if (carouselErrors.length) showCarouselErrorBtn();
+    updateCarouselTabCounts();
+}
+
+// ── Per-image re-run ────────────────────────────────────────────────────────
+
+function openCarouselEditModal(index0, prompt, punchline, readonly) {
+    carouselEditIndex = index0;
+    document.getElementById('carousel-edit-action').textContent = readonly ? 'View' : 'Edit';
+    document.getElementById('carousel-edit-slide-num').textContent = readonly ? '' : index0 + 1;
+    const promptEl = document.getElementById('carousel-edit-prompt');
+    const punchlineEl = document.getElementById('carousel-edit-punchline');
+    promptEl.value = prompt || '';
+    punchlineEl.value = punchline || '';
+    promptEl.readOnly = !!readonly;
+    punchlineEl.readOnly = !!readonly;
+    const rerunBtn = document.getElementById('carousel-rerun-btn');
+    rerunBtn.classList.toggle('d-none', !!readonly);
+    rerunBtn.disabled = false;
+    document.getElementById('carousel-rerun-spinner').classList.add('d-none');
+    new bootstrap.Modal(document.getElementById('carousel-edit-modal')).show();
+}
+
+function rerunCarouselImage() {
+    const prompt = document.getElementById('carousel-edit-prompt').value.trim();
+    const punchline = document.getElementById('carousel-edit-punchline').value.trim();
+    if (!prompt) { alert('Prompt cannot be empty.'); return; }
+
+    const rerunBtn = document.getElementById('carousel-rerun-btn');
+    rerunBtn.disabled = true;
+    document.getElementById('carousel-rerun-spinner').classList.remove('d-none');
+
+    fetch('/admin/articles/' + ARTICLE_ID + '/regenerate-carousel-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ index: carouselEditIndex, prompt: prompt, punchline: punchline })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) {
+            alert('Error: ' + d.error);
+            rerunBtn.disabled = false;
+            document.getElementById('carousel-rerun-spinner').classList.add('d-none');
+            return;
+        }
+        // Move the old image tile to the removed grid
+        const oldCol = document.getElementById('cimg-' + (carouselEditIndex + 1));
+        if (oldCol) {
+            oldCol.remove();
+            addRemovedImage(oldCol);
+        }
+        // Add the new image tile in the current grid
+        addCarouselImage(carouselEditIndex + 1, d.url, false, d.prompt, d.punchline);
+        // Hide modal
+        const modalEl = document.getElementById('carousel-edit-modal');
+        bootstrap.Modal.getInstance(modalEl).hide();
+        updateCarouselTabCounts();
+    })
+    .catch(err => {
+        alert('Network error: ' + err.message);
+        rerunBtn.disabled = false;
+        document.getElementById('carousel-rerun-spinner').classList.add('d-none');
+    });
+}
+
+function addRemovedImage(colEl) {
+    colEl.id = 'cremoved-' + Date.now();
+    // Switch "i" button to read-only mode (view only, no re-run)
+    const infoBtn = colEl.querySelector('.carousel-info-btn');
+    if (infoBtn) {
+        const p  = infoBtn.dataset.prompt    || '';
+        const pl = infoBtn.dataset.punchline || '';
+        infoBtn.title = 'View prompt & punchline';
+        infoBtn.onclick = function() { openCarouselEditModal(-1, p, pl, true); };
+    }
+    document.getElementById('carousel-removed-grid').appendChild(colEl);
+    updateCarouselTabCounts();
+}
+
+function showCarouselTab(tab) {
+    const isCurrent = (tab === 'current');
+    document.getElementById('carousel-grid').classList.toggle('d-none', !isCurrent);
+    document.getElementById('carousel-removed-grid').classList.toggle('d-none', isCurrent);
+    document.getElementById('tab-current').classList.toggle('active', isCurrent);
+    document.getElementById('tab-removed').classList.toggle('active', !isCurrent);
+}
+
+function updateCarouselTabCounts() {
+    const currentCount = document.getElementById('carousel-grid')
+        .querySelectorAll('.carousel-col[id^="cimg-"]').length;
+    const removedCount = document.getElementById('carousel-removed-grid').children.length;
+    document.getElementById('tab-current-count').textContent = currentCount;
+    document.getElementById('tab-removed-count').textContent = removedCount;
+    // Show/hide Removed tab based on whether there's anything in it
+    const removedTab = document.getElementById('tab-removed');
+    removedTab.style.display = removedCount > 0 ? '' : 'none';
+    // Show Archive All button only when there are current images
+    const archiveBtn = document.getElementById('carousel-archive-btn');
+    if (archiveBtn) archiveBtn.classList.toggle('d-none', currentCount === 0);
+    // Show/enable Generate button only when there are empty slots
+    const emptySlots = 10 - currentCount;
+    const genBtn = document.getElementById('carousel-btn');
+    const genMenuItem = document.getElementById('carousel-menu-generate');
+    if (emptySlots <= 0) {
+        genBtn.classList.add('d-none');
+        if (genMenuItem) { genMenuItem.disabled = true; genMenuItem.classList.add('disabled'); }
+    } else {
+        genBtn.classList.remove('d-none');
+        if (genMenuItem) { genMenuItem.disabled = false; genMenuItem.classList.remove('disabled'); }
+    }
+}
+
+function archiveAllCarousel() {
+    if (!ARTICLE_ID) return;
+    const archiveBtn = document.getElementById('carousel-archive-btn');
+    archiveBtn.disabled = true;
+    archiveBtn.textContent = 'Archiving…';
+
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-carousel', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) { alert('Error: ' + d.error); return; }
+        // Move all current image tiles to the removed grid
+        const currentTiles = document.getElementById('carousel-grid')
+            .querySelectorAll('.carousel-col[id^="cimg-"]');
+        currentTiles.forEach(col => {
+            col.remove();
+            addRemovedImage(col);
+        });
+        // Switch to current tab (now empty) and show empty state
+        showCarouselTab('current');
+        document.getElementById('carousel-empty').classList.remove('d-none');
+        updateCarouselTabCounts();
+    })
+    .catch(err => alert('Network error: ' + err.message))
+    .finally(() => {
+        archiveBtn.disabled = false;
+        archiveBtn.textContent = 'Archive All';
+    });
 }
 </script>
 {% endblock %}

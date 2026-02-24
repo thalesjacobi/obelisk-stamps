@@ -202,3 +202,6 @@ verification_output/
 
 # Debug HTML files
 debug/
+
+# Generated article assets (carousel images, videos — stored per-article, not in git)
+static/articles/

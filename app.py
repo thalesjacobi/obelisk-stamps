@@ -6,6 +6,7 @@ The ML API handles model loading and inference, keeping the website lightweight.
 """
 
 import os
+import re
 import json
 import time
 import base64
@@ -21,7 +22,8 @@ from mysql.connector import Error
 from oauthlib.oauth2 import WebApplicationClient
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, flash, redirect, url_for, jsonify, send_from_directory, session
+from flask import Flask, render_template, request, flash, redirect, url_for, jsonify, \
+    send_from_directory, session, stream_with_context, Response
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -73,6 +75,15 @@ if OPENAI_API_KEY and _openai_module:
 else:
     if not OPENAI_API_KEY:
         print("WARNING: OPENAI_API_KEY not set — chatbot disabled")
+
+# Style suffix appended to every DALL-E 3 prompt in the Instagram carousel
+CAROUSEL_STYLE_SUFFIX = (
+    "Style: vintage editorial illustration, reminiscent of classic postage-stamp engravings "
+    "and collector's print ephemera. Rich, deep colour palette — navy blue, burgundy, warm "
+    "gold and ivory — with fine-line detail and a tactile, handcrafted quality. Strong focal "
+    "composition with a sense of heritage and craftsmanship. "
+    "Square 1:1 format for Instagram. No text, lettering, numbers, or watermarks in the image."
+)
 
 # --- Knowledge Base (ChromaDB) ---
 KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb")
@@ -292,6 +303,12 @@ def execute(sql, params=None):
     return last_id
 
 
+def get_setting(key, default=None):
+    """Return a value from site_settings, or default if not found."""
+    row = query_one("SELECT value FROM site_settings WHERE `key` = %s", (key,))
+    return row[0] if row else default
+
+
 def init_articles_table():
     """Create the articles table if it doesn't exist."""
     conn = get_db()
@@ -307,12 +324,23 @@ def init_articles_table():
             image_url VARCHAR(1000),
             is_published BOOLEAN DEFAULT FALSE,
             published_at DATETIME NULL,
+            carousel_prompts TEXT,
+            carousel_images TEXT,
+            carousel_punchlines TEXT,
+            carousel_style TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             INDEX idx_slug (slug),
             INDEX idx_published (is_published, published_at DESC)
         )
     """)
+    # Migration: add carousel columns to existing tables
+    for col in ("carousel_prompts TEXT", "carousel_images TEXT",
+                "carousel_punchlines TEXT", "carousel_style TEXT"):
+        try:
+            cur.execute(f"ALTER TABLE articles ADD COLUMN {col}")
+        except Exception:
+            pass  # column already exists
     conn.commit()
     cur.close()
     conn.close()
@@ -321,6 +349,33 @@ try:
     init_articles_table()
 except Exception as e:
     print(f"WARNING: Could not initialise articles table: {e}")
+
+
+def init_site_settings():
+    """Create site_settings table and seed default values if missing."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS site_settings (
+            `key` VARCHAR(100) PRIMARY KEY,
+            value TEXT,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+    """)
+    # Seed carousel_style default only on first run (INSERT IGNORE skips if key exists)
+    cur.execute(
+        "INSERT IGNORE INTO site_settings (`key`, value) VALUES ('carousel_style', %s)",
+        (CAROUSEL_STYLE_SUFFIX,),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+try:
+    init_site_settings()
+except Exception as e:
+    print(f"WARNING: Could not initialise site_settings table: {e}")
 
 
 def log_activity(user_id, activity_type, description=None, metadata=None):
@@ -1840,6 +1895,37 @@ def admin_user_activity(user_id):
 
 
 # ------------------------------------------------------------
+# ADMIN — SETTINGS
+# ------------------------------------------------------------
+@app.route("/admin/settings")
+@login_required
+@admin_required
+def admin_settings():
+    carousel_style = get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
+    return render_template("admin.html", active_tab="settings",
+                           carousel_style=carousel_style)
+
+
+@app.route("/admin/settings/save", methods=["POST"])
+@login_required
+@admin_required
+def admin_settings_save():
+    data = request.get_json()
+    carousel_style = (data.get("carousel_style") or "").strip()
+    if not carousel_style:
+        return jsonify({"error": "Style cannot be empty"}), 400
+    try:
+        execute(
+            "INSERT INTO site_settings (`key`, value) VALUES ('carousel_style', %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (carousel_style, carousel_style),
+        )
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ------------------------------------------------------------
 # ADMIN — ARTICLES
 # ------------------------------------------------------------
 @app.route("/admin/articles")
@@ -1866,7 +1952,7 @@ def admin_articles():
 @login_required
 @admin_required
 def admin_article_new():
-    return render_template("article_edit.html", article=None)
+    return render_template("article_edit.html", article=None, carousel_style=CAROUSEL_STYLE_SUFFIX)
 
 
 @app.route("/admin/articles/new", methods=["POST"])
@@ -1897,7 +1983,9 @@ def admin_article_create():
 @admin_required
 def admin_article_edit(article_id):
     row = query_one(
-        "SELECT id, slug, title, subtitle, content, excerpt, image_url, is_published, published_at "
+        "SELECT id, slug, title, subtitle, content, excerpt, image_url, "
+        "is_published, published_at, carousel_prompts, carousel_images, "
+        "carousel_punchlines, carousel_style "
         "FROM articles WHERE id = %s",
         (article_id,),
     )
@@ -1909,8 +1997,14 @@ def admin_article_edit(article_id):
         "content": row[4] or "", "excerpt": row[5] or "",
         "image_url": row[6] or "", "is_published": bool(row[7]),
         "published_at": row[8].strftime("%d %b %Y") if row[8] else None,
+        "carousel_prompts": json.loads(row[9]) if row[9] else [],
+        "carousel_images": json.loads(row[10]) if row[10] else [],
+        "carousel_punchlines": json.loads(row[11]) if row[11] else [],
     }
-    return render_template("article_edit.html", article=article)
+    # Show this article's saved style; fall back to current site setting if never generated
+    article_carousel_style = row[12] or get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
+    return render_template("article_edit.html", article=article,
+                           carousel_style=article_carousel_style)
 
 
 @app.route("/admin/articles/<int:article_id>/save", methods=["POST"])
@@ -1958,6 +2052,386 @@ def admin_article_delete(article_id):
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-images")
+@login_required
+@admin_required
+def admin_article_carousel_images(article_id):
+    """Return carousel prompts, punchlines, and image URLs from DB."""
+    row = query_one(
+        "SELECT carousel_prompts, carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+        (article_id,),
+    )
+    if not row or not row[1]:
+        return jsonify({"images": [], "prompts": [], "punchlines": []})
+    prompts = json.loads(row[0]) if row[0] else []
+    images = json.loads(row[1]) if row[1] else []
+    punchlines = json.loads(row[2]) if row[2] else []
+    urls = [url_for("static", filename=p) if p else None for p in images]
+    return jsonify({"images": urls, "prompts": prompts, "punchlines": punchlines})
+
+
+@app.route("/admin/articles/<int:article_id>/generate-carousel", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_generate_carousel(article_id):
+    """
+    SSE endpoint: generate up to 10 Instagram carousel images via DALL-E 3.
+    Uses a storyboard approach — GPT breaks the article into 10 sequential
+    narrative scenes, then DALL-E illustrates each one.
+
+    SSE events:
+      event: prompts  data: {"prompts": ["...", ...]}
+      event: image    data: {"index": N, "url": "...", "prompt": "..."}
+      event: error    data: {"index": N, "message": "..."}
+      event: done     data: {"count": N}
+    """
+    if not _openai_client:
+        return jsonify({"error": "OpenAI is not configured."}), 503
+
+    row = query_one(
+        "SELECT id, title, content, excerpt, carousel_prompts, carousel_images, carousel_punchlines "
+        "FROM articles WHERE id = %s", (article_id,)
+    )
+    if not row:
+        return jsonify({"error": "Article not found."}), 404
+
+    _, title, content, excerpt, _ex_p, _ex_i, _ex_pl = row
+    plain = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', content or '')).strip()[:6000]
+
+    # Read active style from site settings (fallback to hardcoded constant)
+    active_style = get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
+
+    # Preserve archived items (index 10+) across a full regeneration
+    _existing_p  = json.loads(_ex_p)  if _ex_p  else []
+    _existing_i  = json.loads(_ex_i)  if _ex_i  else []
+    _existing_pl = json.loads(_ex_pl) if _ex_pl else []
+    _archived_p  = _existing_p[10:]
+    _archived_i  = _existing_i[10:]
+    _archived_pl = _existing_pl[10:]
+
+    # Current 10 slots (pad to length 10 with None)
+    _current_p  = (_existing_p[:10]  + [None] * 10)[:10]
+    _current_i  = (_existing_i[:10]  + [None] * 10)[:10]
+    _current_pl = (_existing_pl[:10] + [None] * 10)[:10]
+    # Identify which of the first 10 slots have no image yet
+    empty_slots = [idx for idx, url in enumerate(_current_i) if not url]
+    N = len(empty_slots)
+
+    def generate():
+        if N == 0:
+            yield f"event: done\ndata: {json.dumps({'count': 0})}\n\n"
+            return
+
+        # ── Step 1: GPT storyboard — break article into N sequential scenes ──
+        try:
+            resp = _openai_client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[
+                    {"role": "system", "content": (
+                        "You are a visual storyteller and Instagram content strategist. "
+                        f"Your job is to break an article into exactly {N} sequential scenes "
+                        "that narrate the article's story from beginning to end.\n\n"
+                        "For each scene, produce TWO things:\n"
+                        "1. A detailed DALL-E 3 image prompt that captures that section's "
+                        "key message, moment, or concept.\n"
+                        "2. A short punchline (max 15 words) — a compelling caption that "
+                        "gives context to the image so an Instagram viewer understands "
+                        "the story beat without reading the full article.\n\n"
+                        f"A viewer swiping through the {N} images and reading just the "
+                        "punchlines should understand the article's narrative.\n\n"
+                        "Rules:\n"
+                        "- Each prompt must be specific to its section of the article (not generic)\n"
+                        "- Prompts progress chronologically through the article\n"
+                        "- Include concrete visual details: setting, subjects, actions, mood, colours\n"
+                        f"- All {N} prompts must share the same art style for visual cohesion\n"
+                        "- Punchlines should be intriguing, concise, and encourage swiping\n"
+                        f"- Output ONLY a JSON array of {N} objects, each with keys "
+                        "\"prompt\" and \"punchline\", no other text"
+                    )},
+                    {"role": "user", "content": (
+                        f"Article title: {title}\n\n"
+                        f"Full article content:\n{plain}\n\n"
+                        f"Generate a JSON array of exactly {N} objects, each with:\n"
+                        "- \"prompt\": a DALL-E 3 image prompt for that scene\n"
+                        "- \"punchline\": a short Instagram caption (max 15 words)\n\n"
+                        f"These {N} scenes should narrate this article as a visual Instagram "
+                        "carousel, from introduction to conclusion."
+                    )},
+                ],
+                max_tokens=3000,
+            )
+            raw = resp.choices[0].message.content.strip()
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'index': 0, 'message': str(e)})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'count': 0})}\n\n"
+            return
+
+        # Parse JSON array of {prompt, punchline} objects from GPT response
+        try:
+            # Handle markdown code blocks if GPT wraps the JSON
+            cleaned = raw
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r'^```(?:json)?\s*', '', cleaned)
+                cleaned = re.sub(r'\s*```$', '', cleaned)
+            scenes = json.loads(cleaned)
+            if not isinstance(scenes, list):
+                raise ValueError("Expected a JSON array")
+            # Extract prompts and punchlines from objects
+            prompts = []
+            punchlines = []
+            for item in scenes[:N]:
+                if isinstance(item, dict):
+                    prompts.append(str(item.get("prompt", "")).strip())
+                    punchlines.append(str(item.get("punchline", "")).strip())
+                else:
+                    # Fallback: if GPT returns plain strings, use them as prompts
+                    prompts.append(str(item).strip())
+                    punchlines.append("")
+            # Remove any empty prompts
+            filtered = [(p, pl) for p, pl in zip(prompts, punchlines) if p]
+            if filtered:
+                prompts, punchlines = zip(*filtered)
+                prompts = list(prompts)
+                punchlines = list(punchlines)
+            else:
+                prompts, punchlines = [], []
+        except (json.JSONDecodeError, ValueError) as e:
+            yield f"event: error\ndata: {json.dumps({'index': 0, 'message': f'Failed to parse prompts: {e}'})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'count': 0})}\n\n"
+            return
+
+        if not prompts:
+            yield f"event: error\ndata: {json.dumps({'index': 0, 'message': 'No prompts generated.'})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'count': 0})}\n\n"
+            return
+
+        # Stream prompts + punchlines to frontend (so UI can show them immediately)
+        yield f"event: prompts\ndata: {json.dumps({'prompts': prompts, 'punchlines': punchlines})}\n\n"
+
+        # ── Step 2: Create directory ──
+        carousel_dir = BASE_DIR / "static" / "articles" / str(article_id) / "carousel"
+        carousel_dir.mkdir(parents=True, exist_ok=True)
+
+        ok = 0
+        # Start from the current 10 slots; fill in only the empty ones
+        merged_p  = list(_current_p)
+        merged_i  = list(_current_i)
+        merged_pl = list(_current_pl)
+        slot_assignments = list(zip(empty_slots, zip(prompts, punchlines)))
+
+        # ── Step 3: Generate each image and stream the result ──
+        for seq, (slot_idx, (prompt, punchline)) in enumerate(slot_assignments, 1):
+            slot_num = slot_idx + 1  # 1-based slot number for frontend/filename
+            try:
+                img_resp = _openai_client.images.generate(
+                    model="dall-e-3",
+                    prompt=f"{prompt}. {active_style}",
+                    size="1024x1024",
+                    quality="standard",
+                    style="vivid",
+                    n=1,
+                )
+                dl = http_requests.get(img_resp.data[0].url, timeout=30)
+                dl.raise_for_status()
+                rel_path = f"articles/{article_id}/carousel/image_{slot_num}.png"
+                (carousel_dir / f"image_{slot_num}.png").write_bytes(dl.content)
+                merged_i[slot_idx]  = rel_path
+                merged_p[slot_idx]  = prompt
+                merged_pl[slot_idx] = punchline
+                static_url = url_for("static", filename=rel_path)
+                ok += 1
+                yield f"event: image\ndata: {json.dumps({'index': slot_num, 'seq': seq, 'of': N, 'url': static_url, 'prompt': prompt, 'punchline': punchline})}\n\n"
+            except _openai_module.BadRequestError as e:
+                yield f"event: error\ndata: {json.dumps({'index': slot_num, 'message': f'Content policy: {e}'})}\n\n"
+            except _openai_module.RateLimitError:
+                yield f"event: error\ndata: {json.dumps({'index': slot_num, 'message': 'Rate limited — remaining images skipped.'})}\n\n"
+                break
+            except Exception as e:
+                yield f"event: error\ndata: {json.dumps({'index': slot_num, 'message': str(e)})}\n\n"
+
+        # ── Step 4: Merge new results into current slots, preserve archived (10+) ──
+        try:
+            execute(
+                "UPDATE articles SET carousel_prompts = %s, carousel_punchlines = %s, "
+                "carousel_images = %s, carousel_style = %s WHERE id = %s",
+                (
+                    json.dumps(merged_p  + _archived_p),
+                    json.dumps(merged_pl + _archived_pl),
+                    json.dumps(merged_i  + _archived_i),
+                    active_style,
+                    article_id,
+                ),
+            )
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'index': 0, 'message': f'DB save failed: {e}'})}\n\n"
+
+        yield f"event: done\ndata: {json.dumps({'count': ok})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/admin/articles/<int:article_id>/archive-carousel", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_archive_carousel(article_id):
+    """
+    Move current carousel items (index 0–9) to the archive (index 10+).
+    Slots 0–9 are set to None so the next Generate Carousel run starts fresh
+    while all previous images are preserved in the Removed tab.
+    """
+    row = query_one(
+        "SELECT carousel_prompts, carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+        (article_id,),
+    )
+    if not row:
+        return jsonify({"error": "Article not found."}), 404
+
+    prompts   = json.loads(row[0]) if row[0] else []
+    images    = json.loads(row[1]) if row[1] else []
+    punchlines = json.loads(row[2]) if row[2] else []
+
+    # Separate current (0-9) from already-archived (10+)
+    current_p  = (prompts   + [None] * 10)[:10]
+    current_i  = (images    + [None] * 10)[:10]
+    current_pl = (punchlines + [None] * 10)[:10]
+
+    already_archived_p  = prompts[10:]   if len(prompts)    > 10 else []
+    already_archived_i  = images[10:]    if len(images)     > 10 else []
+    already_archived_pl = punchlines[10:] if len(punchlines) > 10 else []
+
+    # Filter out None slots from current before archiving
+    new_archived_p  = [p  for p  in current_p  if p  is not None]
+    new_archived_i  = [i  for i  in current_i  if i  is not None]
+    new_archived_pl = [pl for pl in current_pl if pl is not None]
+
+    archived_count = len(new_archived_i)
+
+    # New arrays: 10 empty slots (None) + all archived
+    final_p  = [None] * 10 + already_archived_p  + new_archived_p
+    final_i  = [None] * 10 + already_archived_i  + new_archived_i
+    final_pl = [None] * 10 + already_archived_pl + new_archived_pl
+
+    try:
+        execute(
+            "UPDATE articles SET carousel_prompts = %s, carousel_punchlines = %s, carousel_images = %s WHERE id = %s",
+            (json.dumps(final_p), json.dumps(final_pl), json.dumps(final_i), article_id),
+        )
+    except Exception as e:
+        return jsonify({"error": f"DB save failed: {e}"}), 500
+
+    return jsonify({"success": True, "archived": archived_count})
+
+
+@app.route("/admin/articles/<int:article_id>/regenerate-carousel-image", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_regenerate_carousel_image(article_id):
+    """
+    Re-generate a single carousel image at a given index (0-based, 0–9).
+    Archives the old image/prompt/punchline to the end of the arrays.
+
+    Request JSON: { "index": N, "prompt": "...", "punchline": "..." }
+    Returns JSON: { "url": "...", "prompt": "...", "punchline": "..." }
+             or:  { "error": "..." }
+    """
+    if not _openai_client:
+        return jsonify({"error": "OpenAI is not configured."}), 503
+
+    data = request.get_json()
+    index = data.get("index")
+    new_prompt = (data.get("prompt") or "").strip()
+    new_punchline = (data.get("punchline") or "").strip()
+
+    if not isinstance(index, int) or not (0 <= index <= 9):
+        return jsonify({"error": "index must be an integer between 0 and 9"}), 400
+    if not new_prompt:
+        return jsonify({"error": "prompt is required"}), 400
+
+    # Load existing carousel data from DB
+    row = query_one(
+        "SELECT carousel_prompts, carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+        (article_id,),
+    )
+    if not row:
+        return jsonify({"error": "Article not found."}), 404
+
+    prompts = json.loads(row[0]) if row[0] else []
+    images = json.loads(row[1]) if row[1] else []
+    punchlines = json.loads(row[2]) if row[2] else []
+
+    # Pad arrays to at least index + 1 so we can safely access/replace by index
+    while len(prompts) <= index:
+        prompts.append(None)
+    while len(images) <= index:
+        images.append(None)
+    while len(punchlines) <= index:
+        punchlines.append(None)
+
+    # Save old values before replacing
+    old_prompt = prompts[index]
+    old_image = images[index]
+    old_punchline = punchlines[index]
+
+    # Read active style from site settings (fallback to hardcoded constant)
+    active_style = get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
+
+    # ── Generate new image via DALL-E 3 ──
+    carousel_dir = BASE_DIR / "static" / "articles" / str(article_id) / "carousel"
+    carousel_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        img_resp = _openai_client.images.generate(
+            model="dall-e-3",
+            prompt=f"{new_prompt}. {active_style}",
+            size="1024x1024",
+            quality="standard",
+            style="vivid",
+            n=1,
+        )
+        dl = http_requests.get(img_resp.data[0].url, timeout=30)
+        dl.raise_for_status()
+    except _openai_module.BadRequestError as e:
+        return jsonify({"error": f"Content policy: {e}"}), 400
+    except _openai_module.RateLimitError:
+        return jsonify({"error": "Rate limited — please try again later."}), 429
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    # Save with timestamp so old file (used by archive) is not overwritten
+    import time as _time
+    ts = int(_time.time())
+    filename = f"image_{index + 1}_{ts}.png"
+    rel_path = f"articles/{article_id}/carousel/{filename}"
+    (carousel_dir / filename).write_bytes(dl.content)
+
+    # ── Archive old values + replace current slot ──
+    prompts[index] = new_prompt
+    images[index] = rel_path
+    punchlines[index] = new_punchline
+
+    if old_image is not None:
+        prompts.append(old_prompt)
+        images.append(old_image)
+        punchlines.append(old_punchline)
+
+    # ── Persist to DB ──
+    try:
+        execute(
+            "UPDATE articles SET carousel_prompts = %s, carousel_punchlines = %s, "
+            "carousel_images = %s, carousel_style = %s WHERE id = %s",
+            (json.dumps(prompts), json.dumps(punchlines), json.dumps(images),
+             active_style, article_id),
+        )
+    except Exception as e:
+        return jsonify({"error": f"DB save failed: {e}"}), 500
+
+    static_url = url_for("static", filename=rel_path)
+    return jsonify({"url": static_url, "prompt": new_prompt, "punchline": new_punchline})
 
 
 # ------------------------------------------------------------
