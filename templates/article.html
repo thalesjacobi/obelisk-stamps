@@ -26,10 +26,92 @@
   }
 }
 </script>
+
+{% if article.carousel_images %}
+<style>
+    /* === Ken Burns slideshow — public article page === */
+    @keyframes asl-tl  { from{transform:scale(1.0) translate(0,0)} to{transform:scale(1.15) translate(-4%,-4%)} }
+    @keyframes asl-tr  { from{transform:scale(1.0) translate(0,0)} to{transform:scale(1.15) translate(4%,-4%)} }
+    @keyframes asl-bl  { from{transform:scale(1.0) translate(0,0)} to{transform:scale(1.15) translate(-4%,4%)} }
+    @keyframes asl-br  { from{transform:scale(1.0) translate(0,0)} to{transform:scale(1.15) translate(4%,4%)} }
+    @keyframes asl-zoom{ from{transform:scale(1.0)}                 to{transform:scale(1.18)} }
+
+    .asl-wrap {
+        float: left;
+        width: 337px;
+        margin: 0.25rem 1.75rem 1.25rem 0;
+        background: #ebebeb;
+        border-radius: 10px;
+        padding: 10px 10px 8px;
+    }
+    .asl-label {
+        font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.07em; color: #888; text-align: center;
+        margin: 0 0 7px;
+    }
+    #asl-viewport {
+        position: relative; width: 100%; aspect-ratio: 1/1;
+        border-radius: 6px; overflow: hidden; background: #ccc;
+    }
+    /* Two image layers — opacity controlled by JS */
+    .asl-layer {
+        position: absolute; inset: 0;
+        opacity: 0;
+    }
+    .asl-layer img {
+        position: absolute; inset: 0;
+        width: 100%; height: 100%;
+        object-fit: cover;
+        display: block;
+        /* Ken Burns animation applied via JS on this element */
+    }
+    #asl-punchline {
+        position: absolute; bottom: 0; left: 0; right: 0; z-index: 2;
+        background: linear-gradient(transparent, rgba(0,0,0,0.55) 35%, rgba(0,0,0,0.88));
+        color: #fff; font-size: 1.15rem; font-weight: 600; line-height: 1.35;
+        padding: 2rem 1rem 0.75rem; text-align: center;
+        opacity: 0; transition: opacity 0.5s ease;
+        pointer-events: none;
+    }
+    #asl-counter {
+        position: absolute; top: 6px; right: 8px; z-index: 2;
+        color: rgba(255,255,255,0.85); font-size: 0.68rem;
+        font-weight: 600; pointer-events: none;
+    }
+    /* Scrub bar + pause button row */
+    .asl-controls {
+        display: flex; align-items: center; gap: 6px; margin-top: 6px;
+    }
+    #asl-scrub {
+        flex: 1; height: 4px; background: #d0d0d0;
+        border-radius: 2px; overflow: hidden; cursor: pointer;
+    }
+    #asl-scrub-fill {
+        height: 100%; width: 0%; background: #fd7e14;
+    }
+    #asl-pause-btn {
+        flex-shrink: 0; width: 18px; height: 18px;
+        padding: 0; border: none; background: none;
+        color: #aaa; font-size: 9px; cursor: pointer;
+        border-radius: 3px; line-height: 1;
+        display: flex; align-items: center; justify-content: center;
+        transition: color 0.15s;
+    }
+    #asl-pause-btn:hover { color: #555; }
+</style>
+{% endif %}
 {% endblock %}
 
 {% block content %}
 <article class="mx-auto" style="max-width: 800px;">
+
+    <!-- Banner image — above the title, wide and low -->
+    {% if article.image_url %}
+    <img src="{{ article.image_url }}"
+         class="w-100 rounded mb-4"
+         alt="{{ article.title }}"
+         style="max-height: 210px; object-fit: cover; object-position: center; display: block;">
+    {% endif %}
 
     <a href="/articles" class="text-decoration-none text-muted mb-3 d-inline-block">&larr; All Articles</a>
 
@@ -39,21 +121,185 @@
     {% endif %}
     <p class="text-muted mb-4"><small>{{ article.published_at }} &middot; Obelisk Stamps</small></p>
 
-    {% if article.image_url %}
-    <figure class="figure mb-4">
-        <img src="{{ article.image_url }}"
-             class="figure-img img-fluid rounded shadow-sm w-100"
-             alt="{{ article.title }}"
-             style="max-height: 420px; object-fit: cover;">
-    </figure>
+    <!-- Ken Burns slideshow — floated left, only when carousel images exist -->
+    {% if article.carousel_images %}
+    <div class="asl-wrap">
+        <p class="asl-label">Visual Summary &mdash; Article in Motion</p>
+        <div id="asl-viewport">
+            <div class="asl-layer" id="asl-layer-a"><img id="asl-img-a" src="" alt=""></div>
+            <div class="asl-layer" id="asl-layer-b"><img id="asl-img-b" src="" alt=""></div>
+            <div id="asl-punchline"></div>
+            <div id="asl-counter"></div>
+        </div>
+        <div class="asl-controls">
+            <div id="asl-scrub"><div id="asl-scrub-fill"></div></div>
+            <button id="asl-pause-btn" onclick="aslTogglePause()" title="Pause">⏸</button>
+        </div>
+    </div>
     {% endif %}
 
     <div class="article-body" style="font-size: 1.1rem; line-height: 1.8;">
         {{ article.content | safe }}
     </div>
+    <div style="clear: left;"></div>
 
     <hr class="my-5">
     <a href="/articles" class="btn btn-outline-secondary mb-4">&larr; Back to Articles</a>
 
 </article>
+{% endblock %}
+
+{% block scripts %}
+{% if article.carousel_images %}
+<script>
+(function () {
+    var ANIMS      = ['asl-tl', 'asl-tr', 'asl-bl', 'asl-br', 'asl-zoom'];
+    var images     = {{ article.carousel_images | tojson }};
+    var punchlines = {{ article.carousel_punchlines | tojson }};
+
+    /* Ensure URLs are root-relative (handle any storage format) */
+    var valid = images.filter(Boolean).slice(0, 10).map(function (u) {
+        if (u.match(/^https?:\/\//)) return u;
+        if (u.charAt(0) === '/') return u;
+        return '/static/' + u;
+    });
+    if (!valid.length) return;
+
+    var DURATION = 8000;   /* ms per slide */
+    var FADE     = 900;    /* ms crossfade  */
+
+    var la       = document.getElementById('asl-layer-a');
+    var lb       = document.getElementById('asl-layer-b');
+    var imgA     = document.getElementById('asl-img-a');
+    var imgB     = document.getElementById('asl-img-b');
+    var plEl     = document.getElementById('asl-punchline');
+    var ctrEl    = document.getElementById('asl-counter');
+    var scrubFill= document.getElementById('asl-scrub-fill');
+    if (!la || !imgA) return;
+
+    var curIdx   = 0;
+    var aFront   = true;   /* la/imgA is currently the visible layer */
+    var paused   = false;
+    var timeBase = 0;      /* performance.now() adjusted for pauses   */
+    var pausedAt = 0;
+    var nextTimer   = null;
+    var plHideTimer = null;
+
+    /* ── Elapsed time for current slide (pause-aware) ─────────── */
+    function elapsed() {
+        return (paused ? pausedAt : performance.now()) - timeBase;
+    }
+
+    /* ── Scrub bar ──────────────────────────────────────────────── */
+    function scrubTick() {
+        if (scrubFill && !paused) {
+            var pct = Math.min(100, elapsed() / DURATION * 100);
+            scrubFill.style.width = pct + '%';
+        }
+        requestAnimationFrame(scrubTick);
+    }
+    requestAnimationFrame(scrubTick);
+
+    /* ── Apply Ken Burns to an img element ──────────────────────── */
+    function applyKB(img, i, dur) {
+        img.src = valid[i];
+        img.style.animation = 'none';
+        void img.offsetWidth;
+        img.style.animation = ANIMS[i % ANIMS.length] + ' ' + ((dur || DURATION) / 1000) + 's ease-in-out forwards';
+    }
+
+    /* ── Punchline overlay ──────────────────────────────────────── */
+    function showPunchline(pl) {
+        plEl.textContent   = pl || '';
+        plEl.style.opacity = '0';
+        clearTimeout(plHideTimer);
+        if (pl) {
+            setTimeout(function () { if (!paused) plEl.style.opacity = '1'; }, 600);
+            plHideTimer = setTimeout(function () { plEl.style.opacity = '0'; }, DURATION - 1400);
+        }
+    }
+
+    /* ── Crossfade to next slide ────────────────────────────────── */
+    function advance() {
+        if (paused) return;
+        curIdx = (curIdx + 1) % valid.length;
+
+        var incomingLayer = aFront ? lb : la;
+        var outgoingLayer = aFront ? la : lb;
+        var incomingImg   = aFront ? imgB : imgA;
+        var outgoingImg   = aFront ? imgA : imgB;
+
+        applyKB(incomingImg, curIdx);
+
+        ctrEl.textContent = (curIdx + 1) + ' / ' + valid.length;
+        timeBase          = performance.now();
+        scrubFill.style.width = '0%';
+        showPunchline(punchlines[curIdx] || '');
+
+        /* snap opacity to 0, then crossfade in */
+        incomingLayer.style.transition = 'none';
+        incomingLayer.style.opacity    = '0';
+        void incomingLayer.offsetWidth;
+        incomingLayer.style.transition = 'opacity ' + (FADE / 1000) + 's ease-in-out';
+        incomingLayer.style.opacity    = '1';
+
+        /* fade out outgoing */
+        outgoingLayer.style.transition = 'opacity ' + (FADE / 1000) + 's ease-in-out';
+        outgoingLayer.style.opacity    = '0';
+
+        aFront = !aFront;
+        nextTimer = setTimeout(advance, DURATION);
+    }
+
+    /* ── Pause / Resume ─────────────────────────────────────────── */
+    function aslTogglePause() {
+        paused = !paused;
+        var btn = document.getElementById('asl-pause-btn');
+        if (paused) {
+            pausedAt = performance.now();
+            clearTimeout(nextTimer);
+            clearTimeout(plHideTimer);            /* freeze punchline hide timer */
+            /* freeze Ken Burns mid-frame */
+            [imgA, imgB].forEach(function (img) {
+                img.style.animationPlayState = 'paused';
+            });
+            btn.textContent = '▶';
+            btn.title = 'Resume';
+        } else {
+            var pauseDuration = performance.now() - pausedAt;
+            timeBase += pauseDuration;            /* shift baseline so elapsed() stays correct */
+            [imgA, imgB].forEach(function (img) {
+                img.style.animationPlayState = 'running';
+            });
+            var remaining = Math.max(500, DURATION - elapsed());
+            nextTimer = setTimeout(advance, remaining);
+            /* restart punchline hide timer with remaining delay, or hide immediately if overdue */
+            var plRemaining = (DURATION - 1400) - elapsed();
+            if (plRemaining > 0) {
+                plHideTimer = setTimeout(function () { plEl.style.opacity = '0'; }, plRemaining);
+            } else {
+                plEl.style.opacity = '0';
+            }
+            btn.textContent = '⏸';
+            btn.title = 'Pause';
+        }
+    }
+    window.aslTogglePause = aslTogglePause;
+
+    /* ── Initial frame: paint layer-a immediately, no crossfade ─── */
+    la.style.transition = 'none';
+    la.style.opacity    = '1';
+    lb.style.transition = 'none';
+    lb.style.opacity    = '0';
+    applyKB(imgA, 0);
+    ctrEl.textContent     = '1 / ' + valid.length;
+    timeBase              = performance.now();
+    scrubFill.style.width = '0%';
+    showPunchline(punchlines[0] || '');
+    aFront = true;
+
+    nextTimer = setTimeout(advance, DURATION);
+})();
+</script>
+{% endif %}
 {% endblock %}

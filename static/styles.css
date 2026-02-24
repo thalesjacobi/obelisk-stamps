@@ -490,6 +490,15 @@ form {
     background: #adb5bd;
 }
 
+article .asl-controls{
+    margin-left: 5px;
+}
+article #asl-pause-btn{
+    margin-top: -2px;
+}
+
+
+
 /* Mobile responsive — full width on small screens */
 @media (max-width: 576px) {
     .chatbot-container {

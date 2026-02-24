@@ -686,7 +686,8 @@ def articles():
 @app.route("/articles/<slug>")
 def article_view(slug):
     row = query_one(
-        "SELECT id, slug, title, subtitle, content, excerpt, image_url, published_at "
+        "SELECT id, slug, title, subtitle, content, excerpt, image_url, published_at, "
+        "carousel_images, carousel_punchlines "
         "FROM articles WHERE slug = %s AND is_published = TRUE",
         (slug,),
     )
@@ -697,6 +698,8 @@ def article_view(slug):
         "content": row[4], "excerpt": row[5] or "",
         "image_url": row[6],
         "published_at": row[7].strftime("%d %B %Y").lstrip("0") if row[7] else None,
+        "carousel_images":     json.loads(row[8]) if row[8] else [],
+        "carousel_punchlines": json.loads(row[9]) if row[9] else [],
     }
     return render_template("article.html", article=article)
 
@@ -2595,10 +2598,8 @@ def admin_article_generate_narrated_video(article_id):
             for i, img_url in enumerate(images):
                 # Resolve image URL to local file path
                 # img_url is like "/static/articles/3/carousel/image_1.png"
-                img_path = Path(img_url.lstrip("/"))
-                if not img_path.exists():
-                    # Try relative to app root
-                    img_path = Path("static") / Path(img_url).relative_to("/static")
+                u = img_url.lstrip("/")
+                img_path = Path(u) if u.startswith("static/") else Path("static") / u
                 if not img_path.exists():
                     yield sse("error", {"message": f"Image not found: {img_url}"})
                     return
