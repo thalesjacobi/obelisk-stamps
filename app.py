@@ -292,6 +292,50 @@ def execute(sql, params=None):
     return last_id
 
 
+def init_articles_table():
+    """Create the articles table if it doesn't exist."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS articles (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            slug VARCHAR(255) UNIQUE NOT NULL,
+            title VARCHAR(500) NOT NULL,
+            subtitle VARCHAR(500),
+            content LONGTEXT,
+            excerpt VARCHAR(1000),
+            image_url VARCHAR(1000),
+            is_published BOOLEAN DEFAULT FALSE,
+            published_at DATETIME NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_slug (slug),
+            INDEX idx_published (is_published, published_at DESC)
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+try:
+    init_articles_table()
+except Exception as e:
+    print(f"WARNING: Could not initialise articles table: {e}")
+
+
+def log_activity(user_id, activity_type, description=None, metadata=None):
+    """Log a user activity. Silently fails to avoid disrupting the main flow."""
+    try:
+        execute(
+            "INSERT INTO user_activity (user_id, activity_type, description, metadata) "
+            "VALUES (%s, %s, %s, %s)",
+            (user_id, activity_type, description,
+             json.dumps(metadata) if metadata else None),
+        )
+    except Exception:
+        pass
+
+
 # ------------------------------------------------------------
 # AUTH (Flask-Login)
 # ------------------------------------------------------------
@@ -526,6 +570,7 @@ def inject_currency_helpers():
         "convert_catalogue_price": convert_catalogue_price,
         "is_admin": is_admin(),
         "contact_email": os.getenv("CONTACT_TO_EMAIL", "thalesjacobi@gmail.com"),
+        "site_url": SITE_URL,
     }
 
 
@@ -544,10 +589,47 @@ def about():
     return render_template("about.html")
 
 
+@app.route("/articles")
+def articles():
+    rows = query_all(
+        "SELECT id, slug, title, subtitle, excerpt, image_url, published_at "
+        "FROM articles WHERE is_published = TRUE ORDER BY published_at DESC"
+    )
+    article_list = [
+        {
+            "id": r[0], "slug": r[1], "title": r[2], "subtitle": r[3],
+            "excerpt": r[4], "image_url": r[5],
+            "published_at": r[6].strftime("%d %B %Y").lstrip("0") if r[6] else None,
+        }
+        for r in rows
+    ]
+    return render_template("articles.html", articles=article_list)
+
+
+@app.route("/articles/<slug>")
+def article_view(slug):
+    row = query_one(
+        "SELECT id, slug, title, subtitle, content, excerpt, image_url, published_at "
+        "FROM articles WHERE slug = %s AND is_published = TRUE",
+        (slug,),
+    )
+    if not row:
+        return render_template("404.html"), 404
+    article = {
+        "id": row[0], "slug": row[1], "title": row[2], "subtitle": row[3],
+        "content": row[4], "excerpt": row[5] or "",
+        "image_url": row[6],
+        "published_at": row[7].strftime("%d %B %Y").lstrip("0") if row[7] else None,
+    }
+    return render_template("article.html", article=article)
+
+
 @app.route("/catalogue")
 def catalogue():
     catalogue_items = query_all("SELECT * FROM catalogue")
     currency = get_active_currency()
+    if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
+        log_activity(current_user.id, "page_view", "Viewed catalogue", {"page": "/catalogue"})
     return render_template("catalogue.html", catalogue_items=catalogue_items, user_currency=currency)
 
 
@@ -689,6 +771,9 @@ def chat():
             max_tokens=400,
         )
         assistant_reply = response.choices[0].message.content
+        if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
+            log_activity(current_user.id, "chatbot_message", "Sent chatbot message",
+                         {"message_length": len(user_message)})
         return jsonify({"reply": assistant_reply})
     except _openai_module.RateLimitError:
         return jsonify({"error": "The chatbot is busy. Please try again in a moment."}), 429
@@ -836,6 +921,7 @@ def _handle_oauth_callback():
         user = User(user_id, username, email, name, 1, picture_bytes, detected_currency, detected_country)
 
     login_user(user)
+    log_activity(user.id, "login", f"{user.name} logged in")
 
     # Retrieve return URL from OAuth state parameter
     next_url = None
@@ -872,6 +958,8 @@ def update_currency():
     )
     current_user.currency = currency
     current_user.currency_locked = True
+    log_activity(current_user.id, "currency_changed", f"Changed currency to {currency}",
+                 {"currency": currency})
     return jsonify({"success": True, "currency": currency})
 
 
@@ -967,6 +1055,10 @@ def predict():
             }), response.status_code
 
         result = response.json()
+
+        if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
+            log_activity(current_user.id, "stamp_identified", "Used Stamp Quest AI",
+                         {"result_count": len(result.get("matches", result.get("stamps", [])))})
 
         # Process the response to add currency conversion
         if result.get("multi_stamp"):
@@ -1099,6 +1191,8 @@ def add_to_album():
                 data.get("similarity"),
             ),
         )
+        log_activity(current_user.id, "stamp_saved", f"Saved stamp: {data.get('title', 'Unknown')}",
+                     {"stamp_id": stamp_id, "title": data.get("title"), "country": data.get("country")})
         return jsonify({"success": True, "stamp_id": stamp_id})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1118,6 +1212,8 @@ def delete_from_album(stamp_id):
         return jsonify({"error": "Stamp not found"}), 404
 
     execute("DELETE FROM user_stamps WHERE id = %s", (stamp_id,))
+    log_activity(current_user.id, "stamp_deleted", "Removed stamp from album",
+                 {"stamp_id": stamp_id})
     flash("Stamp removed from your album.", "success")
     return redirect(url_for("my_album"))
 
@@ -1193,6 +1289,9 @@ def add_to_cart(catalogue_id):
             (current_user.id, catalogue_id),
         )
 
+    log_activity(current_user.id, "add_to_cart", f"Added {item[1]} to cart",
+                 {"catalogue_id": catalogue_id, "title": item[1]})
+
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         count = get_cart_count(current_user.id)
         return jsonify({"success": True, "cart_count": count, "message": f"{item[1]} added to cart"})
@@ -1218,6 +1317,8 @@ def remove_from_cart(cart_item_id):
         return redirect(url_for("cart"))
 
     execute("DELETE FROM cart_items WHERE id = %s", (cart_item_id,))
+    log_activity(current_user.id, "remove_from_cart", "Removed item from cart",
+                 {"cart_item_id": cart_item_id})
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         count = get_cart_count(current_user.id)
@@ -1430,6 +1531,9 @@ def _create_order_from_session(session):
     # Clear cart
     execute("DELETE FROM cart_items WHERE user_id = %s", (user_id,))
 
+    log_activity(user_id, "order_placed", f"Order #{order_id} placed",
+                 {"order_id": order_id, "total": float(total), "currency": order_currency})
+
     return order_id
 
 
@@ -1599,6 +1703,308 @@ def admin_currency_save():
         return jsonify({"success": True, "message": f"Saved {len(data['rates'])} rate(s)."})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ── Admin: User Management ──────────────────────────────────
+
+@app.route("/admin/users")
+@login_required
+@admin_required
+def admin_users():
+    """Show all users in the admin panel."""
+    users = query_all(
+        "SELECT id, username, email, name, active, currency, country, "
+        "currency_locked, date_created FROM users ORDER BY id"
+    )
+    return render_template("admin.html", active_tab="users", users=users)
+
+
+@app.route("/admin/users/<int:user_id>")
+@login_required
+@admin_required
+def admin_user_detail(user_id):
+    """Return a single user's editable fields as JSON."""
+    row = query_one(
+        "SELECT id, username, email, name, active, currency, country, "
+        "currency_locked FROM users WHERE id = %s",
+        (user_id,),
+    )
+    if not row:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({
+        "id": row[0],
+        "username": row[1],
+        "email": row[2],
+        "name": row[3],
+        "active": bool(row[4]),
+        "currency": row[5],
+        "country": row[6] or "",
+        "currency_locked": bool(row[7]),
+    })
+
+
+@app.route("/admin/users/<int:user_id>/save", methods=["POST"])
+@login_required
+@admin_required
+def admin_user_save(user_id):
+    """Update a user's fields from the admin panel."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    # Validate that user exists
+    existing = query_one("SELECT id FROM users WHERE id = %s", (user_id,))
+    if not existing:
+        return jsonify({"error": "User not found"}), 404
+
+    # Build update fields
+    allowed = {"username", "email", "name", "active", "currency", "country", "currency_locked"}
+    updates = []
+    values = []
+    for field in allowed:
+        if field in data:
+            val = data[field]
+            if field == "active":
+                val = 1 if val else 0
+            elif field == "currency_locked":
+                val = 1 if val else 0
+            elif field == "currency":
+                val = str(val).upper().strip()
+                if val not in CURRENCY_SYMBOLS:
+                    return jsonify({"error": f"Invalid currency: {val}"}), 400
+            else:
+                val = str(val).strip()
+            updates.append(f"{field} = %s")
+            values.append(val)
+
+    if not updates:
+        return jsonify({"error": "No valid fields to update"}), 400
+
+    values.append(user_id)
+    try:
+        execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE id = %s",
+            tuple(values),
+        )
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/admin/users/<int:user_id>/activity")
+@login_required
+@admin_required
+def admin_user_activity(user_id):
+    """Return recent activity for a user as JSON (paginated)."""
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    per_page = min(per_page, 100)
+    offset = (page - 1) * per_page
+
+    rows = query_all(
+        "SELECT id, activity_type, description, metadata, created_at "
+        "FROM user_activity WHERE user_id = %s "
+        "ORDER BY created_at DESC LIMIT %s OFFSET %s",
+        (user_id, per_page, offset),
+    )
+
+    total_row = query_one(
+        "SELECT COUNT(*) FROM user_activity WHERE user_id = %s",
+        (user_id,),
+    )
+    total = total_row[0] if total_row else 0
+
+    activities = []
+    for r in rows:
+        meta = None
+        if r[3]:
+            try:
+                meta = json.loads(r[3]) if isinstance(r[3], str) else r[3]
+            except (json.JSONDecodeError, TypeError):
+                meta = None
+        activities.append({
+            "id": r[0],
+            "activity_type": r[1],
+            "description": r[2],
+            "metadata": meta,
+            "created_at": r[4].strftime("%d %b %Y %H:%M") if r[4] else None,
+        })
+
+    return jsonify({
+        "activities": activities,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": (total + per_page - 1) // per_page if total > 0 else 0,
+    })
+
+
+# ------------------------------------------------------------
+# ADMIN — ARTICLES
+# ------------------------------------------------------------
+@app.route("/admin/articles")
+@login_required
+@admin_required
+def admin_articles():
+    rows = query_all(
+        "SELECT id, title, slug, is_published, published_at, updated_at "
+        "FROM articles ORDER BY updated_at DESC"
+    )
+    article_list = [
+        {
+            "id": r[0], "title": r[1], "slug": r[2],
+            "is_published": bool(r[3]),
+            "published_at": r[4].strftime("%d %b %Y") if r[4] else None,
+            "updated_at": r[5].strftime("%d %b %Y %H:%M") if r[5] else None,
+        }
+        for r in rows
+    ]
+    return render_template("admin.html", active_tab="articles", articles=article_list)
+
+
+@app.route("/admin/articles/new")
+@login_required
+@admin_required
+def admin_article_new():
+    return render_template("article_edit.html", article=None)
+
+
+@app.route("/admin/articles/new", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_create():
+    data = request.get_json()
+    slug = data.get("slug", "").strip()
+    title = data.get("title", "").strip()
+    if not slug or not title:
+        return jsonify({"error": "Title and slug are required"}), 400
+    is_published = bool(data.get("is_published", False))
+    published_at_sql = "NOW()" if is_published else "NULL"
+    try:
+        article_id = execute(
+            f"INSERT INTO articles (slug, title, subtitle, content, excerpt, image_url, is_published, published_at) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, {published_at_sql if is_published else 'NULL'})",
+            (slug, title, data.get("subtitle", ""), data.get("content", ""),
+             data.get("excerpt", ""), data.get("image_url", ""), is_published),
+        )
+        return jsonify({"success": True, "id": article_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/edit")
+@login_required
+@admin_required
+def admin_article_edit(article_id):
+    row = query_one(
+        "SELECT id, slug, title, subtitle, content, excerpt, image_url, is_published, published_at "
+        "FROM articles WHERE id = %s",
+        (article_id,),
+    )
+    if not row:
+        flash("Article not found.", "danger")
+        return redirect(url_for("admin_articles"))
+    article = {
+        "id": row[0], "slug": row[1], "title": row[2], "subtitle": row[3],
+        "content": row[4] or "", "excerpt": row[5] or "",
+        "image_url": row[6] or "", "is_published": bool(row[7]),
+        "published_at": row[8].strftime("%d %b %Y") if row[8] else None,
+    }
+    return render_template("article_edit.html", article=article)
+
+
+@app.route("/admin/articles/<int:article_id>/save", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_save(article_id):
+    data = request.get_json()
+    slug = data.get("slug", "").strip()
+    title = data.get("title", "").strip()
+    if not slug or not title:
+        return jsonify({"error": "Title and slug are required"}), 400
+    is_published = bool(data.get("is_published", False))
+    # Set published_at only on first publish (don't overwrite existing)
+    try:
+        existing = query_one("SELECT is_published, published_at FROM articles WHERE id = %s", (article_id,))
+        if not existing:
+            return jsonify({"error": "Article not found"}), 404
+        was_published, existing_published_at = existing
+        if is_published and not was_published and not existing_published_at:
+            # First time publishing
+            execute(
+                "UPDATE articles SET slug=%s, title=%s, subtitle=%s, content=%s, excerpt=%s, "
+                "image_url=%s, is_published=%s, published_at=NOW() WHERE id=%s",
+                (slug, title, data.get("subtitle", ""), data.get("content", ""),
+                 data.get("excerpt", ""), data.get("image_url", ""), is_published, article_id),
+            )
+        else:
+            execute(
+                "UPDATE articles SET slug=%s, title=%s, subtitle=%s, content=%s, excerpt=%s, "
+                "image_url=%s, is_published=%s WHERE id=%s",
+                (slug, title, data.get("subtitle", ""), data.get("content", ""),
+                 data.get("excerpt", ""), data.get("image_url", ""), is_published, article_id),
+            )
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_delete(article_id):
+    try:
+        execute("DELETE FROM articles WHERE id = %s", (article_id,))
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ------------------------------------------------------------
+# SEO: robots.txt + sitemap.xml
+# ------------------------------------------------------------
+@app.route("/robots.txt")
+def robots_txt():
+    from flask import Response
+    site = SITE_URL or request.url_root.rstrip("/")
+    content = f"User-agent: *\nAllow: /\nSitemap: {site}/sitemap.xml\n"
+    return Response(content, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    from flask import Response
+    site = SITE_URL or request.url_root.rstrip("/")
+    static_pages = [
+        ("",                "weekly",  "1.0"),
+        ("/about",          "monthly", "0.7"),
+        ("/catalogue",      "weekly",  "0.9"),
+        ("/articles",       "weekly",  "0.8"),
+        ("/contact",        "monthly", "0.5"),
+        ("/stamp-quest-ai", "monthly", "0.6"),
+    ]
+    rows = query_all(
+        "SELECT slug, updated_at FROM articles WHERE is_published = TRUE ORDER BY updated_at DESC"
+    )
+    urls = []
+    for path, freq, pri in static_pages:
+        urls.append(
+            f"  <url>\n    <loc>{site}{path}</loc>\n"
+            f"    <changefreq>{freq}</changefreq>\n    <priority>{pri}</priority>\n  </url>"
+        )
+    for slug, updated_at in rows:
+        lastmod = f"\n    <lastmod>{updated_at.strftime('%Y-%m-%d')}</lastmod>" if updated_at else ""
+        urls.append(
+            f"  <url>\n    <loc>{site}/articles/{slug}</loc>{lastmod}\n"
+            f"    <changefreq>monthly</changefreq>\n    <priority>0.7</priority>\n  </url>"
+        )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "\n".join(urls)
+        + "\n</urlset>"
+    )
+    return Response(xml, mimetype="application/xml")
 
 
 # ------------------------------------------------------------

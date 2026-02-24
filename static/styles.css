@@ -57,7 +57,9 @@ p, .lead, label, span, a, li {
     border-bottom: 2px solid #fff;
     font-weight: 500;
 }
-
+.nav-link {
+    margin: 0 10px 0 0;
+}
 /* Sidebar active item styling */
 .list-group-item.active-sidebar {
     background-color: #f8f9fa;
@@ -109,8 +111,8 @@ footer {
     border-radius: 5px;
 }
 form {
-    max-width: 600px;
-    /*margin: 0 auto;*/
+    /*max-width: 600px;
+    margin: 0 auto;*/
 }
 
 /* LOGO */

@@ -1,0 +1,59 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ article.title }} - Obelisk Stamps{% endblock %}
+{% block meta_description %}{{ article.excerpt or article.title }}{% endblock %}
+{% block og_type %}article{% endblock %}
+{% block og_title %}{{ article.title }} – Obelisk Stamps{% endblock %}
+{% block og_description %}{{ article.excerpt or article.title }}{% endblock %}
+{% block og_image %}{{ article.image_url if article.image_url else url_for('static', filename='logo-374x381.png', _external=True) }}{% endblock %}
+{% block twitter_title %}{{ article.title }}{% endblock %}
+{% block twitter_description %}{{ article.excerpt or article.title }}{% endblock %}
+{% block twitter_image %}{{ article.image_url if article.image_url else url_for('static', filename='logo-374x381.png', _external=True) }}{% endblock %}
+
+{% block head %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": {{ article.title | tojson }},
+  "description": {{ (article.excerpt or '') | tojson }},
+  "image": {{ (article.image_url or '') | tojson }},
+  "datePublished": {{ (article.published_at or '') | tojson }},
+  "publisher": {
+    "@type": "Organization",
+    "name": "Obelisk Stamps",
+    "logo": "{{ url_for('static', filename='logo-374x381.png', _external=True) }}"
+  }
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<article class="mx-auto" style="max-width: 800px;">
+
+    <a href="/articles" class="text-decoration-none text-muted mb-3 d-inline-block">&larr; All Articles</a>
+
+    <h1 class="mt-2 mb-2">{{ article.title }}</h1>
+    {% if article.subtitle %}
+    <p class="lead text-muted">{{ article.subtitle }}</p>
+    {% endif %}
+    <p class="text-muted mb-4"><small>{{ article.published_at }} &middot; Obelisk Stamps</small></p>
+
+    {% if article.image_url %}
+    <figure class="figure mb-4">
+        <img src="{{ article.image_url }}"
+             class="figure-img img-fluid rounded shadow-sm w-100"
+             alt="{{ article.title }}"
+             style="max-height: 420px; object-fit: cover;">
+    </figure>
+    {% endif %}
+
+    <div class="article-body" style="font-size: 1.1rem; line-height: 1.8;">
+        {{ article.content | safe }}
+    </div>
+
+    <hr class="my-5">
+    <a href="/articles" class="btn btn-outline-secondary mb-4">&larr; Back to Articles</a>
+
+</article>
+{% endblock %}

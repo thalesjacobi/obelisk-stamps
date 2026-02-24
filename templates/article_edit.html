@@ -1,0 +1,310 @@
+{% extends "layout.html" %}
+
+{% block title %}{% if article %}Edit Article{% else %}New Article{% endif %} - Obelisk Stamps Admin{% endblock %}
+
+{% block head %}
+<!-- Quill WYSIWYG -->
+<link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+<style>
+    #quill-editor { min-height: 600px; font-size: 1rem; }
+    #source-editor { min-height: 600px; font-family: monospace; font-size: 0.85rem; resize: vertical; }
+    .ql-toolbar { border-radius: 4px 4px 0 0; }
+    .ql-container { border-radius: 0 0 4px 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+    <a href="/admin/articles" class="text-decoration-none text-muted me-3">&larr; All Articles</a>
+    <h4 class="mb-0">{% if article %}Edit Article{% else %}New Article{% endif %}</h4>
+    {% if article and article.is_published %}
+        <a href="/articles/{{ article.slug }}" target="_blank" class="btn btn-outline-secondary btn-sm ms-auto">View Live</a>
+    {% endif %}
+</div>
+
+<form id="article-form" data-article-id="{{ article.id if article else '' }}">
+
+    <!-- Settings card (full width, above title) -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <!-- Row 1: Published | Slug | Cover Image -->
+            <div class="row g-3 align-items-end mb-3">
+
+                <!-- Published toggle -->
+                <div class="col-auto">
+                    <div class="form-check form-switch mb-1">
+                        <input class="form-check-input" type="checkbox" id="is-published" {% if article and article.is_published %}checked{% endif %}>
+                        <label class="form-check-label fw-semibold" for="is-published">Published</label>
+                    </div>
+                    {% if article and article.published_at %}
+                        <div class="text-muted small">{{ article.published_at }}</div>
+                    {% else %}
+                        <div class="text-muted small">Draft</div>
+                    {% endif %}
+                </div>
+
+                <!-- Slug -->
+                <div class="col">
+                    <label class="form-label fw-semibold mb-1">Slug <span class="text-muted fw-normal small">(URL path)</span></label>
+                    <div class="input-group">
+                        <span class="input-group-text text-muted">/articles/</span>
+                        <input type="text" id="slug" class="form-control" value="{{ article.slug if article else '' }}" placeholder="my-article">
+                    </div>
+                </div>
+
+                <!-- Cover image URL -->
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold mb-1">Cover Image URL</label>
+                    <input type="url" id="image-url" class="form-control" value="{{ article.image_url if article else '' }}" placeholder="https://...">
+                </div>
+
+            </div>
+
+            <!-- Row 2: Excerpt | Image preview -->
+            <div class="row g-3 align-items-start">
+
+                <!-- Excerpt -->
+                <div class="col">
+                    <label class="form-label fw-semibold mb-1">Excerpt</label>
+                    <textarea id="excerpt" class="form-control" rows="3" placeholder="Short summary shown on the listing page...">{{ article.excerpt if article else '' }}</textarea>
+                </div>
+
+                <!-- Image preview -->
+                <div class="col-md-4">
+                    <div id="image-preview" class="{% if not (article and article.image_url) %}d-none{% endif %}">
+                        <label class="form-label fw-semibold mb-1">Preview</label>
+                        <img src="{{ article.image_url if article and article.image_url else '' }}" class="img-fluid rounded" alt="Cover preview" style="max-height:100px; object-fit:cover; width:100%;">
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Title -->
+    <div class="mb-3">
+        <input type="text" id="title" class="form-control form-control-lg" value="{{ article.title if article else '' }}" placeholder="Article title..." oninput="autoSlug(this.value)">
+    </div>
+
+    <!-- Subtitle -->
+    <div class="mb-3">
+        <input type="text" id="subtitle" class="form-control" value="{{ article.subtitle if article else '' }}" placeholder="Short descriptive subtitle...">
+    </div>
+
+    <!-- Content label + toolbar buttons -->
+    <div class="d-flex align-items-center justify-content-between mb-2">
+        <label class="form-label fw-semibold mb-0">Content</label>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#gpt-modal">
+                Paste from ChatGPT
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="toggle-source-btn" onclick="toggleSource()">
+                Source
+            </button>
+        </div>
+    </div>
+
+    <!-- Quill WYSIWYG editor -->
+    <div id="quill-editor">{{ article.content | safe if article else '' }}</div>
+
+    <!-- Raw HTML source view (hidden by default) -->
+    <textarea id="source-editor" class="form-control d-none" spellcheck="false"></textarea>
+
+    <!-- Save / Delete -->
+    <div class="d-flex gap-2 justify-content-end mt-4">
+        {% if article %}
+        <button type="button" class="btn btn-outline-danger" onclick="deleteArticle()">Delete</button>
+        {% endif %}
+        <button type="button" class="btn btn-primary px-4" onclick="saveArticle()">Save</button>
+    </div>
+
+    <div id="save-status" class="mt-3 alert d-none"></div>
+
+</form>
+
+<!-- ChatGPT Paste Modal -->
+<div class="modal fade" id="gpt-modal" tabindex="-1" aria-labelledby="gpt-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="gpt-modal-label">Paste from ChatGPT</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">Paste the raw markdown text from ChatGPT below. Click <strong>Convert &amp; Load</strong> to convert it to HTML and load it into the editor.</p>
+                <textarea id="gpt-input" class="form-control" rows="16" placeholder="Paste ChatGPT markdown here..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="convertAndLoad()">Convert &amp; Load</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Quill + marked.js -->
+<script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+const ARTICLE_ID = parseInt(document.getElementById('article-form').dataset.articleId) || null;
+const SAVE_URL = ARTICLE_ID
+    ? '/admin/articles/' + ARTICLE_ID + '/save'
+    : '/admin/articles/new';
+
+// Initialise Quill
+const quill = new Quill('#quill-editor', {
+    theme: 'snow',
+    modules: {
+        toolbar: [
+            [{ header: [2, 3, 4, false] }],
+            ['bold', 'italic', 'underline', 'strike'],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            ['blockquote', 'link', 'image'],
+            ['clean']
+        ]
+    }
+});
+
+// ---- Slug auto-generation ----
+let slugManuallyEdited = {{ 'true' if article else 'false' }};
+document.getElementById('slug').addEventListener('input', () => { slugManuallyEdited = true; });
+
+function autoSlug(title) {
+    if (slugManuallyEdited) return;
+    document.getElementById('slug').value = title
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-');
+}
+
+// ---- Image preview ----
+document.getElementById('image-url').addEventListener('input', function() {
+    const preview = document.getElementById('image-preview');
+    const img = preview.querySelector('img');
+    if (this.value) {
+        img.src = this.value;
+        preview.classList.remove('d-none');
+    } else {
+        preview.classList.add('d-none');
+    }
+});
+
+// ---- Source / Visual toggle ----
+let sourceMode = false;
+
+function toggleSource() {
+    const sourceEl = document.getElementById('source-editor');
+    const btn = document.getElementById('toggle-source-btn');
+    const editorContainer = document.getElementById('quill-editor').parentElement;
+
+    if (!sourceMode) {
+        // Switch to source view: copy HTML from Quill into textarea
+        sourceEl.value = quill.root.innerHTML;
+        document.getElementById('quill-editor').classList.add('d-none');
+        sourceEl.classList.remove('d-none');
+        btn.textContent = 'Visual';
+        btn.classList.add('btn-secondary');
+        btn.classList.remove('btn-outline-secondary');
+    } else {
+        // Switch back to visual: set Quill content from textarea
+        quill.root.innerHTML = sourceEl.value;
+        sourceEl.classList.add('d-none');
+        document.getElementById('quill-editor').classList.remove('d-none');
+        btn.textContent = 'Source';
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-outline-secondary');
+    }
+    sourceMode = !sourceMode;
+}
+
+// ---- ChatGPT markdown convert ----
+function convertAndLoad() {
+    const md = document.getElementById('gpt-input').value.trim();
+    if (!md) return;
+
+    // marked.js converts markdown to HTML
+    const html = marked.parse(md);
+
+    // Load into Quill
+    if (sourceMode) {
+        document.getElementById('source-editor').value = html;
+    } else {
+        quill.root.innerHTML = html;
+    }
+
+    // Close modal and clear textarea
+    bootstrap.Modal.getInstance(document.getElementById('gpt-modal')).hide();
+    document.getElementById('gpt-input').value = '';
+}
+
+// ---- Get current HTML content ----
+function getContent() {
+    if (sourceMode) {
+        return document.getElementById('source-editor').value;
+    }
+    return quill.root.innerHTML;
+}
+
+// ---- Save ----
+function saveArticle() {
+    const payload = {
+        title:       document.getElementById('title').value.trim(),
+        slug:        document.getElementById('slug').value.trim(),
+        subtitle:    document.getElementById('subtitle').value.trim(),
+        content:     getContent(),
+        excerpt:     document.getElementById('excerpt').value.trim(),
+        image_url:   document.getElementById('image-url').value.trim(),
+        is_published: document.getElementById('is-published').checked,
+    };
+
+    if (!payload.title || !payload.slug) {
+        showStatus('Title and slug are required.', false);
+        return;
+    }
+
+    fetch(SAVE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showStatus('Saved successfully.', true);
+            // If this was a new article, redirect to its edit page
+            if (!ARTICLE_ID && data.id) {
+                setTimeout(() => { window.location.href = '/admin/articles/' + data.id + '/edit'; }, 800);
+            }
+        } else {
+            showStatus(data.error || 'Save failed.', false);
+        }
+    })
+    .catch(err => showStatus('Network error: ' + err.message, false));
+}
+
+// ---- Delete ----
+function deleteArticle() {
+    if (!ARTICLE_ID) return;
+    if (!confirm('Delete this article? This cannot be undone.')) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/delete', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) window.location.href = '/admin/articles';
+            else showStatus(data.error || 'Delete failed.', false);
+        })
+        .catch(err => showStatus('Network error: ' + err.message, false));
+}
+
+// ---- Status message ----
+function showStatus(msg, success) {
+    const el = document.getElementById('save-status');
+    el.className = 'mt-3 alert ' + (success ? 'alert-success' : 'alert-danger');
+    el.textContent = msg;
+    el.classList.remove('d-none');
+    if (success) setTimeout(() => el.classList.add('d-none'), 3000);
+}
+</script>
+{% endblock %}
