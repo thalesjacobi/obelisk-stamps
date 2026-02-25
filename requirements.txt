@@ -42,3 +42,6 @@ chromadb>=0.4.0
 # Video generation (narrated MP4 + AI explainer)
 imageio-ffmpeg>=0.5.1
 runwayml>=0.1.0
+
+# Google Cloud Storage (persistent file hosting)
+google-cloud-storage>=2.10.0

@@ -106,6 +106,23 @@ else:
     if not RUNWAY_API_KEY:
         print("INFO: RUNWAY_API_KEY not set — AI video generation disabled")
 
+# --- Google Cloud Storage (optional — for persistent file hosting) ---
+_gcs_bucket = None
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "")
+GCS_PATH_PREFIX = os.getenv("GCS_PATH_PREFIX", "").strip("/")
+
+if GCS_BUCKET_NAME:
+    try:
+        from google.cloud import storage as _gcs_storage
+        _gcs_client = _gcs_storage.Client()
+        _gcs_bucket = _gcs_client.bucket(GCS_BUCKET_NAME)
+        print(f"GCS: Connected to bucket '{GCS_BUCKET_NAME}'")
+    except Exception as _e:
+        print(f"WARNING: GCS init failed: {_e} — falling back to local storage")
+        _gcs_bucket = None
+else:
+    print("GCS: GCS_BUCKET_NAME not set — using local storage")
+
 # --- Knowledge Base (ChromaDB) ---
 KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb")
 
@@ -279,6 +296,86 @@ BASE_DIR = Path(__file__).resolve().parent
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(BASE_DIR / "uploads")))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ------------------------------------------------------------
+# GCS HELPERS
+# ------------------------------------------------------------
+def _gcs_object_name(name):
+    """Prepend the optional GCS_PATH_PREFIX to an object name."""
+    return f"{GCS_PATH_PREFIX}/{name}" if GCS_PATH_PREFIX else name
+
+
+def upload_to_gcs(local_path, object_name, content_type=None):
+    """Upload a local file to GCS. Returns public URL or None if GCS is disabled/fails."""
+    if not _gcs_bucket:
+        return None
+    try:
+        blob = _gcs_bucket.blob(_gcs_object_name(object_name))
+        if content_type:
+            blob.content_type = content_type
+        blob.upload_from_filename(str(local_path))
+        return blob.public_url
+    except Exception as e:
+        print(f"WARNING: GCS upload failed for {object_name}: {e}")
+        return None
+
+
+def upload_bytes_to_gcs(data, object_name, content_type=None):
+    """Upload bytes to GCS. Returns public URL or None if GCS is disabled/fails."""
+    if not _gcs_bucket:
+        return None
+    try:
+        blob = _gcs_bucket.blob(_gcs_object_name(object_name))
+        if content_type:
+            blob.content_type = content_type
+        blob.upload_from_string(data)
+        return blob.public_url
+    except Exception as e:
+        print(f"WARNING: GCS upload failed for {object_name}: {e}")
+        return None
+
+
+def resolve_image_to_local_path(img_url):
+    """
+    Given an image URL from the DB (GCS URL, relative path, or /static/ path),
+    return a local Path to the file — downloading from GCS if needed.
+    Returns None if the file cannot be resolved.
+    """
+    if not img_url:
+        return None
+
+    # Full GCS URL → download to local cache
+    if img_url.startswith("https://storage.googleapis.com/"):
+        # Extract object path after the bucket name
+        marker = f"/{GCS_BUCKET_NAME}/"
+        idx = img_url.find(marker)
+        if idx >= 0:
+            gcs_name = img_url[idx + len(marker):]
+            # Strip prefix if present
+            prefix = GCS_PATH_PREFIX + "/" if GCS_PATH_PREFIX else ""
+            if prefix and gcs_name.startswith(prefix):
+                gcs_name = gcs_name[len(prefix):]
+            local_path = Path("static") / gcs_name
+            if local_path.exists():
+                return local_path
+            # Download from GCS
+            if _gcs_bucket:
+                try:
+                    full_name = _gcs_object_name(gcs_name)
+                    blob = _gcs_bucket.blob(full_name)
+                    local_path.parent.mkdir(parents=True, exist_ok=True)
+                    blob.download_to_filename(str(local_path))
+                    return local_path
+                except Exception as e:
+                    print(f"WARNING: GCS download failed for {gcs_name}: {e}")
+        return None
+
+    # Local path resolution (existing pattern)
+    u = img_url.lstrip("/")
+    img_path = Path(u) if u.startswith("static/") else Path("static") / u
+    return img_path if img_path.exists() else None
+
 
 # ------------------------------------------------------------
 # DATABASE HELPERS
@@ -2095,7 +2192,10 @@ def admin_article_carousel_images(article_id):
     prompts = json.loads(row[0]) if row[0] else []
     images = json.loads(row[1]) if row[1] else []
     punchlines = json.loads(row[2]) if row[2] else []
-    urls = [url_for("static", filename=p) if p else None for p in images]
+    urls = [
+        p if (p and p.startswith("http")) else (url_for("static", filename=p) if p else None)
+        for p in images
+    ]
     return jsonify({"images": urls, "prompts": prompts, "punchlines": punchlines})
 
 
@@ -2262,12 +2362,19 @@ def admin_article_generate_carousel(article_id):
                 )
                 dl = http_requests.get(img_resp.data[0].url, timeout=30)
                 dl.raise_for_status()
-                rel_path = f"articles/{article_id}/carousel/image_{slot_num}.png"
-                (carousel_dir / f"image_{slot_num}.png").write_bytes(dl.content)
-                merged_i[slot_idx]  = rel_path
+                local_filename = f"image_{slot_num}.png"
+                gcs_object_name = f"articles/{article_id}/carousel/{local_filename}"
+                (carousel_dir / local_filename).write_bytes(dl.content)
+                gcs_url = upload_bytes_to_gcs(dl.content, gcs_object_name, content_type="image/png")
+                if gcs_url:
+                    merged_i[slot_idx] = gcs_url
+                    static_url = gcs_url
+                else:
+                    rel_path = f"articles/{article_id}/carousel/{local_filename}"
+                    merged_i[slot_idx] = rel_path
+                    static_url = url_for("static", filename=rel_path)
                 merged_p[slot_idx]  = prompt
                 merged_pl[slot_idx] = punchline
-                static_url = url_for("static", filename=rel_path)
                 ok += 1
                 # Persist each image immediately so nothing is lost if the stream
                 # is cut by a proxy before the final batch save at step 4.
@@ -2446,12 +2553,13 @@ def admin_article_regenerate_carousel_image(article_id):
     import time as _time
     ts = int(_time.time())
     filename = f"image_{index + 1}_{ts}.png"
-    rel_path = f"articles/{article_id}/carousel/{filename}"
+    gcs_object_name = f"articles/{article_id}/carousel/{filename}"
     (carousel_dir / filename).write_bytes(dl.content)
+    gcs_url = upload_bytes_to_gcs(dl.content, gcs_object_name, content_type="image/png")
 
     # ── Archive old values + replace current slot ──
     prompts[index] = new_prompt
-    images[index] = rel_path
+    images[index] = gcs_url if gcs_url else f"articles/{article_id}/carousel/{filename}"
     punchlines[index] = new_punchline
 
     if old_image is not None:
@@ -2470,7 +2578,7 @@ def admin_article_regenerate_carousel_image(article_id):
     except Exception as e:
         return jsonify({"error": f"DB save failed: {e}"}), 500
 
-    static_url = url_for("static", filename=rel_path)
+    static_url = gcs_url if gcs_url else url_for("static", filename=f"articles/{article_id}/carousel/{filename}")
     return jsonify({"url": static_url, "prompt": new_prompt, "punchline": new_punchline})
 
 
@@ -2606,9 +2714,8 @@ def _narrated_video_worker(article_id, cfg):
         for i, img_url in enumerate(images):
             execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                     (f"running:clip:{i+1}/{n_slides}", article_id))
-            u = img_url.lstrip("/")
-            img_path = Path(u) if u.startswith("static/") else Path("static") / u
-            if not img_path.exists():
+            img_path = resolve_image_to_local_path(img_url)
+            if not img_path or not img_path.exists():
                 execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                         (f"error:Image not found: {img_url}", article_id))
                 return
@@ -2667,8 +2774,12 @@ def _narrated_video_worker(article_id, cfg):
                     (f"error:FFmpeg concat failed: {result.stderr[-200:]}", article_id))
             return
 
-        # ── 6. Save run to history + clear status ──────────────────────────────
-        static_url = "/" + str(out_path).replace("\\", "/")
+        # ── 6. Upload to GCS + save run to history ──────────────────────────────
+        gcs_obj = f"articles/{article_id}/video/narrated_{ts}.mp4"
+        gcs_url = upload_to_gcs(out_path, gcs_obj, content_type="video/mp4")
+        static_url = gcs_url if gcs_url else ("/" + str(out_path).replace("\\", "/"))
+        if gcs_url:
+            temp_files.append(out_path)  # clean up local copy; it's in GCS now
         from datetime import datetime
         ts_label = datetime.now().strftime("%d %b %Y, %H:%M").lstrip("0")
         run_obj  = {
@@ -2755,17 +2866,19 @@ def _ai_video_worker(article_id, images, prompts, ts):
         for i, img_url in enumerate(images):
             prompt_text = prompts[i] if i < len(prompts) else ""
 
-            # Resolve image path
-            u = img_url.lstrip("/")
-            img_path = Path(u) if u.startswith("static/") else Path("static") / u
-
-            if SITE_URL and img_path.exists():
-                prompt_image = SITE_URL.rstrip("/") + img_url
-            elif img_path.exists():
-                img_b64 = base64.b64encode(img_path.read_bytes()).decode()
-                prompt_image = f"data:image/png;base64,{img_b64}"
+            # Resolve image — GCS URLs can be passed directly to Runway
+            if img_url.startswith("https://"):
+                prompt_image = img_url
             else:
-                continue  # skip missing image, keep going
+                img_path = resolve_image_to_local_path(img_url)
+                if img_path and img_path.exists():
+                    if SITE_URL:
+                        prompt_image = SITE_URL.rstrip("/") + "/" + str(img_path).replace("\\", "/")
+                    else:
+                        img_b64 = base64.b64encode(img_path.read_bytes()).decode()
+                        prompt_image = f"data:image/png;base64,{img_b64}"
+                else:
+                    continue  # skip missing image
 
             try:
                 task = _runway_client.image_to_video.create(
@@ -2845,8 +2958,12 @@ def _ai_video_worker(article_id, images, prompts, ts):
             )
             return
 
-        # ── Save URL + clear status ───────────────────────────────────────────
-        static_url = "/" + str(out_path).replace("\\", "/")
+        # ── Upload to GCS + save URL + clear status ─────────────────────────
+        gcs_obj = f"articles/{article_id}/video/ai_explainer_{ts}.mp4"
+        gcs_url = upload_to_gcs(out_path, gcs_obj, content_type="video/mp4")
+        static_url = gcs_url if gcs_url else ("/" + str(out_path).replace("\\", "/"))
+        if gcs_url:
+            temp_clips.append(out_path)  # clean up local copy; it's in GCS now
         execute(
             "UPDATE articles SET video_ai_url = %s, video_ai_status = NULL WHERE id = %s",
             (static_url, article_id),
