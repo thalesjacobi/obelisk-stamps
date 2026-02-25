@@ -261,6 +261,25 @@
         </div>
     </div>
 
+    <!-- Instagram Composed Preview Modal -->
+    <div class="modal fade" id="ig-preview-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" style="max-width:480px">
+            <div class="modal-content bg-black border-0">
+                <div class="modal-header border-0 pb-0 px-3 pt-2">
+                    <small class="text-white-50" style="font-size:0.7rem;letter-spacing:0.05em;">INSTAGRAM PREVIEW</small>
+                    <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal" style="font-size:0.75rem"></button>
+                </div>
+                <div class="modal-body p-2 text-center" id="ig-preview-body">
+                    <div id="ig-preview-spinner" class="py-5 text-white-50">
+                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>Loading…
+                    </div>
+                    <img id="ig-preview-img" src="" alt="Instagram preview" class="d-none w-100 rounded" style="display:block">
+                    <p id="ig-preview-error" class="d-none text-danger small mt-2 mb-0"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Carousel Edit Modal -->
     <div class="modal fade" id="carousel-edit-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
@@ -971,6 +990,41 @@ function addCarouselPlaceholder(i) {
     g.appendChild(col);
 }
 
+function openIgPreview(slideIdx) {
+    if (!ARTICLE_ID) return;
+    const modal   = new bootstrap.Modal(document.getElementById('ig-preview-modal'));
+    const spinner = document.getElementById('ig-preview-spinner');
+    const imgEl   = document.getElementById('ig-preview-img');
+    const errEl   = document.getElementById('ig-preview-error');
+
+    // Reset state
+    spinner.classList.remove('d-none');
+    imgEl.classList.add('d-none');
+    imgEl.src = '';
+    errEl.classList.add('d-none');
+    modal.show();
+
+    // Load the composited image
+    const url = '/admin/articles/' + ARTICLE_ID + '/carousel-composed/' + slideIdx;
+    fetch(url)
+        .then(r => {
+            if (!r.ok) return r.json().then(d => { throw new Error(d.error || r.statusText); });
+            return r.blob();
+        })
+        .then(blob => {
+            imgEl.src = URL.createObjectURL(blob);
+            imgEl.onload = () => {
+                spinner.classList.add('d-none');
+                imgEl.classList.remove('d-none');
+            };
+        })
+        .catch(err => {
+            spinner.classList.add('d-none');
+            errEl.textContent = 'Could not load preview: ' + err.message;
+            errEl.classList.remove('d-none');
+        });
+}
+
 function addCarouselImage(i, url, initial, prompt, punchline) {
     const g = document.getElementById('carousel-grid');
     const ph = document.getElementById('cph-' + i);
@@ -983,6 +1037,11 @@ function addCarouselImage(i, url, initial, prompt, punchline) {
     img.src = url + (initial ? '' : '?t=' + Date.now());
     img.className = 'carousel-thumb';
     img.alt = 'Slide ' + i;
+    img.title = 'Click to preview Instagram version';
+    img.style.cursor = 'pointer';
+    img.onclick = (function(slideIdx) {
+        return function() { openIgPreview(slideIdx); };
+    })(i - 1);
     col.appendChild(img);
     const btn = document.createElement('button');
     btn.type = 'button';
