@@ -2269,6 +2269,19 @@ def admin_article_generate_carousel(article_id):
                 merged_pl[slot_idx] = punchline
                 static_url = url_for("static", filename=rel_path)
                 ok += 1
+                # Persist each image immediately so nothing is lost if the stream
+                # is cut by a proxy before the final batch save at step 4.
+                try:
+                    execute(
+                        "UPDATE articles SET carousel_prompts = %s, carousel_punchlines = %s, "
+                        "carousel_images = %s, carousel_style = %s WHERE id = %s",
+                        (json.dumps(merged_p + _archived_p),
+                         json.dumps(merged_pl + _archived_pl),
+                         json.dumps(merged_i  + _archived_i),
+                         active_style, article_id),
+                    )
+                except Exception:
+                    pass  # non-fatal — step 4 will retry
                 yield f"event: image\ndata: {json.dumps({'index': slot_num, 'seq': seq, 'of': N, 'url': static_url, 'prompt': prompt, 'punchline': punchline})}\n\n"
             except _openai_module.BadRequestError as e:
                 yield f"event: error\ndata: {json.dumps({'index': slot_num, 'message': f'Content policy: {e}'})}\n\n"
