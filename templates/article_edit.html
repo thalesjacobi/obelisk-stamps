@@ -1495,6 +1495,15 @@ function previewRestart() {
 // ════════════════════════════════════════════════════════════════
 // (no abort controller needed — generation runs in a background thread)
 
+function narratedUnlock() {
+    const btn = document.getElementById('narrated-btn');
+    if (btn) btn.disabled = false;
+    const accordion = document.getElementById('narrated-runs-accordion');
+    if (!accordion || accordion.children.length === 0) {
+        document.getElementById('narrated-empty').classList.remove('d-none');
+    }
+}
+
 /* ── Build one accordion item DOM node ───────────────────────── */
 function buildRunItem(run, expandIt) {
     const fmtLabel    = run.params.format === 'vertical' ? '📱 9:16' : '⬜ 1:1';
