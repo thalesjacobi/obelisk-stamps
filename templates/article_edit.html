@@ -64,10 +64,16 @@
     .preview-layer.hidden { opacity: 0; }
     #preview-punchline {
         position: absolute; bottom: 0; left: 0; right: 0;
-        background: linear-gradient(transparent, rgba(0,0,0,0.72));
-        color: #fff; font-size: 1.15rem; font-weight: 600; line-height: 1.35;
-        padding: 2rem 1rem 0.9rem; text-align: center;
+        background: linear-gradient(transparent, rgba(0,0,0,0.65) 20%, rgba(0,0,0,0.92));
+        color: #fff; font-size: 1.75rem; font-weight: 800; line-height: 1.2;
+        padding: 5rem 1.25rem 2.8rem; text-align: left; text-transform: uppercase;
         opacity: 0; transition: opacity 0.5s ease;
+    }
+    #preview-swipe-hint {
+        position: absolute; bottom: 0.55rem; left: 0; right: 0; z-index: 4;
+        color: #FFD700; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em;
+        padding: 0 1.25rem; pointer-events: none; transition: opacity 0.3s ease;
+        opacity: 0;
     }
     #preview-counter {
         position: absolute; top: 8px; right: 10px; color: rgba(255,255,255,0.82);
@@ -356,6 +362,7 @@
                     <div id="preview-layer-a" class="preview-layer"></div>
                     <div id="preview-layer-b" class="preview-layer hidden"></div>
                     <div id="preview-punchline"></div>
+                    <div id="preview-swipe-hint">Slide right for more &raquo;&raquo;&raquo;</div>
                     <div id="preview-counter"></div>
                 </div>
                 <div id="preview-scrub"><div id="preview-scrub-fill"></div></div>
@@ -1425,6 +1432,12 @@ function _previewAdvance(idx) {
         setTimeout(() => { pl.style.opacity = '0'; }, Math.max(600, slideDur - 1500));
     } else {
         pl.style.display = 'none';
+    }
+
+    // Swipe hint: visible on all slides except the last
+    const hint = document.getElementById('preview-swipe-hint');
+    if (hint) {
+        hint.style.opacity = (_previewIdx < _previewImages.length - 1) ? '1' : '0';
     }
 
     if (_previewNextTimer) clearTimeout(_previewNextTimer);

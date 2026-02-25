@@ -382,6 +382,89 @@ def resolve_image_to_local_path(img_url):
 
 
 # ------------------------------------------------------------
+# CAROUSEL INSTAGRAM COMPOSITING
+# ------------------------------------------------------------
+_FONT_PATH = Path("static/fonts/Roboto-Bold.ttf")
+
+
+def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides):
+    """
+    Composite a dark gradient + punchline text + optional swipe hint onto a
+    carousel image.  Returns JPEG bytes.  The original img_bytes are never
+    modified — this is only called when posting to Instagram (or for preview).
+
+    Args:
+        img_bytes:    Raw bytes of the original image (PNG or JPEG).
+        punchline:    Caption text (uppercased automatically).
+        slide_index:  0-based index of this slide in the carousel.
+        total_slides: Total number of slides — swipe hint hidden on last slide.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+    import io
+
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+    w, h = img.size
+
+    # ── Dark gradient overlay (bottom ~42 % of image) ──────────────────────
+    gradient_h = int(h * 0.42)
+    gradient   = Image.new("RGBA", (w, gradient_h), (0, 0, 0, 0))
+    draw_g     = ImageDraw.Draw(gradient)
+    for y in range(gradient_h):
+        alpha = int(235 * (y / gradient_h) ** 1.6)   # smooth curve, max ≈ 235
+        draw_g.line([(0, y), (w, y)], fill=(0, 0, 0, alpha))
+    img.paste(gradient, (0, h - gradient_h), gradient)
+
+    # ── Font loading ────────────────────────────────────────────────────────
+    try:
+        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.075))
+        font_hint = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.032))
+    except Exception:
+        font_main = ImageFont.load_default(size=40)
+        font_hint = ImageFont.load_default(size=20)
+
+    draw  = ImageDraw.Draw(img)
+    pad_x = int(w * 0.06)
+
+    # ── Punchline text (white, uppercase, left-aligned, word-wrapped) ───────
+    text  = (punchline or "").upper()
+    max_w = w - pad_x * 2
+    words = text.split()
+    lines, line = [], ""
+    for word in words:
+        candidate = (line + " " + word).strip()
+        if draw.textlength(candidate, font=font_main) <= max_w:
+            line = candidate
+        else:
+            if line:
+                lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+
+    line_h       = int(font_main.size * 1.25)
+    hint_h       = int(font_hint.size * 2.4)
+    total_text_h = len(lines) * line_h + hint_h
+    text_y       = h - total_text_h - int(h * 0.04)
+
+    for line_text in lines:
+        draw.text((pad_x, text_y), line_text, font=font_main,
+                  fill=(255, 255, 255, 255))
+        text_y += line_h
+
+    # ── Swipe hint (yellow, all slides except the last) ─────────────────────
+    if slide_index < total_slides - 1:
+        hint_text = "Slide right for more »»»"
+        hint_y    = h - hint_h + int(font_hint.size * 0.4)
+        draw.text((pad_x, hint_y), hint_text, font=font_hint,
+                  fill=(255, 215, 0, 255))
+
+    # ── Return as JPEG bytes ─────────────────────────────────────────────────
+    out = io.BytesIO()
+    img.convert("RGB").save(out, format="JPEG", quality=92)
+    return out.getvalue()
+
+
+# ------------------------------------------------------------
 # DATABASE HELPERS
 # ------------------------------------------------------------
 def get_db():
@@ -2477,6 +2560,58 @@ def admin_article_archive_carousel(article_id):
         return jsonify({"error": f"DB save failed: {e}"}), 500
 
     return jsonify({"success": True, "archived": archived_count})
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-composed/<int:slide_index>")
+@login_required
+@admin_required
+def admin_article_carousel_composed(article_id, slide_index):
+    """
+    Return a composited carousel slide JPEG (gradient + punchline + swipe hint)
+    for admin preview — exactly what will be posted to Instagram.
+    Original images in GCS are never modified.
+    """
+    row = query_one(
+        "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+        (article_id,),
+    )
+    if not row:
+        return jsonify({"error": "Article not found"}), 404
+
+    images     = json.loads(row[0]) if row[0] else []
+    punchlines = json.loads(row[1]) if row[1] else []
+
+    # Only the first 10 slots are active slides
+    active_images     = [x for x in images[:10]     if x]
+    active_punchlines = [x for x in punchlines[:10] if x is not None]
+    total = len(active_images)
+
+    if slide_index < 0 or slide_index >= total:
+        return jsonify({"error": f"Slide index {slide_index} out of range (0–{total - 1})"}), 404
+
+    img_url   = active_images[slide_index]
+    punchline = active_punchlines[slide_index] if slide_index < len(active_punchlines) else ""
+
+    # Fetch raw image bytes (GCS URL or local file)
+    try:
+        if img_url.startswith("https://"):
+            import requests as _req
+            resp = _req.get(img_url, timeout=15)
+            resp.raise_for_status()
+            img_bytes = resp.content
+        else:
+            local_path = resolve_image_to_local_path(img_url)
+            if not local_path or not local_path.exists():
+                return jsonify({"error": f"Image not found: {img_url}"}), 404
+            img_bytes = local_path.read_bytes()
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch image: {e}"}), 500
+
+    jpeg_bytes = compose_carousel_slide(img_bytes, punchline, slide_index, total)
+
+    from flask import Response
+    return Response(jpeg_bytes, mimetype="image/jpeg",
+                    headers={"Content-Disposition": f"inline; filename=slide_{slide_index + 1}_composed.jpg"})
 
 
 @app.route("/admin/articles/<int:article_id>/regenerate-carousel-image", methods=["POST"])
