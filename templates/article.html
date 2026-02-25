@@ -103,19 +103,6 @@
 {% endblock %}
 
 {% block content %}
-{% if is_admin %}
-<a href="/admin/articles/{{ article.id }}/edit"
-   title="Edit article"
-   style="position:fixed; bottom:1.25rem; right:1.25rem; z-index:1050;
-          width:2.5rem; height:2.5rem; border-radius:50%;
-          background:rgba(0,0,0,0.55); color:#fff;
-          display:flex; align-items:center; justify-content:center;
-          font-size:1.1rem; text-decoration:none;
-          box-shadow:0 2px 8px rgba(0,0,0,0.35);
-          transition:background 0.15s;"
-   onmouseover="this.style.background='rgba(0,0,0,0.8)'"
-   onmouseout="this.style.background='rgba(0,0,0,0.55)'">&#9881;</a>
-{% endif %}
 <article class="mx-auto" style="max-width: 800px;">
 
     <!-- Banner image — above the title, wide and low -->
@@ -126,7 +113,20 @@
          style="max-height: 210px; object-fit: cover; object-position: center; display: block;">
     {% endif %}
 
-    <a href="/articles" class="text-decoration-none text-muted mb-3 d-inline-block">&larr; All Articles</a>
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <a href="/articles" class="text-decoration-none text-muted">&larr; All Articles</a>
+        {% if is_admin %}
+        <a href="/admin/articles/{{ article.id }}/edit"
+           title="Edit article"
+           style="width:2rem; height:2rem; border-radius:50%;
+                  background:rgba(0,0,0,0.12); color:#666;
+                  display:flex; align-items:center; justify-content:center;
+                  font-size:1rem; text-decoration:none;
+                  transition:background 0.15s, color 0.15s;"
+           onmouseover="this.style.background='rgba(0,0,0,0.55)';this.style.color='#fff'"
+           onmouseout="this.style.background='rgba(0,0,0,0.12)';this.style.color='#666'">&#9881;</a>
+        {% endif %}
+    </div>
 
     <h1 class="mt-2 mb-2">{{ article.title }}</h1>
     {% if article.subtitle %}
