@@ -30,14 +30,14 @@
         cursor: pointer; padding: 0; z-index: 2; opacity: 0.7; transition: opacity 0.15s;
     }
     .carousel-info-btn:hover { opacity: 1; }
-    /* Removed images — dimmed with a small label */
+    /* Archived images — dimmed with a small label */
     #carousel-removed-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     #carousel-removed-grid .carousel-col { flex: 0 0 calc(20% - 0.4rem); }
     @media (max-width: 768px) { #carousel-removed-grid .carousel-col { flex: 0 0 calc(33% - 0.4rem); } }
     @media (max-width: 480px) { #carousel-removed-grid .carousel-col { flex: 0 0 calc(50% - 0.4rem); } }
     #carousel-removed-grid .carousel-thumb { opacity: 0.5; }
     #carousel-removed-grid .carousel-col::after {
-        content: 'removed'; position: absolute; bottom: 4px; left: 4px;
+        content: 'archived'; position: absolute; bottom: 4px; left: 4px;
         font-size: 10px; background: rgba(0,0,0,0.55); color: #fff;
         padding: 1px 5px; border-radius: 3px; pointer-events: none;
     }
@@ -76,15 +76,6 @@
     #preview-scrub { height: 4px; background: #e9ecef; border-radius: 2px; overflow: hidden; }
     #preview-scrub-fill { height: 100%; width: 0%; background: #fd7e14; transition: width 0.25s linear; }
 
-    /* === Component B — Narrated MP4 === */
-    #narrated-script-list { list-style: none; padding: 0; margin: 0; }
-    #narrated-script-list li {
-        font-size: 0.8rem; color: #495057; padding: 0.35rem 0;
-        border-bottom: 1px solid #f0f0f0;
-    }
-    #narrated-script-list li:last-child { border-bottom: none; }
-    #narrated-script-list li strong { color: #212529; }
-
     /* === Component C — AI Explainer Video === */
     #ai-video-clip-grid { display: flex; flex-wrap: wrap; gap: 4px; }
     .ai-clip-tile {
@@ -110,6 +101,9 @@
 
     <!-- Settings card (full width, above title) -->
     <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Main settings</h5>
+        </div>
         <div class="card-body">
             <!-- Row 1: Published | Slug | Cover Image -->
             <div class="row g-3 align-items-end mb-3">
@@ -180,9 +174,6 @@
                 <button type="button" class="btn btn-sm btn-outline-secondary d-none"
                         id="carousel-error-btn"
                         data-bs-toggle="modal" data-bs-target="#carousel-error-modal">View errors</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary d-none"
-                        id="carousel-archive-btn"
-                        onclick="archiveAllCarousel()">Archive All</button>
                 <button type="button" class="btn btn-outline-danger d-none" id="carousel-stop-btn"
                         onclick="stopCarousel()">Stop</button>
                 <button type="button" class="btn btn-outline-primary d-none" id="carousel-btn"
@@ -205,6 +196,12 @@
                         <button type="button" class="dropdown-item small"
                                 onclick="openCarouselStyleModal()">View Style</button>
                     </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <button type="button" id="carousel-archive-btn"
+                                class="dropdown-item small disabled"
+                                onclick="archiveAllCarousel()">Archive All</button>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -219,7 +216,7 @@
                          role="progressbar" style="width: 0%"></div>
                 </div>
             </div>
-            <!-- Tabs: Current / Removed -->
+            <!-- Tabs: Current / Archived -->
             <ul class="nav" id="carousel-tabs">
                 <li class="nav-item">
                     <button class="nav-link active" id="tab-current" onclick="showCarouselTab('current')">
@@ -228,7 +225,7 @@
                 </li>
                 <li class="nav-item">
                     <button class="nav-link" id="tab-removed" onclick="showCarouselTab('removed')">
-                        Removed <span id="tab-removed-count" class="badge bg-secondary ms-1">0</span>
+                        Archived <span id="tab-removed-count" class="badge bg-secondary ms-1">0</span>
                     </button>
                 </li>
             </ul>
@@ -275,7 +272,7 @@
                               placeholder="Image generation prompt…"></textarea>
                 </div>
                 <div class="modal-footer">
-                    <span class="text-muted small me-auto">Old image will be archived to Removed</span>
+                    <span class="text-muted small me-auto">Old image will be archived</span>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                     <button type="button" id="carousel-rerun-btn" class="btn btn-primary"
                             onclick="rerunCarouselImage()">
@@ -323,13 +320,6 @@
                 </p>
             </div>
             <div class="d-flex gap-2 align-items-center flex-wrap">
-                <select id="preview-duration" class="form-select form-select-sm" style="width:auto;"
-                        onchange="_previewDurationChanged(this.value)">
-                    <option value="60">60 s</option>
-                    <option value="90" selected>90 s</option>
-                    <option value="120">120 s</option>
-                    <option value="180">180 s</option>
-                </select>
                 <button type="button" id="preview-play-btn" class="btn btn-sm btn-primary" disabled onclick="previewPlay()">▶ Play</button>
                 <button type="button" id="preview-pause-btn" class="btn btn-sm btn-outline-secondary d-none" onclick="previewPause()">⏸ Pause</button>
                 <button type="button" id="preview-restart-btn" class="btn btn-sm btn-outline-secondary d-none" onclick="previewRestart()">↺ Restart</button>
@@ -475,7 +465,7 @@
          Component B — Narrated MP4 (OpenAI TTS + FFmpeg)
          ══════════════════════════════════════════════════════════ -->
     <div class="card mt-3 mb-4" id="narrated-video-card">
-        <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="card-header position-relative d-flex align-items-center justify-content-between flex-wrap gap-2 pe-5">
             <div>
                 <h5 class="mb-0">Narrated MP4</h5>
                 <p class="text-muted small mb-0 mt-1">
@@ -483,12 +473,26 @@
                     ~2–4 min. Cost: ~$0.15 TTS.
                 </p>
             </div>
-            <div class="d-flex gap-2 align-items-center">
+            <div class="d-flex gap-2 align-items-center flex-wrap">
                 <button type="button" id="narrated-stop-btn" class="btn btn-sm btn-outline-danger d-none" onclick="narratedStop()">Stop</button>
                 <button type="button" id="narrated-btn" class="btn btn-sm btn-primary" disabled onclick="narratedGenerate()">Generate Narrated Video</button>
             </div>
+            <!-- Kebab menu -->
+            <div class="dropdown position-absolute" style="top:0.6rem;right:0.75rem;">
+                <button type="button" class="btn btn-sm btn-link text-muted p-1 lh-1"
+                        style="font-size:1.25rem; text-decoration:none;"
+                        data-bs-toggle="dropdown" aria-expanded="false"
+                        title="Narrated video options">&#8942;</button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li>
+                        <button type="button" class="dropdown-item small"
+                                onclick="openNarratedSettings()">⚙ Settings…</button>
+                    </li>
+                </ul>
+            </div>
         </div>
         <div class="card-body">
+
             <div id="narrated-status" class="d-none mb-3">
                 <div class="d-flex align-items-center gap-2 mb-1">
                     <div class="spinner-border spinner-border-sm text-primary" id="narrated-spinner" role="status"></div>
@@ -499,15 +503,116 @@
                          role="progressbar" style="width:0%"></div>
                 </div>
             </div>
-            <div id="narrated-output" class="d-none">
-                <video id="narrated-player" controls class="w-100 rounded mb-3" style="max-height:360px;"></video>
-                <div class="mt-2">
-                    <p class="fw-semibold small mb-1">Narration Script</p>
-                    <ol id="narrated-script-list"></ol>
-                </div>
+            <div id="narrated-runs-wrap" class="d-none">
+                <div class="accordion accordion-flush" id="narrated-runs-accordion"></div>
             </div>
             <div id="narrated-empty" class="text-muted small text-center py-3">
                 Generate a carousel first, then click <strong>Generate Narrated Video</strong>.
+            </div>
+        </div>
+    </div>
+
+    <!-- Narrated MP4 — Settings Modal -->
+    <div class="modal fade" id="narrated-settings-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Narrated Video Settings</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+
+                    <!-- Format -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">Format</label>
+                        <div class="d-flex flex-wrap gap-2 mt-1">
+                            <div>
+                                <input type="radio" class="btn-check" name="nv-format" id="nv-fmt-vertical" value="vertical" checked>
+                                <label class="btn btn-sm btn-outline-primary" for="nv-fmt-vertical">📱 Vertical 9:16 — Reels / TikTok / Shorts</label>
+                            </div>
+                            <div>
+                                <input type="radio" class="btn-check" name="nv-format" id="nv-fmt-square" value="square">
+                                <label class="btn btn-sm btn-outline-primary" for="nv-fmt-square">⬜ Square 1:1</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TTS Voice -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted" for="nv-voice">TTS Voice</label>
+                        <select class="form-select form-select-sm" id="nv-voice">
+                            <option value="alloy">Alloy</option>
+                            <option value="echo">Echo</option>
+                            <option value="fable">Fable</option>
+                            <option value="onyx" selected>Onyx (default)</option>
+                            <option value="nova">Nova</option>
+                            <option value="shimmer">Shimmer</option>
+                        </select>
+                    </div>
+
+                    <!-- TTS Quality -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">TTS Quality</label>
+                        <div class="btn-group btn-group-sm mt-1" role="group">
+                            <input type="radio" class="btn-check" name="nv-tts-model" id="nv-tts-std" value="tts-1" checked>
+                            <label class="btn btn-outline-secondary" for="nv-tts-std">Standard</label>
+                            <input type="radio" class="btn-check" name="nv-tts-model" id="nv-tts-hd" value="tts-1-hd">
+                            <label class="btn btn-outline-secondary" for="nv-tts-hd">HD (~2× cost)</label>
+                        </div>
+                    </div>
+
+                    <!-- Script Length -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">Script Length / Slide</label>
+                        <div class="btn-group btn-group-sm mt-1" role="group">
+                            <input type="radio" class="btn-check" name="nv-script" id="nv-script-short" value="short">
+                            <label class="btn btn-outline-secondary" for="nv-script-short">Short (20–40 w)</label>
+                            <input type="radio" class="btn-check" name="nv-script" id="nv-script-med" value="medium" checked>
+                            <label class="btn btn-outline-secondary" for="nv-script-med">Medium (40–70 w)</label>
+                            <input type="radio" class="btn-check" name="nv-script" id="nv-script-long" value="long">
+                            <label class="btn btn-outline-secondary" for="nv-script-long">Long (70–100 w)</label>
+                        </div>
+                    </div>
+
+                    <!-- Ken Burns Speed -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">Ken Burns Speed</label>
+                        <div class="btn-group btn-group-sm mt-1" role="group">
+                            <input type="radio" class="btn-check" name="nv-kb" id="nv-kb-slow" value="slow" checked>
+                            <label class="btn btn-outline-secondary" for="nv-kb-slow">Slow</label>
+                            <input type="radio" class="btn-check" name="nv-kb" id="nv-kb-med" value="medium">
+                            <label class="btn btn-outline-secondary" for="nv-kb-med">Medium</label>
+                            <input type="radio" class="btn-check" name="nv-kb" id="nv-kb-fast" value="fast">
+                            <label class="btn btn-outline-secondary" for="nv-kb-fast">Fast</label>
+                        </div>
+                    </div>
+
+                    <!-- Video Quality -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">Video Quality</label>
+                        <div class="btn-group btn-group-sm mt-1" role="group">
+                            <input type="radio" class="btn-check" name="nv-crf" id="nv-crf-high" value="18">
+                            <label class="btn btn-outline-secondary" for="nv-crf-high">High (CRF 18)</label>
+                            <input type="radio" class="btn-check" name="nv-crf" id="nv-crf-med" value="23" checked>
+                            <label class="btn btn-outline-secondary" for="nv-crf-med">Medium (CRF 23)</label>
+                            <input type="radio" class="btn-check" name="nv-crf" id="nv-crf-low" value="28">
+                            <label class="btn btn-outline-secondary" for="nv-crf-low">Low (CRF 28)</label>
+                        </div>
+                    </div>
+
+                    <!-- FPS -->
+                    <div class="mb-0">
+                        <label class="form-label fw-semibold small text-uppercase text-muted" for="nv-fps">FPS</label>
+                        <select class="form-select form-select-sm mt-1" id="nv-fps" style="max-width:90px;">
+                            <option value="25" selected>25</option>
+                            <option value="30">30</option>
+                        </select>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                </div>
             </div>
         </div>
     </div>
@@ -518,10 +623,10 @@
     <div class="card mt-3 mb-4" id="ai-video-card">
         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
             <div>
-                <h5 class="mb-0">AI Explainer Video <span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;">Runway Gen-4</span></h5>
+                <h5 class="mb-0">AI Explainer Video</h5>
                 <p class="text-muted small mb-0 mt-1">
                     Each carousel image animated via Runway Gen-4 Turbo (5 s per clip) then merged.
-                    ~10–20 min, ~$0.50–1.00. Requires <code>RUNWAY_API_KEY</code>.
+                    ~10–20 min, ~$0.50–1.00.
                 </p>
             </div>
             <div class="d-flex gap-2 align-items-center">
@@ -552,44 +657,54 @@
 
     {% endif %}
 
-    <!-- Title -->
-    <div class="mb-3">
-        <input type="text" id="title" class="form-control form-control-lg" value="{{ article.title if article else '' }}" placeholder="Article title..." oninput="autoSlug(this.value)">
-    </div>
+    <!-- Article Content card -->
+    <div class="card mt-3 mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Article Content</h5>
+        </div>
+        <div class="card-body">
 
-    <!-- Subtitle -->
-    <div class="mb-3">
-        <input type="text" id="subtitle" class="form-control" value="{{ article.subtitle if article else '' }}" placeholder="Short descriptive subtitle...">
-    </div>
+            <!-- Title -->
+            <div class="mb-3">
+                <input type="text" id="title" class="form-control form-control-lg" value="{{ article.title if article else '' }}" placeholder="Article title..." oninput="autoSlug(this.value)">
+            </div>
 
-    <!-- Content label + toolbar buttons -->
-    <div class="d-flex align-items-center justify-content-between mb-2">
-        <label class="form-label fw-semibold mb-0">Content</label>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#gpt-modal">
-                Paste from ChatGPT
-            </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="toggle-source-btn" onclick="toggleSource()">
-                Source
-            </button>
+            <!-- Subtitle -->
+            <div class="mb-3">
+                <input type="text" id="subtitle" class="form-control" value="{{ article.subtitle if article else '' }}" placeholder="Short descriptive subtitle...">
+            </div>
+
+            <!-- Content label + toolbar buttons -->
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <label class="form-label fw-semibold mb-0">Content</label>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#gpt-modal">
+                        Paste from ChatGPT
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="toggle-source-btn" onclick="toggleSource()">
+                        Source
+                    </button>
+                </div>
+            </div>
+
+            <!-- Quill WYSIWYG editor -->
+            <div id="quill-editor">{{ article.content | safe if article else '' }}</div>
+
+            <!-- Raw HTML source view (hidden by default) -->
+            <textarea id="source-editor" class="form-control d-none" spellcheck="false"></textarea>
+
+            <!-- Save / Delete -->
+            <div class="d-flex gap-2 justify-content-end mt-4">
+                {% if article %}
+                <button type="button" class="btn btn-outline-danger" onclick="deleteArticle()">Delete</button>
+                {% endif %}
+                <button type="button" class="btn btn-primary px-4" onclick="saveArticle()">Save</button>
+            </div>
+
+            <div id="save-status" class="mt-3 alert d-none"></div>
+
         </div>
     </div>
-
-    <!-- Quill WYSIWYG editor -->
-    <div id="quill-editor">{{ article.content | safe if article else '' }}</div>
-
-    <!-- Raw HTML source view (hidden by default) -->
-    <textarea id="source-editor" class="form-control d-none" spellcheck="false"></textarea>
-
-    <!-- Save / Delete -->
-    <div class="d-flex gap-2 justify-content-end mt-4">
-        {% if article %}
-        <button type="button" class="btn btn-outline-danger" onclick="deleteArticle()">Delete</button>
-        {% endif %}
-        <button type="button" class="btn btn-primary px-4" onclick="saveArticle()">Save</button>
-    </div>
-
-    <div id="save-status" class="mt-3 alert d-none"></div>
 
 </form>
 
@@ -808,7 +923,7 @@ let carouselEditIndex = null;   // 0-based index of the slide currently being ed
                             col.className = 'carousel-col';
                             const img = document.createElement('img');
                             img.src = url; img.className = 'carousel-thumb';
-                            img.alt = 'Removed slide';
+                            img.alt = 'Archived slide';
                             col.appendChild(img);
                             const p  = prompts[i]    || '';
                             const pl = punchlines[i] || '';
@@ -1109,9 +1224,9 @@ function updateCarouselTabCounts() {
     // Show/hide Removed tab based on whether there's anything in it
     const removedTab = document.getElementById('tab-removed');
     removedTab.style.display = removedCount > 0 ? '' : 'none';
-    // Show Archive All button only when there are current images
+    // Enable Archive All menu item only when there are current images
     const archiveBtn = document.getElementById('carousel-archive-btn');
-    if (archiveBtn) archiveBtn.classList.toggle('d-none', currentCount === 0);
+    if (archiveBtn) archiveBtn.classList.toggle('disabled', currentCount === 0);
     // Show/enable Generate button only when there are empty slots
     const emptySlots = 10 - currentCount;
     const genBtn = document.getElementById('carousel-btn');
@@ -1128,7 +1243,7 @@ function updateCarouselTabCounts() {
 function archiveAllCarousel() {
     if (!ARTICLE_ID) return;
     const archiveBtn = document.getElementById('carousel-archive-btn');
-    archiveBtn.disabled = true;
+    archiveBtn.classList.add('disabled');
     archiveBtn.textContent = 'Archiving…';
 
     fetch('/admin/articles/' + ARTICLE_ID + '/archive-carousel', { method: 'POST' })
@@ -1149,8 +1264,8 @@ function archiveAllCarousel() {
     })
     .catch(err => alert('Network error: ' + err.message))
     .finally(() => {
-        archiveBtn.disabled = false;
         archiveBtn.textContent = 'Archive All';
+        // disabled state is re-evaluated by updateCarouselTabCounts() (called in .then)
     });
 }
 
@@ -1209,8 +1324,6 @@ function _previewNextIndex() {
 
 /** Open settings modal, pre-filling controls from current state. */
 function openPreviewSettings() {
-    const dur = parseInt(document.getElementById('preview-duration').value) || 90;
-    document.getElementById('preview-settings-duration').value = dur;
     document.getElementById('preview-settings-zoom').value     = _previewZoom;
     document.getElementById('preview-settings-zoom-val').textContent = _previewZoom.toFixed(2) + '×';
     document.getElementById('preview-settings-pan').value      = _previewPan;
@@ -1223,9 +1336,6 @@ function openPreviewSettings() {
 
 /** Read modal controls → apply settings → close modal. */
 function applyPreviewSettings() {
-    const dur = parseInt(document.getElementById('preview-settings-duration').value) || 90;
-    document.getElementById('preview-duration').value = dur;   // keep header dropdown in sync
-
     _previewZoom      = parseFloat(document.getElementById('preview-settings-zoom').value);
     _previewPan       = parseInt(document.getElementById('preview-settings-pan').value);
     _previewCrossfade = parseFloat(document.getElementById('preview-settings-crossfade').value);
@@ -1265,7 +1375,7 @@ function _syncPreviewDropdownItems() {
 }
 
 function _previewSlideDuration() {
-    const total = parseInt(document.getElementById('preview-duration').value) || 90;
+    const total = parseInt(document.getElementById('preview-settings-duration').value) || 90;
     const n = Math.max(1, _previewImages.length);
     return (total / n) * 1000; // ms
 }
@@ -1385,10 +1495,96 @@ function previewRestart() {
 // ════════════════════════════════════════════════════════════════
 let narratedAbortCtrl = null;
 
+/* ── Build one accordion item DOM node ───────────────────────── */
+function buildRunItem(run, expandIt) {
+    const fmtLabel    = run.params.format === 'vertical' ? '📱 9:16' : '⬜ 1:1';
+    const ttsLabel    = run.params.tts_model === 'tts-1-hd' ? 'HD' : 'Standard';
+    const crfLabel    = run.params.crf === 18 ? 'High' : run.params.crf === 28 ? 'Low' : 'Medium';
+    const scriptLabel = ({short:'Short', medium:'Medium', long:'Long'})[run.params.script_len] || run.params.script_len;
+    const kbLabel     = ({slow:'Slow', medium:'Medium', fast:'Fast'})[run.params.kb_speed]     || run.params.kb_speed;
+    const collapseId  = 'nrun-' + run.ts;
+    const show        = expandIt ? 'show' : '';
+    const collapsed   = expandIt ? '' : 'collapsed';
+    const scriptRows  = (run.segments || []).map((s, i) =>
+        `<li><strong>Slide ${i+1}:</strong> ${s}</li>`).join('');
+    const item = document.createElement('div');
+    item.className = 'accordion-item';
+    item.id = 'narrated-run-item-' + run.ts;
+    item.innerHTML = `
+        <h2 class="accordion-header">
+            <button class="accordion-button ${collapsed} py-2" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+                <span class="badge bg-secondary me-2">${fmtLabel}</span>
+                <span class="small">${run.ts_label}</span>
+            </button>
+        </h2>
+        <div id="${collapseId}" class="accordion-collapse collapse ${show}"
+             data-bs-parent="#narrated-runs-accordion">
+            <div class="accordion-body p-3">
+                <table class="table table-sm table-bordered small mb-3">
+                    <tbody>
+                        <tr><th style="width:38%">Format</th><td>${run.params.format === 'vertical' ? 'Vertical 9:16 (Reels / TikTok / Shorts)' : 'Square 1:1'}</td></tr>
+                        <tr><th>Voice</th><td>${run.params.voice.charAt(0).toUpperCase() + run.params.voice.slice(1)}</td></tr>
+                        <tr><th>TTS Quality</th><td>${ttsLabel}</td></tr>
+                        <tr><th>Script Length</th><td>${scriptLabel}</td></tr>
+                        <tr><th>Ken Burns</th><td>${kbLabel}</td></tr>
+                        <tr><th>Video Quality</th><td>${crfLabel} (CRF ${run.params.crf})</td></tr>
+                        <tr><th>FPS</th><td>${run.params.fps}</td></tr>
+                    </tbody>
+                </table>
+                <video src="${run.url}" controls class="rounded mb-3"
+                       style="max-height:520px;width:auto;max-width:100%;display:block;margin:0 auto;"></video>
+                <p class="fw-semibold small mb-1">Narration Script</p>
+                <ol class="small">${scriptRows}</ol>
+            </div>
+        </div>`;
+    return item;
+}
+
+/* ── Load all existing runs on page load ─────────────────────── */
+function loadNarratedRuns(runs) {
+    if (!runs || !runs.length) return;
+    const accordion = document.getElementById('narrated-runs-accordion');
+    let rendered = 0;
+    runs.forEach((run, i) => {
+        try {
+            accordion.appendChild(buildRunItem(run, rendered === 0));
+            rendered++;
+        } catch(e) {
+            console.warn('Could not render narrated run', i, e);
+        }
+    });
+    if (rendered > 0) {
+        document.getElementById('narrated-runs-wrap').classList.remove('d-none');
+        document.getElementById('narrated-empty').classList.add('d-none');
+    }
+}
+
+/* ── Prepend a new run after generation completes ────────────── */
+function addNarratedRun(run) {
+    const accordion = document.getElementById('narrated-runs-accordion');
+    // Collapse all currently open items
+    accordion.querySelectorAll('.accordion-collapse.show').forEach(el => {
+        el.classList.remove('show');
+        el.previousElementSibling?.querySelector('.accordion-button')?.classList.add('collapsed');
+    });
+    accordion.insertBefore(buildRunItem(run, true), accordion.firstChild);
+    document.getElementById('narrated-runs-wrap').classList.remove('d-none');
+    document.getElementById('narrated-empty').classList.add('d-none');
+}
+
 function narratedUnlock() {
     const btn = document.getElementById('narrated-btn');
     if (btn) btn.disabled = false;
-    document.getElementById('narrated-empty').classList.add('d-none');
+    // Only show empty state if no runs exist yet
+    const accordion = document.getElementById('narrated-runs-accordion');
+    if (!accordion || accordion.children.length === 0) {
+        document.getElementById('narrated-empty').classList.remove('d-none');
+    }
+}
+
+function openNarratedSettings() {
+    new bootstrap.Modal(document.getElementById('narrated-settings-modal')).show();
 }
 
 function narratedGenerate() {
@@ -1398,7 +1594,6 @@ function narratedGenerate() {
     btn.disabled = true;
     document.getElementById('narrated-stop-btn').classList.remove('d-none');
     document.getElementById('narrated-status').classList.remove('d-none');
-    document.getElementById('narrated-output').classList.add('d-none');
     document.getElementById('narrated-empty').classList.add('d-none');
     document.getElementById('narrated-status-text').textContent = 'Generating script…';
     document.getElementById('narrated-progress').style.width = '0%';
@@ -1406,7 +1601,15 @@ function narratedGenerate() {
     fetch('/admin/articles/' + ARTICLE_ID + '/generate-narrated-video', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+            format:     document.querySelector('input[name="nv-format"]:checked')?.value    || 'vertical',
+            voice:      document.getElementById('nv-voice')?.value                          || 'onyx',
+            tts_model:  document.querySelector('input[name="nv-tts-model"]:checked')?.value || 'tts-1',
+            script_len: document.querySelector('input[name="nv-script"]:checked')?.value   || 'medium',
+            kb_speed:   document.querySelector('input[name="nv-kb"]:checked')?.value        || 'slow',
+            crf:        parseInt(document.querySelector('input[name="nv-crf"]:checked')?.value || '23'),
+            fps:        parseInt(document.getElementById('nv-fps')?.value                   || '25'),
+        }),
         signal: narratedAbortCtrl.signal,
     }).then(resp => {
         if (!resp.ok) return resp.json().then(d => { throw new Error(d.error || resp.statusText); });
@@ -1461,25 +1664,11 @@ function handleNarratedEvent(ev, p) {
         document.getElementById('narrated-status-text').textContent = 'Merging clips…';
     } else if (ev === 'done') {
         prgEl.style.width = '100%';
-        showNarratedOutput(p.url, p.segments || []);
+        addNarratedRun(p.run);
         narratedFinish(null);
     } else if (ev === 'error') {
         narratedFinish(p.message || 'Unknown error');
     }
-}
-
-function showNarratedOutput(url, segments) {
-    const player = document.getElementById('narrated-player');
-    player.src = url;
-    const list = document.getElementById('narrated-script-list');
-    list.innerHTML = '';
-    (segments || []).forEach((seg, i) => {
-        const li = document.createElement('li');
-        li.innerHTML = '<strong>Slide ' + (i+1) + ':</strong> ' + seg;
-        list.appendChild(li);
-    });
-    document.getElementById('narrated-output').classList.remove('d-none');
-    document.getElementById('narrated-empty').classList.add('d-none');
 }
 
 function narratedStop() {
@@ -1512,96 +1701,42 @@ function aiVideoUnlock() {
     document.getElementById('ai-video-empty').classList.add('d-none');
 }
 
+/* ── helpers ─────────────────────────────────────────────────── */
 function _aiVideoInitClipGrid(n) {
     const grid = document.getElementById('ai-video-clip-grid');
     grid.innerHTML = '';
     for (let i = 0; i < n; i++) {
         const t = document.createElement('div');
         t.className = 'ai-clip-tile';
-        t.id = 'ai-tile-' + (i+1);
-        t.title = 'Clip ' + (i+1);
+        t.id = 'ai-tile-' + (i + 1);
+        t.title = 'Clip ' + (i + 1);
         grid.appendChild(t);
     }
 }
 
-function aiVideoGenerate() {
-    if (!ARTICLE_ID) return;
-    aiVideoAbortCtrl = new AbortController();
-    const btn = document.getElementById('ai-video-btn');
-    btn.disabled = true;
-    document.getElementById('ai-video-stop-btn').classList.remove('d-none');
-    document.getElementById('ai-video-status').classList.remove('d-none');
-    document.getElementById('ai-video-output').classList.add('d-none');
-    document.getElementById('ai-video-empty').classList.add('d-none');
-    document.getElementById('ai-video-status-text').textContent = 'Submitting to Runway…';
-    document.getElementById('ai-video-progress').style.width = '0%';
-    _aiVideoInitClipGrid(10);
-
-    fetch('/admin/articles/' + ARTICLE_ID + '/generate-ai-video', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({}),
-        signal: aiVideoAbortCtrl.signal,
-    }).then(resp => {
-        if (!resp.ok) return resp.json().then(d => { throw new Error(d.error || resp.statusText); });
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = '';
-        function pump() {
-            reader.read().then(({ done, value }) => {
-                if (done) { aiVideoFinish(null); return; }
-                buf += decoder.decode(value, { stream: true });
-                let lines = buf.split('\n');
-                buf = lines.pop();
-                let evt = null, dataStr = null;
-                for (const line of lines) {
-                    if (line.startsWith('event: ')) evt = line.slice(7).trim();
-                    else if (line.startsWith('data: ')) {
-                        dataStr = line.slice(6).trim();
-                        if (evt && dataStr) {
-                            try { handleAiVideoEvent(evt, JSON.parse(dataStr)); } catch(e) {}
-                            evt = null; dataStr = null;
-                        }
-                    }
-                }
-                pump();
-            }).catch(err => {
-                if (err.name !== 'AbortError') aiVideoFinish(err.message);
-            });
-        }
-        pump();
-    }).catch(err => {
-        if (err.name !== 'AbortError') aiVideoFinish(err.message);
-    });
-}
-
-function handleAiVideoEvent(ev, p) {
-    const prgEl = document.getElementById('ai-video-progress');
-    if (ev === 'clip') {
-        const tile = document.getElementById('ai-tile-' + p.n);
-        if (tile) {
-            tile.classList.remove('generating','done','error');
-            if (p.status === 'generating') tile.classList.add('generating');
-            else if (p.status === 'done')  tile.classList.add('done');
-            else if (p.status === 'error') tile.classList.add('error');
-        }
-        const done = document.querySelectorAll('#ai-video-clip-grid .ai-clip-tile.done').length;
-        const total = p.of || 10;
-        const pct = Math.round((done / total) * 85);
+function _aiVideoApplyStatus(aiStatus, nSlides) {
+    /* Parse "running:3/7" and update the progress bar + tile colours. */
+    const prgEl    = document.getElementById('ai-video-progress');
+    const statusEl = document.getElementById('ai-video-status-text');
+    const m = aiStatus && aiStatus.match(/^running:(\d+)\/(\d+)$/);
+    if (m) {
+        const done  = parseInt(m[1]);
+        const total = parseInt(m[2]) || nSlides || 1;
+        const pct   = Math.round((done / total) * 85);
         prgEl.style.width = pct + '%';
-        document.getElementById('ai-video-status-text').textContent =
-            p.status === 'done'
-                ? 'Clip ' + p.n + ' done (' + done + '/' + total + ')'
-                : 'Generating clip ' + p.n + '…';
-    } else if (ev === 'finalise') {
-        prgEl.style.width = '90%';
-        document.getElementById('ai-video-status-text').textContent = 'Merging clips…';
-    } else if (ev === 'done') {
-        prgEl.style.width = '100%';
-        showAiVideoOutput(p.url);
-        aiVideoFinish(null);
-    } else if (ev === 'error') {
-        aiVideoFinish(p.message || 'Unknown error');
+        statusEl.textContent = done === 0
+            ? `Submitting clips to Runway… (0 / ${total} done)`
+            : `${done} / ${total} clips done — merging when all complete…`;
+        // Colour the first `done` tiles green
+        for (let i = 1; i <= total; i++) {
+            const tile = document.getElementById('ai-tile-' + i);
+            if (!tile) continue;
+            tile.classList.remove('generating', 'done', 'error');
+            if (i <= done) tile.classList.add('done');
+        }
+    } else {
+        prgEl.style.width = '5%';
+        statusEl.textContent = 'Generation in progress — come back in a few minutes…';
     }
 }
 
@@ -1612,16 +1747,86 @@ function showAiVideoOutput(url) {
     document.getElementById('ai-video-empty').classList.add('d-none');
 }
 
-function aiVideoStop() {
-    if (aiVideoAbortCtrl) aiVideoAbortCtrl.abort();
-    aiVideoFinish('Stopped.');
+/* ── main button handler ─────────────────────────────────────── */
+function aiVideoGenerate() {
+    if (!ARTICLE_ID) return;
+    const btn = document.getElementById('ai-video-btn');
+    btn.disabled = true;
+
+    fetch('/admin/articles/' + ARTICLE_ID + '/generate-ai-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) {
+            if (d.error === 'already_running') {
+                // Job is already going — just show the running UI and start polling
+                _aiVideoShowRunning(d.n_slides || 10);
+            } else {
+                btn.disabled = false;
+                alert('Error: ' + d.error);
+            }
+            return;
+        }
+        // Job started — show running UI and begin polling
+        _aiVideoShowRunning(d.n_slides || 10);
+    })
+    .catch(err => {
+        btn.disabled = false;
+        alert('Network error: ' + err.message);
+    });
 }
 
-function aiVideoFinish(error) {
+function _aiVideoShowRunning(nSlides) {
+    document.getElementById('ai-video-btn').disabled = true;
+    document.getElementById('ai-video-stop-btn').classList.remove('d-none');
+    document.getElementById('ai-video-status').classList.remove('d-none');
+    document.getElementById('ai-video-output').classList.add('d-none');
+    document.getElementById('ai-video-empty').classList.add('d-none');
+    _aiVideoInitClipGrid(nSlides);
+    _aiVideoApplyStatus('running:0/' + nSlides, nSlides);
+    _aiVideoPoll();
+}
+
+/* ── polling ─────────────────────────────────────────────────── */
+function _aiVideoPoll() {
+    setTimeout(function () {
+        fetch('/admin/articles/' + ARTICLE_ID + '/video-data')
+            .then(r => r.json())
+            .then(d => {
+                if (d.ai_status && d.ai_status.startsWith('running')) {
+                    _aiVideoApplyStatus(d.ai_status, null);
+                    _aiVideoPoll();                      // keep polling
+                } else if (d.ai_status && d.ai_status.startsWith('error')) {
+                    _aiVideoFinish(d.ai_status.slice(6) || 'Unknown error');
+                } else if (d.ai_url) {
+                    showAiVideoOutput(d.ai_url);
+                    _aiVideoFinish(null);
+                } else {
+                    _aiVideoFinish(null);                // idle/unknown — reset UI
+                }
+            })
+            .catch(() => _aiVideoPoll());                // network blip — retry
+    }, 20000);  // poll every 20 s
+}
+
+function aiVideoStop() {
+    /* There is no server-side cancel (Runway tasks are already submitted).
+       We just reset the UI; the background thread will finish and save the result. */
+    _aiVideoFinish(null);
+    document.getElementById('ai-video-status-text').textContent =
+        'Stopped watching — the job is still running in the background. Reload the page to check again.';
+    document.getElementById('ai-video-status').classList.remove('d-none');
+    document.getElementById('ai-video-spinner').classList.add('d-none');
+}
+
+function _aiVideoFinish(error) {
     const btn = document.getElementById('ai-video-btn');
     if (btn) btn.disabled = false;
     document.getElementById('ai-video-stop-btn').classList.add('d-none');
-    const spinner = document.getElementById('ai-video-spinner');
+    const spinner    = document.getElementById('ai-video-spinner');
     const statusText = document.getElementById('ai-video-status-text');
     if (error) {
         if (statusText) statusText.textContent = 'Error: ' + error;
@@ -1639,8 +1844,24 @@ function aiVideoFinish(error) {
     fetch('/admin/articles/' + ARTICLE_ID + '/video-data')
         .then(r => r.json())
         .then(d => {
-            if (d.narrated_url) showNarratedOutput(d.narrated_url, d.narrated_script || []);
-            if (d.ai_url)       showAiVideoOutput(d.ai_url);
+            if (d.narrated_runs && d.narrated_runs.length) loadNarratedRuns(d.narrated_runs);
+            else if (d.narrated_url) loadNarratedRuns([{   // ← back-compat: wrap legacy single entry
+                ts: 0, ts_label: 'Previous run',
+                url: d.narrated_url,
+                params: { format:'square', voice:'onyx', tts_model:'tts-1', script_len:'medium', kb_speed:'slow', crf:23, fps:25 },
+                segments: d.narrated_script || [],
+            }]);
+            if (d.ai_status && d.ai_status.startsWith('running')) {
+                // Job was running when the page loaded — re-attach progress UI and resume polling
+                const m = d.ai_status.match(/^running:(\d+)\/(\d+)$/);
+                const nSlides = m ? parseInt(m[2]) : 10;
+                _aiVideoShowRunning(nSlides);
+                _aiVideoApplyStatus(d.ai_status, nSlides);  // override with actual progress
+            } else if (d.ai_status && d.ai_status.startsWith('error')) {
+                _aiVideoFinish(d.ai_status.slice(6) || 'Unknown error');
+            } else if (d.ai_url) {
+                showAiVideoOutput(d.ai_url);
+            }
         }).catch(() => {});
 })();
 </script>

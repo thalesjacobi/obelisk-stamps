@@ -10,6 +10,7 @@ import re
 import json
 import time
 import base64
+import threading
 import shutil
 import subprocess
 from pathlib import Path
@@ -358,7 +359,8 @@ def init_articles_table():
     for col in ("carousel_prompts TEXT", "carousel_images TEXT",
                 "carousel_punchlines TEXT", "carousel_style TEXT",
                 "video_narrated_url TEXT", "video_narrated_script TEXT",
-                "video_ai_url TEXT"):
+                "video_ai_url TEXT", "video_narrated_runs TEXT",
+                "video_ai_status TEXT"):
         try:
             cur.execute(f"ALTER TABLE articles ADD COLUMN {col}")
         except Exception:
@@ -2469,17 +2471,22 @@ def admin_article_regenerate_carousel_image(article_id):
 def admin_article_video_data(article_id):
     """Return existing video URLs and narration script from DB (shared by Components B & C)."""
     row = query_one(
-        "SELECT video_narrated_url, video_narrated_script, video_ai_url FROM articles WHERE id = %s",
+        "SELECT video_narrated_url, video_narrated_script, video_ai_url, video_narrated_runs, "
+        "video_ai_status "
+        "FROM articles WHERE id = %s",
         (article_id,),
     )
     if not row:
         return jsonify({"error": "Article not found"}), 404
-    narrated_url, narrated_script_raw, ai_url = row
+    narrated_url, narrated_script_raw, ai_url, narrated_runs_raw, ai_status = row
     narrated_script = json.loads(narrated_script_raw) if narrated_script_raw else []
+    narrated_runs   = json.loads(narrated_runs_raw)   if narrated_runs_raw   else []
     return jsonify({
-        "narrated_url": narrated_url or None,
+        "narrated_url":    narrated_url or None,
         "narrated_script": narrated_script,
-        "ai_url": ai_url or None,
+        "narrated_runs":   narrated_runs,
+        "ai_url":          ai_url or None,
+        "ai_status":       ai_status or None,
     })
 
 
@@ -2493,6 +2500,20 @@ def admin_article_generate_narrated_video(article_id):
         return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
     def generate():
+        # ── 0. Read user settings from request body ────────────────────────────
+        cfg        = request.json or {}
+        fmt        = cfg.get("format",     "vertical")   # "vertical" | "square"
+        voice      = cfg.get("voice",      "onyx")
+        tts_model  = cfg.get("tts_model",  "tts-1")
+        script_len = cfg.get("script_len", "medium")     # "short" | "medium" | "long"
+        kb_speed   = cfg.get("kb_speed",   "slow")       # "slow" | "medium" | "fast"
+        crf        = int(cfg.get("crf",    23))
+        fps        = int(cfg.get("fps",    25))
+
+        W, H      = (1080, 1920) if fmt == "vertical" else (1080, 1080)
+        zoom_step = {"slow": 0.0010, "medium": 0.0015, "fast": 0.0025}.get(kb_speed, 0.0010)
+        word_range = {"short": "20-40", "medium": "40-70", "long": "70-100"}.get(script_len, "40-70")
+
         # ── 0. Load carousel data ──────────────────────────────────────────────
         row = query_one(
             "SELECT carousel_images, carousel_prompts, carousel_punchlines FROM articles WHERE id = %s",
@@ -2537,7 +2558,7 @@ def admin_article_generate_narrated_video(article_id):
             script_prompt = (
                 f"You are writing a voiceover script for a {n_slides}-slide Instagram carousel "
                 f"about the article below. For each slide, write a short narration segment of "
-                f"40-70 words that matches the scene and punchline. "
+                f"{word_range} words that matches the scene and punchline. "
                 f"Return ONLY a JSON array of {n_slides} strings, one per slide.\n\n"
                 f"Slide descriptions:\n{scenes_desc}"
             )
@@ -2564,7 +2585,7 @@ def admin_article_generate_narrated_video(article_id):
             for i, seg in enumerate(segments):
                 audio_path = audio_dir / f"segment_{i+1}.mp3"
                 tts_resp = _openai_client.audio.speech.create(
-                    model="tts-1", voice="onyx", input=seg, response_format="mp3"
+                    model=tts_model, voice=voice, input=seg, response_format="mp3"
                 )
                 audio_path.write_bytes(tts_resp.content)
                 audio_paths.append(audio_path)
@@ -2608,21 +2629,20 @@ def admin_article_generate_narrated_video(article_id):
                 dur = probe_duration(audio_path)
                 # Add 0.3s buffer so video isn't shorter than audio
                 dur_video = dur + 0.3
-                fps = 25
                 frames = int(dur_video * fps)
 
                 clip_path = video_dir / f"clip_{i+1}.mp4"
                 temp_files.append(clip_path)
 
                 # Ken Burns zoompan filter
-                zoom_expr = "min(zoom+0.0015,1.5)"
+                zoom_expr = f"min(zoom+{zoom_step:.4f},1.5)"
                 zp_filter = (
-                    f"[0:v]scale=1080:1080:force_original_aspect_ratio=increase,"
-                    f"crop=1080:1080,"
+                    f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
+                    f"crop={W}:{H},"
                     f"fps={fps},"
                     f"zoompan=z='{zoom_expr}':d={frames}:"
                     f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                    f"s=1080x1080,"
+                    f"s={W}x{H},"
                     f"setsar=1[v]"
                 )
 
@@ -2632,7 +2652,7 @@ def admin_article_generate_narrated_video(article_id):
                     "-i", str(audio_path),
                     "-filter_complex", zp_filter,
                     "-map", "[v]", "-map", "1:a",
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                    "-c:v", "libx264", "-preset", "fast", "-crf", str(crf),
                     "-c:a", "aac", "-shortest",
                     str(clip_path)
                 ]
@@ -2665,14 +2685,57 @@ def admin_article_generate_narrated_video(article_id):
                 yield sse("error", {"message": f"FFmpeg concat failed: {result.stderr[-300:]}"})
                 return
 
-            # ── 8. Save to DB ──────────────────────────────────────────────────
+            # ── 8. Save run to history ─────────────────────────────────────────
             static_url = "/" + str(out_path).replace("\\", "/")
+            from datetime import datetime
+            ts_label = datetime.now().strftime("%d %b %Y, %H:%M").lstrip("0")
+
+            run_obj = {
+                "ts":       ts,
+                "ts_label": ts_label,
+                "url":      static_url,
+                "params": {
+                    "format":     fmt,
+                    "voice":      voice,
+                    "tts_model":  tts_model,
+                    "script_len": script_len,
+                    "kb_speed":   kb_speed,
+                    "crf":        crf,
+                    "fps":        fps,
+                },
+                "segments": segments,
+            }
+
+            existing_row = query_one(
+                "SELECT video_narrated_runs, video_narrated_url, video_narrated_script "
+                "FROM articles WHERE id = %s", (article_id,)
+            )
+            existing_runs_raw  = existing_row[0] if existing_row else None
+            legacy_url         = existing_row[1] if existing_row else None
+            legacy_script_raw  = existing_row[2] if existing_row else None
+            existing_runs = json.loads(existing_runs_raw) if existing_runs_raw else []
+
+            # Back-compat: if there is a video URL saved before run history was introduced,
+            # and it is not yet tracked in any run entry, migrate it as a synthetic entry.
+            if legacy_url and not any(r.get("url") == legacy_url for r in existing_runs):
+                legacy_script = json.loads(legacy_script_raw) if legacy_script_raw else []
+                existing_runs.append({
+                    "ts": 0, "ts_label": "Previous run",
+                    "url": legacy_url,
+                    "params": {"format": "square", "voice": "onyx", "tts_model": "tts-1",
+                               "script_len": "medium", "kb_speed": "slow", "crf": 23, "fps": 25},
+                    "segments": legacy_script,
+                })
+
+            all_runs = [run_obj] + existing_runs   # newest first
+
             execute(
-                "UPDATE articles SET video_narrated_url = %s, video_narrated_script = %s WHERE id = %s",
-                (static_url, json.dumps(segments), article_id),
+                "UPDATE articles SET video_narrated_url = %s, video_narrated_script = %s, "
+                "video_narrated_runs = %s WHERE id = %s",
+                (static_url, json.dumps(segments), json.dumps(all_runs), article_id),
             )
 
-            yield sse("done", {"url": static_url, "segments": segments})
+            yield sse("done", {"run": run_obj})
 
         finally:
             # Clean up temp audio + individual clips (keep final mp4)
@@ -2687,155 +2750,166 @@ def admin_article_generate_narrated_video(article_id):
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+def _ai_video_worker(article_id, images, prompts, ts):
+    """Background thread: Runway Gen-4 per slide → FFmpeg concat → save URL to DB."""
+    n_slides = len(images)
+    video_dir = Path(f"static/articles/{article_id}/video")
+    video_dir.mkdir(parents=True, exist_ok=True)
+    temp_clips = []
+
+    try:
+        # ── Per-slide: submit to Runway + poll ────────────────────────────────
+        clip_paths = []
+        for i, img_url in enumerate(images):
+            prompt_text = prompts[i] if i < len(prompts) else ""
+
+            # Resolve image path
+            u = img_url.lstrip("/")
+            img_path = Path(u) if u.startswith("static/") else Path("static") / u
+
+            if SITE_URL and img_path.exists():
+                prompt_image = SITE_URL.rstrip("/") + img_url
+            elif img_path.exists():
+                img_b64 = base64.b64encode(img_path.read_bytes()).decode()
+                prompt_image = f"data:image/png;base64,{img_b64}"
+            else:
+                continue  # skip missing image, keep going
+
+            try:
+                task = _runway_client.image_to_video.create(
+                    model="gen4_turbo",
+                    prompt_image=prompt_image,
+                    prompt_text=prompt_text,
+                    ratio="960:960",
+                    duration=5,
+                )
+                task_id = task.id
+            except Exception:
+                continue
+
+            # Poll Runway until the clip is ready
+            while True:
+                time.sleep(6)
+                try:
+                    status_obj = _runway_client.tasks.retrieve(task_id)
+                    status = status_obj.status
+                except Exception:
+                    break
+
+                if status == "SUCCEEDED":
+                    output_url = status_obj.output[0] if status_obj.output else None
+                    if output_url:
+                        clip_path = video_dir / f"clip_{i+1}.mp4"
+                        r = http_requests.get(output_url, timeout=120)
+                        clip_path.write_bytes(r.content)
+                        clip_paths.append(clip_path)
+                        temp_clips.append(clip_path)
+                    break
+                elif status == "FAILED":
+                    break
+                # else: still generating — keep polling
+
+            # Update progress counter in DB so the frontend can show N/M
+            done_so_far = len(clip_paths)
+            execute(
+                "UPDATE articles SET video_ai_status = %s WHERE id = %s",
+                (f"running:{done_so_far}/{n_slides}", article_id),
+            )
+
+        if not clip_paths:
+            execute(
+                "UPDATE articles SET video_ai_status = %s WHERE id = %s",
+                ("error:No clips were generated successfully.", article_id),
+            )
+            return
+
+        # ── FFmpeg concat ─────────────────────────────────────────────────────
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except ImportError:
+            execute(
+                "UPDATE articles SET video_ai_status = %s WHERE id = %s",
+                ("error:imageio-ffmpeg not installed.", article_id),
+            )
+            return
+
+        concat_txt = video_dir / f"concat_ai_{ts}.txt"
+        temp_clips.append(concat_txt)
+        concat_txt.write_text(
+            "\n".join(f"file '{p.resolve()}'" for p in clip_paths),
+            encoding="utf-8",
+        )
+        out_path = video_dir / f"ai_explainer_{ts}.mp4"
+        result = subprocess.run(
+            [ffmpeg_exe, "-y", "-f", "concat", "-safe", "0",
+             "-i", str(concat_txt), "-c", "copy", str(out_path)],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            execute(
+                "UPDATE articles SET video_ai_status = %s WHERE id = %s",
+                (f"error:FFmpeg failed: {result.stderr[-200:]}", article_id),
+            )
+            return
+
+        # ── Save URL + clear status ───────────────────────────────────────────
+        static_url = "/" + str(out_path).replace("\\", "/")
+        execute(
+            "UPDATE articles SET video_ai_url = %s, video_ai_status = NULL WHERE id = %s",
+            (static_url, article_id),
+        )
+
+    except Exception as e:
+        execute(
+            "UPDATE articles SET video_ai_status = %s WHERE id = %s",
+            (f"error:{str(e)[:200]}", article_id),
+        )
+    finally:
+        for f in temp_clips:
+            try:
+                if f.exists():
+                    f.unlink()
+            except Exception:
+                pass
+
+
 @app.route("/admin/articles/<int:article_id>/generate-ai-video", methods=["POST"])
 @login_required
 @admin_required
 def admin_article_generate_ai_video(article_id):
-    """SSE stream: Runway Gen-4 image-to-video per slide → FFmpeg concat → AI explainer MP4."""
+    """Start a background thread for Runway Gen-4 generation; return immediately."""
+    if not _runway_client:
+        return jsonify({"error": "Runway ML not configured. Set RUNWAY_API_KEY."}), 400
 
-    def sse(event, data):
-        return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+    # Prevent double-start
+    row = query_one("SELECT video_ai_status FROM articles WHERE id = %s", (article_id,))
+    if row and row[0] and row[0].startswith("running"):
+        return jsonify({"error": "already_running"}), 409
 
-    def generate():
-        if not _runway_client:
-            yield sse("error", {"message": "Runway ML not configured. Set RUNWAY_API_KEY."})
-            return
+    row = query_one(
+        "SELECT carousel_images, carousel_prompts FROM articles WHERE id = %s", (article_id,)
+    )
+    if not row or not row[0]:
+        return jsonify({"error": "No carousel images found."}), 400
 
-        row = query_one(
-            "SELECT carousel_images, carousel_prompts FROM articles WHERE id = %s",
-            (article_id,),
-        )
-        if not row or not row[0]:
-            yield sse("error", {"message": "No carousel images found."})
-            return
+    images = (json.loads(row[0]) if row[0] else [])[:10]
+    prompts = (json.loads(row[1]) if row[1] else [])[:10]
+    if not images:
+        return jsonify({"error": "No carousel images found."}), 400
 
-        images_raw, prompts_raw = row
-        images = (json.loads(images_raw) if images_raw else [])[:10]
-        prompts = (json.loads(prompts_raw) if prompts_raw else [])[:10]
-        n_slides = len(images)
+    ts = int(time.time())
+    execute("UPDATE articles SET video_ai_status = %s WHERE id = %s",
+            (f"running:0/{len(images)}", article_id))
 
-        ts = int(time.time())
-        video_dir = Path(f"static/articles/{article_id}/video")
-        video_dir.mkdir(parents=True, exist_ok=True)
+    t = threading.Thread(
+        target=_ai_video_worker,
+        args=(article_id, images, prompts, ts),
+        daemon=True,
+    )
+    t.start()
 
-        temp_clips = []
-
-        try:
-            # ── Per-slide: submit to Runway + poll ────────────────────────────
-            clip_paths = []
-            for i, img_url in enumerate(images):
-                prompt_text = prompts[i] if i < len(prompts) else ""
-
-                # Resolve image to data URI or public URL
-                img_path = Path(img_url.lstrip("/"))
-                if not img_path.exists():
-                    img_path = Path("static") / Path(img_url).relative_to("/static")
-
-                if SITE_URL and img_path.exists():
-                    prompt_image = SITE_URL.rstrip("/") + img_url
-                elif img_path.exists():
-                    img_b64 = base64.b64encode(img_path.read_bytes()).decode()
-                    prompt_image = f"data:image/png;base64,{img_b64}"
-                else:
-                    yield sse("error", {"message": f"Image not found: {img_url}"})
-                    continue
-
-                try:
-                    task = _runway_client.image_to_video.create(
-                        model="gen4_turbo",
-                        prompt_image=prompt_image,
-                        prompt_text=prompt_text,
-                        ratio="960:960",
-                        duration=5,
-                    )
-                    task_id = task.id
-                except Exception as e:
-                    yield sse("clip", {"n": i + 1, "of": n_slides, "status": "error",
-                                       "message": str(e)})
-                    continue
-
-                # Poll until done
-                while True:
-                    time.sleep(6)
-                    try:
-                        status_obj = _runway_client.tasks.retrieve(task_id)
-                        status = status_obj.status
-                    except Exception as e:
-                        yield sse("clip", {"n": i + 1, "of": n_slides, "status": "error",
-                                           "message": str(e)})
-                        break
-
-                    if status == "SUCCEEDED":
-                        # Download the output video
-                        output_url = status_obj.output[0] if status_obj.output else None
-                        if output_url:
-                            clip_path = video_dir / f"clip_{i+1}.mp4"
-                            r = http_requests.get(output_url, timeout=120)
-                            clip_path.write_bytes(r.content)
-                            clip_paths.append(clip_path)
-                            temp_clips.append(clip_path)
-                        yield sse("clip", {"n": i + 1, "of": n_slides, "status": "done"})
-                        break
-                    elif status == "FAILED":
-                        yield sse("clip", {"n": i + 1, "of": n_slides, "status": "error",
-                                           "message": "Runway task failed"})
-                        break
-                    else:
-                        yield sse("clip", {"n": i + 1, "of": n_slides, "status": "generating"})
-
-            if not clip_paths:
-                yield sse("error", {"message": "No clips were generated successfully."})
-                return
-
-            yield sse("finalise", {})
-
-            # ── Get FFmpeg binary ──────────────────────────────────────────────
-            try:
-                import imageio_ffmpeg
-                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-            except ImportError:
-                yield sse("error", {"message": "imageio-ffmpeg not installed. Run: pip install imageio-ffmpeg"})
-                return
-
-            # ── Concat clips ───────────────────────────────────────────────────
-            concat_txt = video_dir / f"concat_ai_{ts}.txt"
-            temp_clips.append(concat_txt)
-            concat_txt.write_text(
-                "\n".join(f"file '{p.resolve()}'" for p in clip_paths),
-                encoding="utf-8"
-            )
-
-            out_path = video_dir / f"ai_explainer_{ts}.mp4"
-            cmd_concat = [
-                ffmpeg_exe, "-y",
-                "-f", "concat", "-safe", "0", "-i", str(concat_txt),
-                "-c", "copy",
-                str(out_path)
-            ]
-            result = subprocess.run(cmd_concat, capture_output=True, text=True)
-            if result.returncode != 0:
-                yield sse("error", {"message": f"FFmpeg concat failed: {result.stderr[-300:]}"})
-                return
-
-            # ── Save to DB ─────────────────────────────────────────────────────
-            static_url = "/" + str(out_path).replace("\\", "/")
-            execute(
-                "UPDATE articles SET video_ai_url = %s WHERE id = %s",
-                (static_url, article_id),
-            )
-
-            yield sse("done", {"url": static_url})
-
-        finally:
-            for f in temp_clips:
-                try:
-                    if f.exists():
-                        f.unlink()
-                except Exception:
-                    pass
-
-    return Response(stream_with_context(generate()), mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return jsonify({"status": "started", "n_slides": len(images)})
 
 
 # ------------------------------------------------------------
