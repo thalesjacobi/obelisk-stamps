@@ -2664,7 +2664,7 @@ def _narrated_video_worker(article_id, cfg):
             f"You are writing a voiceover script for a {n_slides}-slide Instagram carousel "
             f"about the article below. For each slide, write a short narration segment of "
             f"{word_range} words that matches the scene and punchline. "
-            f"Return ONLY a JSON array of {n_slides} strings, one per slide.\n\n"
+            f'Return ONLY a JSON object in this exact format: {{"segments": ["text for slide 1", "text for slide 2", ...]}}\n\n'
             f"Slide descriptions:\n{scenes_desc}"
         )
         gpt_resp = _openai_client.chat.completions.create(
@@ -2675,9 +2675,16 @@ def _narrated_video_worker(article_id, cfg):
         raw_json = gpt_resp.choices[0].message.content
         parsed   = json.loads(raw_json)
         if isinstance(parsed, dict):
-            segments = parsed.get("segments") or list(parsed.values())[0]
+            segments = parsed.get("segments")
+            # Fallback: grab first value that is actually a list
+            if not isinstance(segments, list):
+                segments = next((v for v in parsed.values() if isinstance(v, list)), None)
+            # Last resort: split a string value into one entry per slide
+            if not isinstance(segments, list):
+                first_val = list(parsed.values())[0] if parsed else ""
+                segments = [str(first_val)] if first_val else []
         else:
-            segments = parsed
+            segments = parsed if isinstance(parsed, list) else []
         segments = [str(s) for s in segments[:n_slides]]
         while len(segments) < n_slides:
             segments.append(punchlines[len(segments)] if len(segments) < len(punchlines) else "")
