@@ -312,12 +312,14 @@ def upload_to_gcs(local_path, object_name, content_type=None):
         return None
     try:
         blob = _gcs_bucket.blob(_gcs_object_name(object_name))
-        if content_type:
-            blob.content_type = content_type
-        blob.upload_from_filename(str(local_path))
-        return blob.public_url
+        blob.upload_from_filename(str(local_path), content_type=content_type)
+        url = blob.public_url
+        print(f"GCS: Uploaded {object_name} → {url}")
+        return url
     except Exception as e:
-        print(f"WARNING: GCS upload failed for {object_name}: {e}")
+        import traceback
+        print(f"ERROR: GCS upload failed for {object_name}: {type(e).__name__}: {e}")
+        traceback.print_exc()
         return None
 
 
@@ -327,12 +329,14 @@ def upload_bytes_to_gcs(data, object_name, content_type=None):
         return None
     try:
         blob = _gcs_bucket.blob(_gcs_object_name(object_name))
-        if content_type:
-            blob.content_type = content_type
-        blob.upload_from_string(data)
-        return blob.public_url
+        blob.upload_from_string(data, content_type=content_type or "application/octet-stream")
+        url = blob.public_url
+        print(f"GCS: Uploaded {object_name} → {url}")
+        return url
     except Exception as e:
-        print(f"WARNING: GCS upload failed for {object_name}: {e}")
+        import traceback
+        print(f"ERROR: GCS upload failed for {object_name}: {type(e).__name__}: {e}")
+        traceback.print_exc()
         return None
 
 
