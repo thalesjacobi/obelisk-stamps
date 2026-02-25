@@ -1493,7 +1493,7 @@ function previewRestart() {
 // ════════════════════════════════════════════════════════════════
 // COMPONENT B — Narrated MP4
 // ════════════════════════════════════════════════════════════════
-let narratedAbortCtrl = null;
+// (no abort controller needed — generation runs in a background thread)
 
 /* ── Build one accordion item DOM node ───────────────────────── */
 function buildRunItem(run, expandIt) {
@@ -1573,31 +1573,78 @@ function addNarratedRun(run) {
     document.getElementById('narrated-empty').classList.add('d-none');
 }
 
-function narratedUnlock() {
-    const btn = document.getElementById('narrated-btn');
-    if (btn) btn.disabled = false;
-    // Only show empty state if no runs exist yet
-    const accordion = document.getElementById('narrated-runs-accordion');
-    if (!accordion || accordion.children.length === 0) {
-        document.getElementById('narrated-empty').classList.remove('d-none');
-    }
-}
-
 function openNarratedSettings() {
     new bootstrap.Modal(document.getElementById('narrated-settings-modal')).show();
 }
 
-function narratedGenerate() {
-    if (!ARTICLE_ID) return;
-    narratedAbortCtrl = new AbortController();
-    const btn = document.getElementById('narrated-btn');
-    btn.disabled = true;
+/* ── Status string → progress bar + label ────────────────────── */
+function _narratedApplyStatus(status, nSlides) {
+    const prgEl    = document.getElementById('narrated-progress');
+    const statusEl = document.getElementById('narrated-status-text');
+    if (!prgEl || !statusEl) return;
+    if (status === 'running:script') {
+        prgEl.style.width = '5%';
+        statusEl.textContent = 'Generating narration script…';
+    } else if (status && status.startsWith('running:audio:')) {
+        const m = status.match(/running:audio:(\d+)\/(\d+)/);
+        if (m) {
+            const n = parseInt(m[1]), total = parseInt(m[2]) || nSlides || 1;
+            prgEl.style.width = (5 + Math.round((n / total) * 30)) + '%';
+            statusEl.textContent = 'Generating audio ' + n + ' / ' + total + '…';
+        }
+    } else if (status && status.startsWith('running:clip:')) {
+        const m = status.match(/running:clip:(\d+)\/(\d+)/);
+        if (m) {
+            const n = parseInt(m[1]), total = parseInt(m[2]) || nSlides || 1;
+            prgEl.style.width = (35 + Math.round((n / total) * 55)) + '%';
+            statusEl.textContent = 'Rendering clip ' + n + ' / ' + total + '…';
+        }
+    } else if (status === 'running:final') {
+        prgEl.style.width = '90%';
+        statusEl.textContent = 'Merging clips…';
+    } else {
+        prgEl.style.width = '5%';
+        statusEl.textContent = 'Generation in progress — come back in a few minutes…';
+    }
+}
+
+/* ── Show running UI + kick off poll ─────────────────────────── */
+function _narratedShowRunning(nSlides) {
+    document.getElementById('narrated-btn').disabled = true;
     document.getElementById('narrated-stop-btn').classList.remove('d-none');
     document.getElementById('narrated-status').classList.remove('d-none');
     document.getElementById('narrated-empty').classList.add('d-none');
-    document.getElementById('narrated-status-text').textContent = 'Generating script…';
-    document.getElementById('narrated-progress').style.width = '0%';
+    _narratedApplyStatus('running:script', nSlides);
+    _narratedPoll();
+}
 
+/* ── Poll /video-data every 20 s ─────────────────────────────── */
+function _narratedPoll() {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/video-data')
+            .then(r => r.json())
+            .then(d => {
+                if (d.narrated_status && d.narrated_status.startsWith('running')) {
+                    _narratedApplyStatus(d.narrated_status, null);
+                    _narratedPoll();
+                } else if (d.narrated_status && d.narrated_status.startsWith('error')) {
+                    narratedFinish(d.narrated_status.slice(6) || 'Unknown error');
+                } else if (d.narrated_runs && d.narrated_runs.length) {
+                    addNarratedRun(d.narrated_runs[0]);   // prepend newest run
+                    narratedFinish(null);
+                } else {
+                    narratedFinish(null);
+                }
+            })
+            .catch(() => _narratedPoll());   // network blip — retry
+    }, 20000);
+}
+
+/* ── Main button handler ─────────────────────────────────────── */
+function narratedGenerate() {
+    if (!ARTICLE_ID) return;
+    const btn = document.getElementById('narrated-btn');
+    btn.disabled = true;
     fetch('/admin/articles/' + ARTICLE_ID + '/generate-narrated-video', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1610,77 +1657,33 @@ function narratedGenerate() {
             crf:        parseInt(document.querySelector('input[name="nv-crf"]:checked')?.value || '23'),
             fps:        parseInt(document.getElementById('nv-fps')?.value                   || '25'),
         }),
-        signal: narratedAbortCtrl.signal,
-    }).then(resp => {
-        if (!resp.ok) return resp.json().then(d => { throw new Error(d.error || resp.statusText); });
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = '';
-        function pump() {
-            reader.read().then(({ done, value }) => {
-                if (done) { narratedFinish(null); return; }
-                buf += decoder.decode(value, { stream: true });
-                let lines = buf.split('\n');
-                buf = lines.pop();
-                let evt = null, dataStr = null;
-                for (const line of lines) {
-                    if (line.startsWith('event: ')) evt = line.slice(7).trim();
-                    else if (line.startsWith('data: ')) {
-                        dataStr = line.slice(6).trim();
-                        if (evt && dataStr) {
-                            try { handleNarratedEvent(evt, JSON.parse(dataStr)); } catch(e) {}
-                            evt = null; dataStr = null;
-                        }
-                    }
-                }
-                pump();
-            }).catch(err => {
-                if (err.name !== 'AbortError') narratedFinish(err.message);
-            });
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) {
+            if (d.error === 'already_running') { _narratedShowRunning(d.n_slides || 10); }
+            else { btn.disabled = false; alert('Error: ' + d.error); }
+            return;
         }
-        pump();
-    }).catch(err => {
-        if (err.name !== 'AbortError') narratedFinish(err.message);
-    });
+        _narratedShowRunning(d.n_slides || 10);
+    })
+    .catch(err => { btn.disabled = false; alert('Network error: ' + err.message); });
 }
 
-function handleNarratedEvent(ev, p) {
-    const prgEl = document.getElementById('narrated-progress');
-    if (ev === 'script') {
-        document.getElementById('narrated-status-text').textContent = 'Generating audio…';
-        prgEl.style.width = '5%';
-    } else if (ev === 'audio') {
-        const pct = 5 + Math.round((p.n / p.of) * 30);
-        prgEl.style.width = pct + '%';
-        document.getElementById('narrated-status-text').textContent =
-            'TTS ' + p.n + ' / ' + p.of + '…';
-    } else if (ev === 'clip') {
-        const pct = 35 + Math.round((p.n / p.of) * 55);
-        prgEl.style.width = pct + '%';
-        document.getElementById('narrated-status-text').textContent =
-            'Rendering clip ' + p.n + ' / ' + p.of + '…';
-    } else if (ev === 'finalise') {
-        prgEl.style.width = '90%';
-        document.getElementById('narrated-status-text').textContent = 'Merging clips…';
-    } else if (ev === 'done') {
-        prgEl.style.width = '100%';
-        addNarratedRun(p.run);
-        narratedFinish(null);
-    } else if (ev === 'error') {
-        narratedFinish(p.message || 'Unknown error');
-    }
-}
-
+/* ── Stop watching (job keeps running in background) ─────────── */
 function narratedStop() {
-    if (narratedAbortCtrl) narratedAbortCtrl.abort();
-    narratedFinish('Stopped.');
+    narratedFinish(null);
+    document.getElementById('narrated-status-text').textContent =
+        'Stopped watching — the job is still running in the background. Reload the page to check again.';
+    document.getElementById('narrated-status').classList.remove('d-none');
+    document.getElementById('narrated-spinner').classList.add('d-none');
 }
 
 function narratedFinish(error) {
     const btn = document.getElementById('narrated-btn');
     if (btn) btn.disabled = false;
     document.getElementById('narrated-stop-btn').classList.add('d-none');
-    const spinner = document.getElementById('narrated-spinner');
+    const spinner    = document.getElementById('narrated-spinner');
     const statusText = document.getElementById('narrated-status-text');
     if (error) {
         if (statusText) statusText.textContent = 'Error: ' + error;
@@ -1851,12 +1854,21 @@ function _aiVideoFinish(error) {
                 params: { format:'square', voice:'onyx', tts_model:'tts-1', script_len:'medium', kb_speed:'slow', crf:23, fps:25 },
                 segments: d.narrated_script || [],
             }]);
+            // Narrated MP4 — resume if job was running when page loaded
+            if (d.narrated_status && d.narrated_status.startsWith('running')) {
+                const m = d.narrated_status.match(/running:clip:(\d+)\/(\d+)/);
+                const nSlides = m ? parseInt(m[2]) : 10;
+                _narratedShowRunning(nSlides);
+                _narratedApplyStatus(d.narrated_status, nSlides);
+            } else if (d.narrated_status && d.narrated_status.startsWith('error')) {
+                narratedFinish(d.narrated_status.slice(6) || 'Unknown error');
+            }
+            // AI Explainer — resume if job was running when page loaded
             if (d.ai_status && d.ai_status.startsWith('running')) {
-                // Job was running when the page loaded — re-attach progress UI and resume polling
                 const m = d.ai_status.match(/^running:(\d+)\/(\d+)$/);
                 const nSlides = m ? parseInt(m[2]) : 10;
                 _aiVideoShowRunning(nSlides);
-                _aiVideoApplyStatus(d.ai_status, nSlides);  // override with actual progress
+                _aiVideoApplyStatus(d.ai_status, nSlides);
             } else if (d.ai_status && d.ai_status.startsWith('error')) {
                 _aiVideoFinish(d.ai_status.slice(6) || 'Unknown error');
             } else if (d.ai_url) {
