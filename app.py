@@ -123,6 +123,15 @@ if GCS_BUCKET_NAME:
 else:
     print("GCS: GCS_BUCKET_NAME not set — using local storage")
 
+# --- Instagram Graph API (optional — for carousel posting) ---
+IG_USER_ID      = os.getenv("IG_USER_ID", "")
+IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "")
+_IG_GRAPH_URL   = "https://graph.facebook.com/v21.0"
+if IG_USER_ID and IG_ACCESS_TOKEN:
+    print("Instagram: credentials configured")
+else:
+    print("Instagram: IG_USER_ID / IG_ACCESS_TOKEN not set — posting disabled")
+
 # --- Knowledge Base (ChromaDB) ---
 KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb")
 
@@ -2114,7 +2123,9 @@ def admin_user_activity(user_id):
 def admin_settings():
     carousel_style = get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
     return render_template("admin.html", active_tab="settings",
-                           carousel_style=carousel_style)
+                           carousel_style=carousel_style,
+                           ig_user_id_set=bool(IG_USER_ID),
+                           ig_token_set=bool(IG_ACCESS_TOKEN))
 
 
 @app.route("/admin/settings/save", methods=["POST"])
@@ -2163,7 +2174,8 @@ def admin_articles():
 @login_required
 @admin_required
 def admin_article_new():
-    return render_template("article_edit.html", article=None, carousel_style=CAROUSEL_STYLE_SUFFIX)
+    return render_template("article_edit.html", article=None, carousel_style=CAROUSEL_STYLE_SUFFIX,
+                           ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN))
 
 
 @app.route("/admin/articles/new", methods=["POST"])
@@ -2215,7 +2227,8 @@ def admin_article_edit(article_id):
     # Show this article's saved style; fall back to current site setting if never generated
     article_carousel_style = row[12] or get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
     return render_template("article_edit.html", article=article,
-                           carousel_style=article_carousel_style)
+                           carousel_style=article_carousel_style,
+                           ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN))
 
 
 @app.route("/admin/articles/<int:article_id>/save", methods=["POST"])
@@ -3212,6 +3225,226 @@ def sitemap_xml():
         + "\n</urlset>"
     )
     return Response(xml, mimetype="application/xml")
+
+
+# ------------------------------------------------------------
+# INSTAGRAM CAROUSEL POSTING
+# ------------------------------------------------------------
+
+def _post_to_instagram_worker(article_id, caption):
+    """
+    Background thread: compose each carousel slide → upload to GCS →
+    create IG child containers → create carousel container → publish.
+    Progress stored in site_settings key ig_post_status_{article_id}.
+    Result stored in ig_post_result_{article_id}.
+    """
+    import time as _time
+    import requests as _req
+
+    status_key = f"ig_post_status_{article_id}"
+    result_key = f"ig_post_result_{article_id}"
+
+    def _set_status(s):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, s, s))
+
+    def _set_result(s):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, s, s))
+
+    def _clear_status():
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    ig_user_id    = IG_USER_ID
+    access_token  = IG_ACCESS_TOKEN
+
+    try:
+        # ── 1. Load carousel data ──────────────────────────────────────────
+        row = query_one(
+            "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+            (article_id,)
+        )
+        if not row:
+            _set_result("error:Article not found")
+            _clear_status()
+            return
+
+        images     = [x for x in (json.loads(row[0]) if row[0] else [])[:10] if x]
+        punchlines = json.loads(row[1]) if row[1] else []
+        n          = len(images)
+
+        if n < 2:
+            _set_result("error:Need at least 2 images to post a carousel")
+            _clear_status()
+            return
+
+        # ── 2. Compose + upload each slide to GCS ─────────────────────────
+        ts = int(_time.time())
+        composed_urls = []
+        for i, img_url in enumerate(images):
+            _set_status(f"running:compose:{i+1}/{n}")
+            try:
+                if img_url.startswith("https://"):
+                    resp = _req.get(img_url, timeout=20)
+                    resp.raise_for_status()
+                    img_bytes = resp.content
+                else:
+                    local = resolve_image_to_local_path(img_url)
+                    if not local or not local.exists():
+                        _set_result(f"error:Image not found: {img_url}")
+                        _clear_status()
+                        return
+                    img_bytes = local.read_bytes()
+            except Exception as e:
+                _set_result(f"error:Could not fetch image {i+1}: {e}")
+                _clear_status()
+                return
+
+            punchline   = punchlines[i] if i < len(punchlines) else ""
+            jpeg_bytes  = compose_carousel_slide(img_bytes, punchline, i, n)
+            gcs_obj     = f"articles/{article_id}/instagram/composed_{i+1}_{ts}.jpg"
+            public_url  = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+            if not public_url:
+                _set_result("error:GCS upload failed — GCS_BUCKET_NAME must be set")
+                _clear_status()
+                return
+            composed_urls.append(public_url)
+
+        # ── 3. Create IG child containers ─────────────────────────────────
+        _set_status(f"running:containers:0/{n}")
+        container_ids = []
+        for i, url in enumerate(composed_urls):
+            _set_status(f"running:containers:{i+1}/{n}")
+            resp = _req.post(
+                f"{_IG_GRAPH_URL}/{ig_user_id}/media",
+                data={"image_url": url, "is_carousel_item": "true",
+                      "access_token": access_token},
+                timeout=30,
+            )
+            data = resp.json()
+            if "id" not in data:
+                err = data.get("error", {}).get("message", str(data))
+                _set_result(f"error:Child container {i+1} failed: {err}")
+                _clear_status()
+                return
+            container_ids.append(data["id"])
+
+        # ── 4. Poll each container until FINISHED ─────────────────────────
+        _set_status(f"running:poll:0/{n}")
+        for i, cid in enumerate(container_ids):
+            _set_status(f"running:poll:{i+1}/{n}")
+            deadline = _time.time() + 300  # 5-minute timeout
+            while _time.time() < deadline:
+                r = _req.get(
+                    f"{_IG_GRAPH_URL}/{cid}",
+                    params={"fields": "status_code", "access_token": access_token},
+                    timeout=15,
+                )
+                status_code = r.json().get("status_code", "")
+                if status_code == "FINISHED":
+                    break
+                if status_code == "ERROR":
+                    _set_result(f"error:Container {i+1} status ERROR")
+                    _clear_status()
+                    return
+                _time.sleep(5)
+            else:
+                _set_result(f"error:Container {i+1} timed out waiting for FINISHED")
+                _clear_status()
+                return
+
+        # ── 5. Create carousel container ──────────────────────────────────
+        _set_status("running:carousel")
+        resp = _req.post(
+            f"{_IG_GRAPH_URL}/{ig_user_id}/media",
+            data={"media_type": "CAROUSEL",
+                  "children": ",".join(container_ids),
+                  "caption": caption or "",
+                  "access_token": access_token},
+            timeout=30,
+        )
+        data = resp.json()
+        if "id" not in data:
+            err = data.get("error", {}).get("message", str(data))
+            _set_result(f"error:Carousel container failed: {err}")
+            _clear_status()
+            return
+        carousel_id = data["id"]
+
+        # ── 6. Publish ────────────────────────────────────────────────────
+        _set_status("running:publish")
+        resp = _req.post(
+            f"{_IG_GRAPH_URL}/{ig_user_id}/media_publish",
+            data={"creation_id": carousel_id, "access_token": access_token},
+            timeout=30,
+        )
+        data = resp.json()
+        if "id" not in data:
+            err = data.get("error", {}).get("message", str(data))
+            _set_result(f"error:Publish failed: {err}")
+            _clear_status()
+            return
+
+        post_id   = data["id"]
+        permalink = f"https://www.instagram.com/p/{post_id}/"
+        _set_result(f"done:{permalink}")
+        _clear_status()
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        _set_result(f"error:Unexpected error: {e}")
+        _clear_status()
+
+
+@app.route("/admin/articles/<int:article_id>/post-to-instagram", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_post_to_instagram(article_id):
+    """Start a background thread to post carousel to Instagram."""
+    if not IG_USER_ID or not IG_ACCESS_TOKEN:
+        return jsonify({"error": "Instagram credentials not configured. "
+                        "Set IG_USER_ID and IG_ACCESS_TOKEN environment variables."}), 400
+
+    status_key  = f"ig_post_status_{article_id}"
+    current_status = get_setting(status_key)
+    if current_status and current_status.startswith("running"):
+        return jsonify({"error": "already_running"}), 409
+
+    data    = request.get_json() or {}
+    caption = (data.get("caption") or "").strip()[:2200]
+
+    row = query_one(
+        "SELECT carousel_images FROM articles WHERE id = %s", (article_id,)
+    )
+    if not row or not row[0]:
+        return jsonify({"error": "No carousel images found."}), 400
+    images = [x for x in (json.loads(row[0]) if row[0] else [])[:10] if x]
+    if len(images) < 2:
+        return jsonify({"error": "Need at least 2 carousel images to post."}), 400
+
+    # Seed status immediately so the poll endpoint sees "running" right away
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (status_key, "running:starting", "running:starting"))
+
+    t = threading.Thread(
+        target=_post_to_instagram_worker,
+        args=(article_id, caption),
+        daemon=True,
+    )
+    t.start()
+    return jsonify({"started": True, "n_images": len(images)})
+
+
+@app.route("/admin/articles/<int:article_id>/ig-post-status")
+@login_required
+@admin_required
+def admin_article_ig_post_status(article_id):
+    """Poll endpoint: returns current Instagram post status and last result."""
+    status = get_setting(f"ig_post_status_{article_id}")
+    result = get_setting(f"ig_post_result_{article_id}")
+    return jsonify({"status": status, "result": result})
 
 
 # ------------------------------------------------------------

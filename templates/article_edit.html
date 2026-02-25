@@ -243,6 +243,81 @@
         </div>
     </div>
 
+    <!-- Instagram Accordion -->
+    {% if article and article.id %}
+    <div class="card mt-3" id="ig-accordion-card">
+        <div class="card-header d-flex align-items-center justify-content-between"
+             style="cursor:pointer" onclick="toggleIgAccordion()">
+            <span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" class="me-1" style="vertical-align:-2px">
+                    <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+                    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+                </svg>
+                <strong>Instagram</strong>
+            </span>
+            <svg id="ig-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"
+                 style="transition:transform 0.2s">
+                <polyline points="6 9 12 15 18 9"/>
+            </svg>
+        </div>
+        <div class="card-body d-none" id="ig-accordion-body">
+            {% if not ig_configured %}
+            <div class="alert alert-warning mb-0 d-flex align-items-center gap-2 small">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" flex-shrink="0">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                Instagram credentials not configured. Set <code>IG_USER_ID</code> and
+                <code>IG_ACCESS_TOKEN</code> as environment variables and redeploy.
+                See <a href="/admin/settings" target="_blank">Settings</a> for status.
+            </div>
+            {% else %}
+            <div class="mb-3">
+                <label for="ig-caption" class="form-label small fw-semibold mb-1">Caption</label>
+                <textarea id="ig-caption" class="form-control form-control-sm" rows="4"
+                          placeholder="Write your caption here… #stamps #philately"
+                          maxlength="2200" oninput="updateIgCharCount()"></textarea>
+                <div class="d-flex justify-content-between mt-1">
+                    <span class="text-muted small" id="ig-char-count">0 / 2200</span>
+                    <span class="text-muted small" id="ig-images-hint"></span>
+                </div>
+            </div>
+            <div id="ig-post-btn-row" class="mb-2">
+                <button type="button" class="btn btn-dark btn-sm" onclick="postToInstagram()" id="ig-post-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                         stroke-linejoin="round" class="me-1" style="vertical-align:-1px">
+                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+                        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+                    </svg>
+                    Post to Instagram
+                </button>
+            </div>
+            <!-- Status area -->
+            <div id="ig-status-area" class="d-none">
+                <div class="d-flex align-items-center gap-2 mb-1" id="ig-status-running">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    <span id="ig-status-text" class="text-muted small">Starting…</span>
+                </div>
+                <div class="progress mb-2" style="height:4px" id="ig-progress-wrap">
+                    <div id="ig-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                         role="progressbar" style="width:0%"></div>
+                </div>
+                <div id="ig-result" class="d-none small"></div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Carousel Error Modal -->
     <div class="modal fade" id="carousel-error-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
@@ -765,6 +840,8 @@ const SAVE_URL = ARTICLE_ID
     ? '/admin/articles/' + ARTICLE_ID + '/save'
     : '/admin/articles/new';
 const CAROUSEL_STYLE = {{ carousel_style | tojson }};
+const ARTICLE_TITLE = {{ (article.title if article and article.title else '') | tojson }};
+const CAROUSEL_PUNCHLINES = {{ (article.carousel_punchlines if article and article.carousel_punchlines else []) | tojson }};
 
 function openCarouselStyleModal() {
     document.getElementById('carousel-style-text').value = CAROUSEL_STYLE;
@@ -1024,6 +1101,172 @@ function openIgPreview(slideIdx) {
             errEl.classList.remove('d-none');
         });
 }
+
+/* ── Instagram accordion ─────────────────────────────────────── */
+let _igPollTimer = null;
+
+function toggleIgAccordion() {
+    const body    = document.getElementById('ig-accordion-body');
+    const chevron = document.getElementById('ig-chevron');
+    if (!body) return;
+    const open = body.classList.toggle('d-none');
+    chevron.style.transform = open ? '' : 'rotate(180deg)';
+    if (!open) {
+        // Accordion opened — update image hint & check running status
+        updateIgImagesHint();
+        checkIgRunning();
+    }
+}
+
+function updateIgImagesHint() {
+    const hint = document.getElementById('ig-images-hint');
+    if (!hint) return;
+    const active = document.querySelectorAll('#carousel-grid .carousel-col').length;
+    hint.textContent = active + ' image' + (active !== 1 ? 's' : '') + ' will be composited & posted';
+}
+
+function updateIgCharCount() {
+    const ta    = document.getElementById('ig-caption');
+    const lbl   = document.getElementById('ig-char-count');
+    if (!ta || !lbl) return;
+    lbl.textContent = ta.value.length + ' / 2200';
+}
+
+function checkIgRunning() {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/ig-post-status')
+        .then(r => r.json())
+        .then(d => {
+            if (d.status && d.status.startsWith('running')) {
+                showIgRunning(d.status);
+                _igPollTimer = setInterval(pollIgStatus, 5000);
+            } else if (d.status && d.status.startsWith('done:')) {
+                showIgDone(d.status.slice(5));
+            } else if (d.status && d.status.startsWith('error:')) {
+                showIgError(d.status.slice(6));
+            }
+        })
+        .catch(() => {});
+}
+
+function postToInstagram() {
+    if (!ARTICLE_ID) return;
+    const caption = (document.getElementById('ig-caption') || {}).value || '';
+    document.getElementById('ig-post-btn').disabled = true;
+    showIgRunning('running:0');
+
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-to-instagram', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({caption: caption})
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) {
+            showIgError(d.error);
+            document.getElementById('ig-post-btn').disabled = false;
+            return;
+        }
+        // Started — begin polling
+        clearInterval(_igPollTimer);
+        _igPollTimer = setInterval(pollIgStatus, 5000);
+    })
+    .catch(err => {
+        showIgError(err.message || 'Request failed');
+        document.getElementById('ig-post-btn').disabled = false;
+    });
+}
+
+function pollIgStatus() {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/ig-post-status')
+        .then(r => r.json())
+        .then(d => {
+            if (!d.status || d.status === 'null') return;
+            if (d.status.startsWith('running')) {
+                showIgRunning(d.status);
+            } else if (d.status.startsWith('done:')) {
+                clearInterval(_igPollTimer); _igPollTimer = null;
+                showIgDone(d.status.slice(5));
+                document.getElementById('ig-post-btn').disabled = false;
+            } else if (d.status.startsWith('error:')) {
+                clearInterval(_igPollTimer); _igPollTimer = null;
+                showIgError(d.status.slice(6));
+                document.getElementById('ig-post-btn').disabled = false;
+            }
+        })
+        .catch(() => {});
+}
+
+function showIgRunning(statusStr) {
+    // statusStr like "running:3/10" or "running:0"
+    const area     = document.getElementById('ig-status-area');
+    const running  = document.getElementById('ig-status-running');
+    const textEl   = document.getElementById('ig-status-text');
+    const progress = document.getElementById('ig-progress-bar');
+    const resultEl = document.getElementById('ig-result');
+    if (!area) return;
+    area.classList.remove('d-none');
+    running.classList.remove('d-none');
+    resultEl.classList.add('d-none');
+    const parts = statusStr.replace('running:', '').split('/');
+    const cur = parseInt(parts[0]) || 0;
+    const tot = parseInt(parts[1]) || 0;
+    if (tot > 0) {
+        textEl.textContent = 'Compositing & uploading… ' + cur + ' / ' + tot;
+        progress.style.width = Math.round((cur / tot) * 100) + '%';
+    } else if (statusStr.includes('carousel')) {
+        textEl.textContent = 'Creating carousel container…';
+        progress.style.width = '90%';
+    } else if (statusStr.includes('publish')) {
+        textEl.textContent = 'Publishing to Instagram…';
+        progress.style.width = '97%';
+    } else {
+        textEl.textContent = 'Starting…';
+        progress.style.width = '5%';
+    }
+}
+
+function showIgDone(permalink) {
+    const area     = document.getElementById('ig-status-area');
+    const running  = document.getElementById('ig-status-running');
+    const progress = document.getElementById('ig-progress-wrap');
+    const resultEl = document.getElementById('ig-result');
+    if (!area) return;
+    area.classList.remove('d-none');
+    running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    resultEl.classList.remove('d-none');
+    resultEl.innerHTML = '<span class="text-success">✓ Posted!</span> ' +
+        (permalink ? '<a href="' + permalink + '" target="_blank" rel="noopener">View on Instagram</a>' : '');
+}
+
+function showIgError(msg) {
+    const area     = document.getElementById('ig-status-area');
+    const running  = document.getElementById('ig-status-running');
+    const resultEl = document.getElementById('ig-result');
+    if (!area) return;
+    area.classList.remove('d-none');
+    running.classList.add('d-none');
+    resultEl.classList.remove('d-none');
+    resultEl.innerHTML = '<span class="text-danger">✗ Error: ' + msg + '</span>';
+}
+
+// Pre-populate caption with article title + punchlines when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    const captionEl = document.getElementById('ig-caption');
+    if (!captionEl) return;
+    const lines = [];
+    if (typeof ARTICLE_TITLE !== 'undefined' && ARTICLE_TITLE) lines.push(ARTICLE_TITLE);
+    if (typeof CAROUSEL_PUNCHLINES !== 'undefined' && Array.isArray(CAROUSEL_PUNCHLINES)) {
+        CAROUSEL_PUNCHLINES.forEach(function(p) { if (p) lines.push(p); });
+    }
+    if (lines.length) {
+        captionEl.value = lines.join('\n');
+        updateIgCharCount();
+    }
+    updateIgImagesHint();
+});
 
 function addCarouselImage(i, url, initial, prompt, punchline) {
     const g = document.getElementById('carousel-grid');

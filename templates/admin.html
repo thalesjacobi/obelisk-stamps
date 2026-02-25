@@ -471,6 +471,49 @@
                 </div>
             </div>
         </div>
+
+        <!-- Instagram API Credentials -->
+        <div class="card mt-4">
+            <div class="card-header"><strong>Instagram API</strong></div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    These credentials are required to post carousels directly to Instagram.
+                    They are stored as environment variables — never in the database.
+                </p>
+                <table class="table table-sm mb-3">
+                    <thead><tr><th>Variable</th><th>Status</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td><code>IG_USER_ID</code></td>
+                            <td>
+                                {% if ig_user_id_set %}
+                                    <span class="badge bg-success">✓ Configured</span>
+                                {% else %}
+                                    <span class="badge bg-danger">✗ Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>IG_ACCESS_TOKEN</code></td>
+                            <td>
+                                {% if ig_token_set %}
+                                    <span class="badge bg-success">✓ Configured</span>
+                                {% else %}
+                                    <span class="badge bg-danger">✗ Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="text-muted small mb-0">
+                    To set or update these values, add them as
+                    <strong>GitHub Secrets</strong> (<code>IG_USER_ID</code> and
+                    <code>IG_ACCESS_TOKEN</code>) and redeploy — or update them directly
+                    in the Cloud Run console under <em>Edit &amp; Deploy New Revision →
+                    Variables &amp; Secrets</em>.
+                </p>
+            </div>
+        </div>
         {% endif %}
     </div>
 </div>
