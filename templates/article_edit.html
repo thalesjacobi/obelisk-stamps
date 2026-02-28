@@ -1137,13 +1137,19 @@ function checkIgRunning() {
     fetch('/admin/articles/' + ARTICLE_ID + '/ig-post-status')
         .then(r => r.json())
         .then(d => {
-            if (d.status && d.status.startsWith('running')) {
-                showIgRunning(d.status);
+            const status = d.status;
+            const result = d.result;
+            if (status && status.startsWith('running')) {
+                showIgRunning(status);
                 _igPollTimer = setInterval(pollIgStatus, 5000);
-            } else if (d.status && d.status.startsWith('done:')) {
-                showIgDone(d.status.slice(5));
-            } else if (d.status && d.status.startsWith('error:')) {
-                showIgError(d.status.slice(6));
+            } else if (status && status.startsWith('done:')) {
+                showIgDone(status.slice(5));
+            } else if (status && status.startsWith('error:')) {
+                showIgError(status.slice(6));
+            } else if (!status && result) {
+                // Status cleared but result exists from a previous post
+                if (result.startsWith('done:')) showIgDone(result.slice(5));
+                else if (result.startsWith('error:')) showIgError(result.slice(6));
             }
         })
         .catch(() => {});
@@ -1182,16 +1188,28 @@ function pollIgStatus() {
     fetch('/admin/articles/' + ARTICLE_ID + '/ig-post-status')
         .then(r => r.json())
         .then(d => {
-            if (!d.status || d.status === 'null') return;
-            if (d.status.startsWith('running')) {
-                showIgRunning(d.status);
-            } else if (d.status.startsWith('done:')) {
+            const status = d.status;
+            const result = d.result;
+            if (!status || status === 'null') {
+                // Worker finished and cleared status — check result for outcome
                 clearInterval(_igPollTimer); _igPollTimer = null;
-                showIgDone(d.status.slice(5));
+                if (result && result.startsWith('done:')) {
+                    showIgDone(result.slice(5));
+                } else if (result && result.startsWith('error:')) {
+                    showIgError(result.slice(6));
+                    document.getElementById('ig-post-btn').disabled = false;
+                }
+                return;
+            }
+            if (status.startsWith('running')) {
+                showIgRunning(status);
+            } else if (status.startsWith('done:')) {
+                clearInterval(_igPollTimer); _igPollTimer = null;
+                showIgDone(status.slice(5));
                 document.getElementById('ig-post-btn').disabled = false;
-            } else if (d.status.startsWith('error:')) {
+            } else if (status.startsWith('error:')) {
                 clearInterval(_igPollTimer); _igPollTimer = null;
-                showIgError(d.status.slice(6));
+                showIgError(status.slice(6));
                 document.getElementById('ig-post-btn').disabled = false;
             }
         })

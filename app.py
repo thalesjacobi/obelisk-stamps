@@ -3278,6 +3278,8 @@ def _post_to_instagram_worker(article_id, caption):
             _clear_status()
             return
 
+        print(f"IG worker: article={article_id} posting {n} images ig_user={ig_user_id}", flush=True)
+
         # ── 2. Compose + upload each slide to GCS ─────────────────────────
         ts = int(_time.time())
         composed_urls = []
@@ -3308,6 +3310,7 @@ def _post_to_instagram_worker(article_id, caption):
                 _set_result("error:GCS upload failed — GCS_BUCKET_NAME must be set")
                 _clear_status()
                 return
+            print(f"IG worker: slide {i+1}/{n} composed → {public_url}", flush=True)
             composed_urls.append(public_url)
 
         # ── 3. Create IG child containers ─────────────────────────────────
@@ -3324,9 +3327,11 @@ def _post_to_instagram_worker(article_id, caption):
             data = resp.json()
             if "id" not in data:
                 err = data.get("error", {}).get("message", str(data))
+                print(f"IG worker: child container {i+1} FAILED: {err}", flush=True)
                 _set_result(f"error:Child container {i+1} failed: {err}")
                 _clear_status()
                 return
+            print(f"IG worker: child container {i+1}/{n} id={data['id']}", flush=True)
             container_ids.append(data["id"])
 
         # ── 4. Poll each container until FINISHED ─────────────────────────
@@ -3342,8 +3347,10 @@ def _post_to_instagram_worker(article_id, caption):
                 )
                 status_code = r.json().get("status_code", "")
                 if status_code == "FINISHED":
+                    print(f"IG worker: container {i+1}/{n} FINISHED", flush=True)
                     break
                 if status_code == "ERROR":
+                    print(f"IG worker: container {i+1}/{n} ERROR", flush=True)
                     _set_result(f"error:Container {i+1} status ERROR")
                     _clear_status()
                     return
@@ -3355,6 +3362,7 @@ def _post_to_instagram_worker(article_id, caption):
 
         # ── 5. Create carousel container ──────────────────────────────────
         _set_status("running:carousel")
+        print(f"IG worker: creating carousel container with {n} children", flush=True)
         resp = _req.post(
             f"{_IG_GRAPH_URL}/{ig_user_id}/media",
             data={"media_type": "CAROUSEL",
@@ -3366,13 +3374,16 @@ def _post_to_instagram_worker(article_id, caption):
         data = resp.json()
         if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
+            print(f"IG worker: carousel container FAILED: {err}", flush=True)
             _set_result(f"error:Carousel container failed: {err}")
             _clear_status()
             return
         carousel_id = data["id"]
+        print(f"IG worker: carousel container id={carousel_id}", flush=True)
 
         # ── 6. Publish ────────────────────────────────────────────────────
         _set_status("running:publish")
+        print(f"IG worker: publishing carousel {carousel_id}", flush=True)
         resp = _req.post(
             f"{_IG_GRAPH_URL}/{ig_user_id}/media_publish",
             data={"creation_id": carousel_id, "access_token": access_token},
@@ -3381,18 +3392,21 @@ def _post_to_instagram_worker(article_id, caption):
         data = resp.json()
         if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
+            print(f"IG worker: publish FAILED: {err}", flush=True)
             _set_result(f"error:Publish failed: {err}")
             _clear_status()
             return
 
         post_id   = data["id"]
         permalink = f"https://www.instagram.com/p/{post_id}/"
+        print(f"IG worker: SUCCESS post_id={post_id} permalink={permalink}", flush=True)
         _set_result(f"done:{permalink}")
         _clear_status()
 
     except Exception as e:
         import traceback
         traceback.print_exc()
+        print(f"IG worker EXCEPTION: {e}", flush=True)
         _set_result(f"error:Unexpected error: {e}")
         _clear_status()
 
@@ -3423,7 +3437,9 @@ def admin_article_post_to_instagram(article_id):
     if len(images) < 2:
         return jsonify({"error": "Need at least 2 carousel images to post."}), 400
 
-    # Seed status immediately so the poll endpoint sees "running" right away
+    # Clear stale result from any previous post, then seed running status
+    result_key = f"ig_post_result_{article_id}"
+    execute("DELETE FROM site_settings WHERE `key` = %s", (result_key,))
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s",
             (status_key, "running:starting", "running:starting"))
