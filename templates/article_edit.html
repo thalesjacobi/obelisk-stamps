@@ -842,6 +842,7 @@ const SAVE_URL = ARTICLE_ID
 const CAROUSEL_STYLE = {{ carousel_style | tojson }};
 const ARTICLE_TITLE = {{ (article.title if article and article.title else '') | tojson }};
 const CAROUSEL_PUNCHLINES = {{ (article.carousel_punchlines if article and article.carousel_punchlines else []) | tojson }};
+const ARTICLE_URL = {{ ((site_url ~ '/articles/' ~ article.slug) if article and article.slug else '') | tojson }};
 
 function openCarouselStyleModal() {
     document.getElementById('carousel-style-text').value = CAROUSEL_STYLE;
@@ -1279,6 +1280,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof CAROUSEL_PUNCHLINES !== 'undefined' && Array.isArray(CAROUSEL_PUNCHLINES)) {
         CAROUSEL_PUNCHLINES.forEach(function(p) { if (p) lines.push(p); });
     }
+    if (typeof ARTICLE_URL !== 'undefined' && ARTICLE_URL) lines.push('\n' + ARTICLE_URL);
     if (lines.length) {
         captionEl.value = lines.join('\n');
         updateIgCharCount();
