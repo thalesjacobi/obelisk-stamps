@@ -3264,8 +3264,19 @@ def _ai_video_worker(article_id, images, prompts, ts):
                 pass
 
 
-def _cinemagraph_worker(article_id, images, prompts=None):
-    """Background thread: Runway Gen-4 per carousel slide → store MP4 GCS URLs in DB."""
+def _cinemagraph_worker(article_id, images, prompts=None,
+                        slot_indices=None, existing_urls=None, existing_seeds=None):
+    """Background thread: Runway Gen-4 per carousel slide → store MP4 GCS URLs in DB.
+
+    Args:
+        images:         list of source image URLs to generate clips for
+        prompts:        parallel list of per-slide prompts
+        slot_indices:   list mapping each item in ``images`` to a 0-based slot
+                        in the 10-slot cinemagraph array (e.g. [0, 3] means we
+                        are generating clips for slots 1 and 4 only)
+        existing_urls:  full 10-slot cinemagraph URL array (to merge new results into)
+        existing_seeds: full 10-slot seed array (to merge new seeds into)
+    """
     n = len(images)
     ts = int(time.time())
     status_key = f"cinemagraph_status_{article_id}"
@@ -3294,20 +3305,27 @@ def _cinemagraph_worker(article_id, images, prompts=None):
         return bool(get_setting(cancel_key))
     # ──────────────────────────────────────────────────────────────────────────
 
-    cinemagraph_urls = []
-    cinemagraph_seeds = []
+    # Start from existing arrays so we preserve clips that aren't being regenerated
+    cinemagraph_urls  = list(existing_urls  or [])[:10]
+    cinemagraph_seeds = list(existing_seeds or [])[:10]
+    while len(cinemagraph_urls)  < 10: cinemagraph_urls.append(None)
+    while len(cinemagraph_seeds) < 10: cinemagraph_seeds.append(None)
+
     try:
         for i, img_url in enumerate(images):
+            real_idx = slot_indices[i] if slot_indices else i
+            slide_num = real_idx + 1  # 1-based for display
+
             if _is_cancelled():
                 _log("Cancelled by user")
                 break
             _set_status(f"running:{i}/{n}")
-            _log(f"slide {i+1}/{n} submitting to Runway")
+            _log(f"slide {slide_num} ({i+1}/{n}) submitting to Runway")
 
             # Resolve image to something Runway can access (HTTPS URL or base64)
             if img_url.startswith("https://"):
                 prompt_image = img_url
-                _log(f"slide {i+1} using GCS URL")
+                _log(f"slide {slide_num} using GCS URL")
             else:
                 img_path = resolve_image_to_local_path(img_url)
                 if img_path and img_path.exists():
@@ -3318,17 +3336,15 @@ def _cinemagraph_worker(article_id, images, prompts=None):
                     ext = img_path.suffix.lower()
                     mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
                     prompt_image = f"data:{mime};base64,{img_b64}"
-                    _log(f"slide {i+1} using base64 ({mime}, {len(img_bytes)//1024}KB)")
+                    _log(f"slide {slide_num} using base64 ({mime}, {len(img_bytes)//1024}KB)")
                 else:
-                    _log(f"slide {i+1} image not found: {img_url}")
-                    cinemagraph_urls.append(None)
-                    cinemagraph_seeds.append(None)
+                    _log(f"slide {slide_num} image not found: {img_url}")
                     continue
 
             slide_prompt = (prompts[i] if prompts and i < len(prompts) and prompts[i] else None) or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
             slide_seed = random.randint(0, 4294967295)
-            _log(f"slide {i+1} prompt: {slide_prompt[:80]}")
-            _log(f"slide {i+1} seed: {slide_seed}")
+            _log(f"slide {slide_num} prompt: {slide_prompt[:80]}")
+            _log(f"slide {slide_num} seed: {slide_seed}")
             try:
                 task = _runway_client.image_to_video.create(
                     model="gen4_turbo",
@@ -3339,11 +3355,9 @@ def _cinemagraph_worker(article_id, images, prompts=None):
                     seed=slide_seed,
                 )
                 task_id = task.id
-                _log(f"slide {i+1} Runway task_id={task_id}")
+                _log(f"slide {slide_num} Runway task_id={task_id}")
             except Exception as e:
-                _log(f"slide {i+1} Runway submit FAILED: {e}")
-                cinemagraph_urls.append(None)
-                cinemagraph_seeds.append(None)
+                _log(f"slide {slide_num} Runway submit FAILED: {e}")
                 continue
 
             # Poll Runway until the clip is ready
@@ -3352,25 +3366,25 @@ def _cinemagraph_worker(article_id, images, prompts=None):
             while True:
                 time.sleep(6)
                 if _is_cancelled():
-                    _log(f"slide {i+1} cancelled by user during poll")
+                    _log(f"slide {slide_num} cancelled by user during poll")
                     break
                 poll_count += 1
                 try:
                     status_obj = _runway_client.tasks.retrieve(task_id)
                     runway_status = status_obj.status
                 except Exception as e:
-                    _log(f"slide {i+1} poll error: {e}")
+                    _log(f"slide {slide_num} poll error: {e}")
                     break
                 if runway_status == "SUCCEEDED":
                     mp4_url = status_obj.output[0] if status_obj.output else None
-                    _log(f"slide {i+1}/{n} Runway SUCCEEDED after {poll_count} polls")
+                    _log(f"slide {slide_num} ({i+1}/{n}) Runway SUCCEEDED after {poll_count} polls")
                     break
                 elif runway_status == "FAILED":
                     failure_reason = getattr(status_obj, "failure", "") or getattr(status_obj, "failureCode", "")
-                    _log(f"slide {i+1}/{n} Runway FAILED (reason: {failure_reason})")
+                    _log(f"slide {slide_num} ({i+1}/{n}) Runway FAILED (reason: {failure_reason})")
                     break
                 else:
-                    _log(f"slide {i+1} still generating (poll {poll_count}, status={runway_status})")
+                    _log(f"slide {slide_num} still generating (poll {poll_count}, status={runway_status})")
 
             if mp4_url:
                 try:
@@ -3378,28 +3392,25 @@ def _cinemagraph_worker(article_id, images, prompts=None):
                     # Save locally first — needed as fallback when GCS is not configured
                     local_dir = Path(f"static/articles/{article_id}/cinemagraph")
                     local_dir.mkdir(parents=True, exist_ok=True)
-                    local_path = local_dir / f"slide_{i+1}_{ts}.mp4"
+                    local_path = local_dir / f"slide_{slide_num}_{ts}.mp4"
                     local_path.write_bytes(r.content)
                     # Upload to GCS; fall back to local /static/... URL if unavailable
-                    gcs_obj = f"articles/{article_id}/cinemagraph/slide_{i+1}_{ts}.mp4"
+                    gcs_obj = f"articles/{article_id}/cinemagraph/slide_{slide_num}_{ts}.mp4"
                     gcs_url = upload_bytes_to_gcs(r.content, gcs_obj, content_type="video/mp4")
                     if gcs_url:
                         local_path.unlink(missing_ok=True)  # GCS has it — clean up local copy
                         saved_url = gcs_url
                     else:
                         saved_url = "/" + str(local_path).replace("\\", "/")
-                    cinemagraph_urls.append(saved_url)
-                    _log(f"slide {i+1}/{n} saved → {saved_url}")
+                    cinemagraph_urls[real_idx] = saved_url
+                    _log(f"slide {slide_num} ({i+1}/{n}) saved → {saved_url}")
                 except Exception as e:
-                    _log(f"slide {i+1} save FAILED: {e}")
-                    cinemagraph_urls.append(None)
-            else:
-                cinemagraph_urls.append(None)
+                    _log(f"slide {slide_num} save FAILED: {e}")
 
-            cinemagraph_seeds.append(slide_seed)
+            cinemagraph_seeds[real_idx] = slide_seed
             _set_status(f"running:{i+1}/{n}")
 
-        # Persist all URLs (including None placeholders) to the articles table
+        # Persist full 10-slot arrays (existing clips preserved, new ones merged in)
         execute(
             "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_seeds = %s WHERE id = %s",
             (json.dumps(cinemagraph_urls), json.dumps(cinemagraph_seeds), article_id),
@@ -3443,24 +3454,26 @@ def admin_article_generate_cinemagraphs(article_id):
     if current_status and (current_status.startswith("running") or current_status.startswith("slide_running")):
         return jsonify({"error": "already_running"}), 409
 
-    row = query_one("SELECT carousel_images, carousel_cinemagraph_prompts FROM articles WHERE id = %s", (article_id,))
+    row = query_one(
+        "SELECT carousel_images, carousel_cinemagraph_prompts, "
+        "carousel_cinemagraphs, carousel_cinemagraph_seeds "
+        "FROM articles WHERE id = %s", (article_id,))
     if not row or not row[0]:
         return jsonify({"error": "No carousel images found."}), 400
 
-    images = [x for x in (json.loads(row[0]) if row[0] else [])[:10] if x]
-    if not images:
-        return jsonify({"error": "No carousel images found."}), 400
+    all_images = (json.loads(row[0]) if row[0] else [])[:10]
+    # Pad to 10 so indexing is safe
+    all_images = (all_images + [None] * 10)[:10]
 
     body = request.get_json(silent=True) or {}
     global_prompt = (body.get("global_prompt") or "").strip()
     incoming_prompts = body.get("prompts") or []  # per-slide list from client
 
-    # Build saved prompts: prefer incoming_prompts, else global_prompt, else keep existing
-    # Always resolve to an explicit string — never store None — so each slide's prompt is auditable
+    # Build saved prompts for all 10 slots
     existing_prompts = json.loads(row[1]) if row[1] else []
     resolved_default = get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
     saved_prompts = []
-    for i in range(len(images)):
+    for i in range(10):
         if i < len(incoming_prompts) and incoming_prompts[i]:
             saved_prompts.append(incoming_prompts[i])
         elif global_prompt:
@@ -3473,13 +3486,34 @@ def admin_article_generate_cinemagraphs(article_id):
     execute("UPDATE articles SET carousel_cinemagraph_prompts = %s WHERE id = %s",
             (json.dumps(saved_prompts), article_id))
 
+    # Identify which slots are empty (no existing cinemagraph clip)
+    existing_cine  = (json.loads(row[2]) if row[2] else [])[:10]
+    existing_seeds = (json.loads(row[3]) if row[3] else [])[:10]
+    existing_cine_padded  = (existing_cine  + [None] * 10)[:10]
+    existing_seeds_padded = (existing_seeds + [None] * 10)[:10]
+
+    empty_indices = [i for i in range(10) if all_images[i] and not existing_cine_padded[i]]
+    if not empty_indices:
+        return jsonify({"error": "All slides already have clips."}), 400
+
+    empty_images  = [all_images[i]    for i in empty_indices]
+    empty_prompts = [saved_prompts[i] for i in empty_indices]
+    n_empty = len(empty_images)
+
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s",
-            (status_key, f"running:0/{len(images)}", f"running:0/{len(images)}"))
+            (status_key, f"running:0/{n_empty}", f"running:0/{n_empty}"))
 
-    t = threading.Thread(target=_cinemagraph_worker, args=(article_id, images, saved_prompts), daemon=True)
+    t = threading.Thread(
+        target=_cinemagraph_worker,
+        args=(article_id, empty_images, empty_prompts),
+        kwargs=dict(slot_indices=empty_indices,
+                    existing_urls=existing_cine_padded,
+                    existing_seeds=existing_seeds_padded),
+        daemon=True,
+    )
     t.start()
-    return jsonify({"started": True, "n_slides": len(images)})
+    return jsonify({"started": True, "n_slides": n_empty})
 
 
 @app.route("/admin/articles/<int:article_id>/cancel-cinemagraphs", methods=["POST"])

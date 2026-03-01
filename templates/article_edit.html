@@ -3306,7 +3306,14 @@ function _cinemagraphShowRunning(nSlides) {
     document.getElementById('cinemagraph-progress').style.width = '0%';
     const empty = document.getElementById('cinemagraph-empty');
     if (empty) empty.classList.add('d-none');
-    _cinemagraphInitClipGrid(nSlides);
+    // Only build a fresh placeholder grid if there are no existing clips visible.
+    // For partial generation (e.g. 2 of 10 empty), the existing clips stay and the
+    // poll loop's _cinemagraphUpdateGrid fills in new clips as they complete.
+    const grid = document.getElementById('cinemagraph-grid');
+    const hasExistingClips = grid && grid.querySelector('video');
+    if (!hasExistingClips) {
+        _cinemagraphInitClipGrid(nSlides);
+    }
     _cinemagraphApplyStatus('running:0/' + nSlides, nSlides);
     _cinemagraphPoll();
 }
