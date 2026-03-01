@@ -43,7 +43,7 @@
     }
     /* Carousel tabs */
     #carousel-tabs .nav-link { font-size: 0.85rem; padding: 0.3rem 0.75rem; cursor: pointer; border: none; }
-    #carousel-tabs .nav-link.active { border-bottom: 2px solid #0d6efd; color: #0d6efd; font-weight: 600; }
+    #carousel-tabs .nav-link.active { color: #0d6efd; font-weight: 600; }
     #carousel-tabs .nav-link:not(.active) { color: #6c757d; }
     #carousel-tabs { margin-bottom: 0.75rem; }
 
@@ -110,7 +110,7 @@
     }
     /* Tabs — mirrors #carousel-tabs */
     #cinemagraph-tabs .nav-link { font-size: 0.85rem; padding: 0.3rem 0.75rem; cursor: pointer; border: none; }
-    #cinemagraph-tabs .nav-link.active { border-bottom: 2px solid #0d6efd; color: #0d6efd; font-weight: 600; }
+    #cinemagraph-tabs .nav-link.active { color: #0d6efd; font-weight: 600; }
     #cinemagraph-tabs .nav-link:not(.active) { color: #6c757d; }
     #cinemagraph-tabs { margin-bottom: 0.75rem; }
     /* Info button — matches .carousel-info-btn (top-right) */
@@ -217,8 +217,6 @@
                 <button type="button" class="btn btn-sm btn-outline-secondary d-none"
                         id="carousel-error-btn"
                         data-bs-toggle="modal" data-bs-target="#carousel-error-modal">View errors</button>
-                <button type="button" class="btn btn-outline-danger d-none" id="carousel-stop-btn"
-                        onclick="stopCarousel()">Stop</button>
                 <button type="button" class="btn btn-outline-primary d-none" id="carousel-btn"
                         onclick="startCarousel()">Generate Carousel</button>
             </div>
@@ -229,21 +227,32 @@
                         data-bs-toggle="dropdown" aria-expanded="false"
                         title="More options">&#8942;</button>
                 <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li><h6 class="dropdown-header">Images Grid</h6></li>
                     <li>
                         <button type="button" id="carousel-menu-generate"
                                 class="dropdown-item small disabled"
                                 onclick="startCarousel()">Generate Carousel</button>
                     </li>
-                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <button type="button" id="carousel-archive-btn"
+                                class="dropdown-item small disabled"
+                                onclick="archiveAllCarousel()">Archive All</button>
+                    </li>
                     <li>
                         <button type="button" class="dropdown-item small"
                                 onclick="openCarouselStyleModal()">View Style</button>
                     </li>
                     <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Instagram</h6></li>
                     <li>
-                        <button type="button" id="carousel-archive-btn"
-                                class="dropdown-item small disabled"
-                                onclick="archiveAllCarousel()">Archive All</button>
+                        <button type="button" class="dropdown-item small"
+                                onclick="openIgCaptionPromptModal()">Edit Caption Prompt</button>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Logs</h6></li>
+                    <li>
+                        <button type="button" class="dropdown-item small"
+                                onclick="viewActivityLog()">View Logs</button>
                     </li>
                 </ul>
             </div>
@@ -254,9 +263,15 @@
                     <div class="spinner-border spinner-border-sm text-primary" id="carousel-spinner" role="status"></div>
                     <span id="carousel-status-text" class="text-muted small">Starting…</span>
                 </div>
-                <div class="progress" style="height: 5px;">
-                    <div id="carousel-progress" class="progress-bar progress-bar-striped progress-bar-animated"
-                         role="progressbar" style="width: 0%"></div>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <div class="progress flex-grow-1" style="height:6px;">
+                        <div id="carousel-progress" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width:0%"></div>
+                    </div>
+                    <button type="button" id="carousel-cancel-btn"
+                            onclick="stopCarousel()" title="Cancel generation"
+                            style="background:none; border:none; padding:0; font-size:0.85rem; line-height:1; color:#0d6efd; cursor:pointer; opacity:0.7;"
+                            onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">&times;</button>
                 </div>
             </div>
             <!-- Tabs: Current / Archived -->
@@ -271,9 +286,9 @@
                         Archived <span id="tab-removed-count" class="badge bg-secondary ms-1">0</span>
                     </button>
                 </li>
-                <li class="nav-item ms-auto d-flex align-items-center pe-1">
-                    <button type="button" class="btn btn-sm btn-link text-muted p-0 lh-1"
-                            onclick="toggleCarouselGrid()" title="Toggle images">
+                <li class="nav-item ms-auto d-flex align-items-center pe-1"
+                    onclick="toggleCarouselGrid()" style="cursor:pointer;" title="Toggle images">
+                    <button type="button" class="btn btn-sm btn-link text-muted p-0 lh-1">
                         <svg id="carousel-grid-chevron" xmlns="http://www.w3.org/2000/svg"
                              width="16" height="16" viewBox="0 0 24 24" fill="none"
                              stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -511,9 +526,15 @@
                     <div class="spinner-border spinner-border-sm text-primary" id="cinemagraph-spinner" role="status"></div>
                     <span id="cinemagraph-status-text" class="text-muted small">Starting…</span>
                 </div>
-                <div class="progress mb-2" style="height:6px;">
-                    <div id="cinemagraph-progress" class="progress-bar progress-bar-striped progress-bar-animated"
-                         role="progressbar" style="width:0%"></div>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <div class="progress flex-grow-1" style="height:6px;">
+                        <div id="cinemagraph-progress" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width:0%"></div>
+                    </div>
+                    <button type="button" id="cinemagraph-cancel-btn"
+                            onclick="cancelCinemagraphGeneration()" title="Cancel generation"
+                            style="background:none; border:none; padding:0; font-size:0.85rem; line-height:1; color:#0d6efd; cursor:pointer; opacity:0.7;"
+                            onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">&times;</button>
                 </div>
             </div>
             <!-- Tabs: Current / Archived -->
@@ -530,9 +551,9 @@
                         Archived <span id="cine-tab-archived-count" class="badge bg-secondary ms-1">0</span>
                     </button>
                 </li>
-                <li class="nav-item ms-auto d-flex align-items-center pe-1">
-                    <button type="button" class="btn btn-sm btn-link text-muted p-0 lh-1"
-                            onclick="toggleCinemagraphGrid()" title="Toggle clips">
+                <li class="nav-item ms-auto d-flex align-items-center pe-1"
+                    onclick="toggleCinemagraphGrid()" style="cursor:pointer;" title="Toggle clips">
+                    <button type="button" class="btn btn-sm btn-link text-muted p-0 lh-1">
                         <svg id="cinemagraph-grid-chevron" xmlns="http://www.w3.org/2000/svg"
                              width="16" height="16" viewBox="0 0 24 24" fill="none"
                              stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -1059,6 +1080,24 @@
                 <textarea id="cine-edit-prompt" class="form-control font-monospace small" rows="4"
                           placeholder="Describe the motion for this slide…"></textarea>
                 <p class="text-muted small mt-1 mb-0">Leave blank to use the default atmospheric motion prompt.</p>
+                <div class="d-flex align-items-center gap-2 mt-3">
+                    <label class="form-label small fw-semibold mb-0" for="cine-edit-seed">Seed</label>
+                    <input type="number" id="cine-edit-seed" class="form-control form-control-sm font-monospace"
+                           style="max-width:160px;" min="0" max="4294967295" placeholder="Random">
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1"
+                            onclick="document.getElementById('cine-edit-seed').value=''" title="Clear seed (use random)">
+                        <small>&times;</small>
+                    </button>
+                </div>
+                <p class="text-muted mt-1 mb-0" style="font-size:0.72rem; line-height:1.4;">
+                    The seed is a number between 0 and 4,294,967,295 that initialises the randomness
+                    of the generation. It is not a scale — seed 1000 is not "less" or "more" than seed
+                    2,000,000; they simply produce different random variations. Two runs with the same
+                    seed, prompt, and source image will produce very similar (not identical) motion.
+                    Change the seed to explore a completely different interpretation of the same prompt,
+                    or keep it to iterate on small prompt tweaks while preserving the overall motion style.
+                    Leave blank for a fresh random seed each time.
+                </p>
             </div>
             <div class="modal-footer justify-content-between">
                 <button type="button" class="btn btn-outline-danger btn-sm"
@@ -1068,7 +1107,7 @@
                     <button type="button" class="btn btn-primary btn-sm" id="cine-edit-rerun-btn"
                             onclick="cinemagraphRerunSlide()">
                         <span id="cine-edit-rerun-spinner" class="spinner-border spinner-border-sm d-none me-1" role="status"></span>
-                        Re-run this slide
+                        Re-run this slide <span class="text-white-50">(~$0.25)</span>
                     </button>
                 </div>
             </div>
@@ -1368,6 +1407,7 @@ function showStatus(msg, success) {
 let carouselAbortCtrl = null;
 let carouselErrors = [];
 let carouselEditIndex = null;   // 0-based index of the slide currently being edited in the modal
+let _carouselGenerating = false;
 
 (function loadCarousel() {
     if (!ARTICLE_ID) return;
@@ -1566,8 +1606,9 @@ function checkIgRunning(mode) {
             } else if (status && status.startsWith('error:')) {
                 showIgError(mode, status.slice(6));
             } else if (!status && result) {
+                // Show last successful post; skip stale errors (already shown
+                // in real-time and recorded in activity logs).
                 if (result.startsWith('done:')) showIgDone(mode, result.slice(5));
-                else if (result.startsWith('error:')) showIgError(mode, result.slice(6));
             }
         })
         .catch(() => {});
@@ -1797,7 +1838,8 @@ function showIgError(mode, msg) {
     resultEl.classList.remove('d-none');
 
     // Build a clear error box
-    var html = '<div class="alert alert-danger py-2 px-3 mb-2 small" role="alert">'
+    var html = '<div class="alert alert-danger alert-dismissible py-2 px-3 mb-2 small" role="alert">'
+             + '<button type="button" class="btn-close" style="padding:0.4rem 0.5rem;font-size:0.65rem;" data-bs-dismiss="alert" aria-label="Close"></button>'
              + '<div class="fw-semibold mb-1">&#10007; Instagram Posting Failed</div>'
              + '<div>' + msg + '</div>';
 
@@ -2028,10 +2070,9 @@ function startCarousel() {
     carouselErrors = [];
     document.getElementById('carousel-error-btn').classList.add('d-none');
 
+    _carouselGenerating = true;
     const btn = document.getElementById('carousel-btn');
-    btn.disabled = true;
-    btn.textContent = 'Generating…';
-    document.getElementById('carousel-stop-btn').classList.remove('d-none');
+    btn.classList.add('d-none');
     document.getElementById('carousel-empty').classList.add('d-none');
     document.getElementById('carousel-status').classList.remove('d-none');
     document.getElementById('carousel-status-text').textContent = 'Generating prompts…';
@@ -2127,17 +2168,16 @@ function showCarouselErrorBtn() {
 }
 
 function carouselDone(count) {
+    _carouselGenerating = false;
     document.getElementById('carousel-spinner').classList.add('d-none');
-    document.getElementById('carousel-stop-btn').classList.add('d-none');
+    var cancelBtn = document.getElementById('carousel-cancel-btn');
+    if (cancelBtn) cancelBtn.disabled = false;
     document.getElementById('carousel-progress').style.width = '100%';
     document.getElementById('carousel-progress').classList.remove(
         'progress-bar-striped', 'progress-bar-animated');
     document.getElementById('carousel-status-text').textContent =
         count > 0 ? 'Done! ' + count + ' image' + (count !== 1 ? 's' : '') + ' generated.'
                   : 'Finished with errors.';
-    const btn = document.getElementById('carousel-btn');
-    btn.disabled = false;
-    btn.textContent = 'Generate Carousel';
     document.querySelectorAll('[id^="cph-"]').forEach(el => el.remove());
     if (!document.getElementById('carousel-grid').children.length)
         document.getElementById('carousel-empty').classList.remove('d-none');
@@ -2148,14 +2188,13 @@ function carouselDone(count) {
 }
 
 function carouselStopped() {
+    _carouselGenerating = false;
     document.getElementById('carousel-spinner').classList.add('d-none');
-    document.getElementById('carousel-stop-btn').classList.add('d-none');
+    var cancelBtn = document.getElementById('carousel-cancel-btn');
+    if (cancelBtn) cancelBtn.disabled = false;
     document.getElementById('carousel-progress').classList.remove(
         'progress-bar-striped', 'progress-bar-animated');
     document.getElementById('carousel-status-text').textContent = 'Generation stopped.';
-    const btn = document.getElementById('carousel-btn');
-    btn.disabled = false;
-    btn.textContent = 'Generate Carousel';
     document.querySelectorAll('[id^="cph-"]').forEach(el => el.remove());
     if (!document.getElementById('carousel-grid').children.length)
         document.getElementById('carousel-empty').classList.remove('d-none');
@@ -2244,6 +2283,11 @@ function showCarouselTab(tab) {
     document.getElementById('carousel-removed-grid').classList.toggle('d-none', isCurrent);
     document.getElementById('tab-current').classList.toggle('active', isCurrent);
     document.getElementById('tab-removed').classList.toggle('active', !isCurrent);
+    // If grid is collapsed, expand it when a tab is clicked
+    var gridWrap = document.getElementById('carousel-grid-wrap');
+    if (gridWrap && gridWrap.classList.contains('d-none')) {
+        toggleCarouselGrid();
+    }
 }
 
 function updateCarouselTabCounts() {
@@ -2258,11 +2302,11 @@ function updateCarouselTabCounts() {
     // Enable Archive All menu item only when there are current images
     const archiveBtn = document.getElementById('carousel-archive-btn');
     if (archiveBtn) archiveBtn.classList.toggle('disabled', currentCount === 0);
-    // Show/enable Generate button only when there are empty slots
+    // Show/enable Generate button only when there are empty slots and not generating
     const emptySlots = 10 - currentCount;
     const genBtn = document.getElementById('carousel-btn');
     const genMenuItem = document.getElementById('carousel-menu-generate');
-    if (emptySlots <= 0) {
+    if (emptySlots <= 0 || _carouselGenerating) {
         genBtn.classList.add('d-none');
         if (genMenuItem) { genMenuItem.disabled = true; genMenuItem.classList.add('disabled'); }
     } else {
@@ -2928,6 +2972,7 @@ function _aiVideoFinish(error) {
             }
             // Cinemagraph — resume or show existing
             _cinePrompts = d.cinemagraph_prompts || [];
+            _cineSeeds   = d.cinemagraph_seeds   || [];
             if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running')) {
                 _cinemagraphUnlocked = true;
                 const mc = d.cinemagraph_status.match(/^running:(\d+)\/(\d+)$/);
@@ -2970,9 +3015,11 @@ let _CINE_DEFAULT_PROMPT = CINEMAGRAPH_PROMPT; // editable; kept in sync with si
 let _IG_CAPTION_PROMPT   = IG_CAPTION_PROMPT;  // global default from site_settings
 let _igArticleCaptionPrompt = IG_ARTICLE_CAPTION_PROMPT; // per-article override (empty = use global)
 let _cinePrompts         = [];    // per-slide prompts, synced from /video-data
+let _cineSeeds           = [];    // per-slide seeds, synced from /video-data
 let _cineEditIdx         = null;  // slide index open in edit modal
 let _cinemagraphUnlocked = false; // true once carousel images exist
 let _cineRerunningIdx    = null;  // slot currently being re-run (prevents old URL restoring)
+let _cinemagraphGenerating = false; // true while a full generation run is in progress
 
 function cinemagraphUnlock() {
     _cinemagraphUnlocked = true;
@@ -3032,7 +3079,7 @@ function updateCinemagraphTabCounts() {
         }
     });
 
-    if (!_cinemagraphUnlocked || currentCount >= 10 || isRerunning) {
+    if (!_cinemagraphUnlocked || currentCount >= 10 || isRerunning || _cinemagraphGenerating) {
         if (btn) btn.classList.add('d-none');
         if (menuGenerate) menuGenerate.classList.add('disabled');
     } else {
@@ -3058,6 +3105,11 @@ function showCinemagraphTab(tab) {
         if (removedGrid) removedGrid.classList.remove('d-none');
         if (tabCurrent)  tabCurrent.classList.remove('active');
         if (tabArchived) tabArchived.classList.add('active');
+    }
+    // If grid is collapsed, expand it when a tab is clicked
+    var gridWrap = document.getElementById('cinemagraph-grid-wrap');
+    if (gridWrap && gridWrap.classList.contains('d-none')) {
+        toggleCinemagraphGrid();
     }
 }
 
@@ -3197,6 +3249,7 @@ function _cinemagraphShowPreviews(urls, prompts) {
 
 function cinemagraphGenerate() {
     if (!ARTICLE_ID) return;
+    _cinemagraphGenerating = true;
     const btn = document.getElementById('cinemagraph-btn');
     if (btn) btn.classList.add('d-none');
 
@@ -3219,16 +3272,37 @@ function cinemagraphGenerate() {
         _cinemagraphShowRunning(d.n_slides || 10);
     })
     .catch(err => {
+        _cinemagraphGenerating = false;
         updateCinemagraphTabCounts();
         alert('Network error: ' + err);
     });
 }
 
+function cancelCinemagraphGeneration() {
+    if (!ARTICLE_ID) return;
+    var cancelBtn = document.getElementById('cinemagraph-cancel-btn');
+    if (cancelBtn) cancelBtn.disabled = true;
+    fetch('/admin/articles/' + ARTICLE_ID + '/cancel-cinemagraphs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+    })
+    .then(function(r) { return r.json(); })
+    .then(function() {
+        document.getElementById('cinemagraph-status-text').textContent = 'Cancelling\u2026';
+    })
+    .catch(function() {});
+    // Polling continues; the worker will clear status, and the next poll
+    // will hit the "done" branch which cleans up UI and reactivates the button.
+}
+
 function _cinemagraphShowRunning(nSlides) {
+    _cinemagraphGenerating = true;
     const btn = document.getElementById('cinemagraph-btn');
     if (btn) btn.classList.add('d-none');
     document.getElementById('cinemagraph-status').classList.remove('d-none');
     document.getElementById('cinemagraph-status-text').textContent = 'Starting\u2026';
+    var cancelBtn = document.getElementById('cinemagraph-cancel-btn');
+    if (cancelBtn) cancelBtn.disabled = false;
     document.getElementById('cinemagraph-progress').style.width = '0%';
     const empty = document.getElementById('cinemagraph-empty');
     if (empty) empty.classList.add('d-none');
@@ -3243,6 +3317,7 @@ function _cinemagraphPoll() {
             .then(r => r.json())
             .then(d => {
                 _cinePrompts = d.cinemagraph_prompts || _cinePrompts;
+                _cineSeeds   = d.cinemagraph_seeds   || _cineSeeds;
                 if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running:')) {
                     _cinemagraphApplyStatus(d.cinemagraph_status, null);
                     _cinemagraphUpdateGrid(d.cinemagraph_urls, _cinePrompts);
@@ -3258,6 +3333,7 @@ function _cinemagraphPoll() {
                     _cinemagraphPoll();
                 } else {
                     // Done (or no longer running)
+                    _cinemagraphGenerating = false;
                     document.getElementById('cinemagraph-status').classList.add('d-none');
                     // Clear any spinner overlays
                     document.querySelectorAll('.cine-spinner-overlay').forEach(el => el.remove());
@@ -3292,6 +3368,8 @@ function openCinemagraphEditModal(slideIdx, url, prompt) {
     if (url) { preview.src = url; preview.style.display = ''; }
     else      { preview.src = ''; preview.style.display = 'none'; }
     document.getElementById('cine-edit-prompt').value = prompt || _CINE_DEFAULT_PROMPT;
+    var savedSeed = (_cineSeeds[slideIdx] !== undefined && _cineSeeds[slideIdx] !== null) ? _cineSeeds[slideIdx] : '';
+    document.getElementById('cine-edit-seed').value = savedSeed;
     document.getElementById('cine-edit-rerun-spinner').classList.add('d-none');
     document.getElementById('cine-edit-rerun-btn').disabled = false;
     new bootstrap.Modal(document.getElementById('cinemagraph-edit-modal')).show();
@@ -3323,6 +3401,8 @@ function cinemagraphRerunSlide() {
     if (_cineEditIdx === null || !ARTICLE_ID) return;
     const idx    = _cineEditIdx;
     const prompt = document.getElementById('cine-edit-prompt').value.trim() || _CINE_DEFAULT_PROMPT;
+    var seedVal  = document.getElementById('cine-edit-seed').value.trim();
+    var seed     = seedVal !== '' ? parseInt(seedVal) : null;
     const spinner = document.getElementById('cine-edit-rerun-spinner');
     const btn     = document.getElementById('cine-edit-rerun-btn');
     spinner.classList.remove('d-none');
@@ -3336,13 +3416,14 @@ function cinemagraphRerunSlide() {
     fetch('/admin/articles/' + ARTICLE_ID + '/regenerate-cinemagraph-slide', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slide_idx: idx, prompt: prompt }),
+        body: JSON.stringify({ slide_idx: idx, prompt: prompt, seed: seed }),
     })
     .then(r => r.json())
     .then(d => {
         if (d.error) { alert('Error: ' + d.error); spinner.classList.add('d-none'); btn.disabled = false; return; }
         bootstrap.Modal.getInstance(document.getElementById('cinemagraph-edit-modal')).hide();
         _cinePrompts[idx] = prompt;
+        _cineSeeds[idx] = seed;
         // Move old clip to archive tab (backend already archived it)
         if (oldClipUrl && d.archived_idx !== null && d.archived_idx !== undefined) {
             addCinemagraphArchived(oldClipUrl, d.archived_idx);

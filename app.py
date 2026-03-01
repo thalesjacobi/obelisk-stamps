@@ -10,6 +10,7 @@ import re
 import json
 import time
 import base64
+import random
 import threading
 import shutil
 import subprocess
@@ -573,7 +574,8 @@ def init_articles_table():
                 "carousel_cinemagraphs TEXT",
                 "carousel_cinemagraph_log TEXT",
                 "carousel_cinemagraph_prompts TEXT",
-                "carousel_cinemagraph_archived TEXT"):
+                "carousel_cinemagraph_archived TEXT",
+                "carousel_cinemagraph_seeds TEXT"):
         try:
             cur.execute(f"ALTER TABLE articles ADD COLUMN {col}")
         except Exception:
@@ -2570,6 +2572,13 @@ def admin_article_generate_carousel(article_id):
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'index': 0, 'message': f'DB save failed: {e}'})}\n\n"
 
+        # Activity log
+        try:
+            _add_activity_log(article_id, "Carousel generation",
+                              f"Generated {ok} of {N} images via DALL-E 3")
+        except Exception:
+            pass  # non-fatal
+
         yield f"event: done\ndata: {json.dumps({'count': ok})}\n\n"
 
     return Response(
@@ -2751,10 +2760,16 @@ def admin_article_regenerate_carousel_image(article_id):
         dl = http_requests.get(img_resp.data[0].url, timeout=30)
         dl.raise_for_status()
     except _openai_module.BadRequestError as e:
+        _add_activity_log(article_id, f"Carousel re-run slide {index + 1} failed",
+                          f"Content policy: {e}")
         return jsonify({"error": f"Content policy: {e}"}), 400
     except _openai_module.RateLimitError:
+        _add_activity_log(article_id, f"Carousel re-run slide {index + 1} failed",
+                          "Rate limited")
         return jsonify({"error": "Rate limited — please try again later."}), 429
     except Exception as e:
+        _add_activity_log(article_id, f"Carousel re-run slide {index + 1} failed",
+                          f"Error: {e}")
         return jsonify({"error": str(e)}), 500
 
     # Save with timestamp so old file (used by archive) is not overwritten
@@ -2786,6 +2801,8 @@ def admin_article_regenerate_carousel_image(article_id):
     except Exception as e:
         return jsonify({"error": f"DB save failed: {e}"}), 500
 
+    _add_activity_log(article_id, f"Carousel re-run slide {index + 1}",
+                      f"Prompt: {new_prompt[:120]}...")
     static_url = gcs_url if gcs_url else url_for("static", filename=f"articles/{article_id}/carousel/{filename}")
     return jsonify({"url": static_url, "prompt": new_prompt, "punchline": new_punchline})
 
@@ -2802,19 +2819,21 @@ def admin_article_video_data(article_id):
     row = query_one(
         "SELECT video_narrated_url, video_narrated_script, video_ai_url, video_narrated_runs, "
         "video_ai_status, video_narrated_status, carousel_cinemagraphs, carousel_cinemagraph_log, "
-        "carousel_cinemagraph_prompts, carousel_cinemagraph_archived "
+        "carousel_cinemagraph_prompts, carousel_cinemagraph_archived, carousel_cinemagraph_seeds "
         "FROM articles WHERE id = %s",
         (article_id,),
     )
     if not row:
         return jsonify({"error": "Article not found"}), 404
     (narrated_url, narrated_script_raw, ai_url, narrated_runs_raw, ai_status, narrated_status,
-     cinemagraphs_raw, cinemagraph_log_raw, cinemagraph_prompts_raw, cinemagraph_archived_raw) = row
+     cinemagraphs_raw, cinemagraph_log_raw, cinemagraph_prompts_raw, cinemagraph_archived_raw,
+     cinemagraph_seeds_raw) = row
     narrated_script      = json.loads(narrated_script_raw)      if narrated_script_raw      else []
     narrated_runs        = json.loads(narrated_runs_raw)        if narrated_runs_raw        else []
     cinemagraph_urls     = json.loads(cinemagraphs_raw)         if cinemagraphs_raw         else []
     cinemagraph_prompts  = json.loads(cinemagraph_prompts_raw)  if cinemagraph_prompts_raw  else []
     cinemagraph_archived = json.loads(cinemagraph_archived_raw) if cinemagraph_archived_raw else []
+    cinemagraph_seeds    = json.loads(cinemagraph_seeds_raw)    if cinemagraph_seeds_raw    else []
     cinemagraph_status   = get_setting(f"cinemagraph_status_{article_id}")
     return jsonify({
         "narrated_url":           narrated_url or None,
@@ -2825,6 +2844,7 @@ def admin_article_video_data(article_id):
         "ai_status":              ai_status or None,
         "cinemagraph_urls":       cinemagraph_urls,
         "cinemagraph_prompts":    cinemagraph_prompts,
+        "cinemagraph_seeds":      cinemagraph_seeds,
         "cinemagraph_archived":   cinemagraph_archived,
         "cinemagraph_status":     cinemagraph_status or None,
         "has_cinemagraph_log":    bool(cinemagraph_log_raw and cinemagraph_log_raw.strip()),
@@ -3257,6 +3277,10 @@ def _cinemagraph_worker(article_id, images, prompts=None):
     def _clear_status():
         execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
 
+    # ── Cancel support ────────────────────────────────────────────────────────
+    cancel_key = f"cinemagraph_cancel_{article_id}"
+    execute("DELETE FROM site_settings WHERE `key` = %s", (cancel_key,))
+
     # ── Log capture ────────────────────────────────────────────────────────────
     log_lines = []
     ts_start  = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -3265,11 +3289,18 @@ def _cinemagraph_worker(article_id, images, prompts=None):
         line = f"[{time.strftime('%H:%M:%S')}] {msg}"
         log_lines.append(line)
         print(f"Cinemagraph worker: {msg}", flush=True)
+
+    def _is_cancelled():
+        return bool(get_setting(cancel_key))
     # ──────────────────────────────────────────────────────────────────────────
 
     cinemagraph_urls = []
+    cinemagraph_seeds = []
     try:
         for i, img_url in enumerate(images):
+            if _is_cancelled():
+                _log("Cancelled by user")
+                break
             _set_status(f"running:{i}/{n}")
             _log(f"slide {i+1}/{n} submitting to Runway")
 
@@ -3291,10 +3322,13 @@ def _cinemagraph_worker(article_id, images, prompts=None):
                 else:
                     _log(f"slide {i+1} image not found: {img_url}")
                     cinemagraph_urls.append(None)
+                    cinemagraph_seeds.append(None)
                     continue
 
             slide_prompt = (prompts[i] if prompts and i < len(prompts) and prompts[i] else None) or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
+            slide_seed = random.randint(0, 4294967295)
             _log(f"slide {i+1} prompt: {slide_prompt[:80]}")
+            _log(f"slide {i+1} seed: {slide_seed}")
             try:
                 task = _runway_client.image_to_video.create(
                     model="gen4_turbo",
@@ -3302,12 +3336,14 @@ def _cinemagraph_worker(article_id, images, prompts=None):
                     prompt_text=slide_prompt,
                     ratio="960:960",
                     duration=5,
+                    seed=slide_seed,
                 )
                 task_id = task.id
                 _log(f"slide {i+1} Runway task_id={task_id}")
             except Exception as e:
                 _log(f"slide {i+1} Runway submit FAILED: {e}")
                 cinemagraph_urls.append(None)
+                cinemagraph_seeds.append(None)
                 continue
 
             # Poll Runway until the clip is ready
@@ -3315,6 +3351,9 @@ def _cinemagraph_worker(article_id, images, prompts=None):
             poll_count = 0
             while True:
                 time.sleep(6)
+                if _is_cancelled():
+                    _log(f"slide {i+1} cancelled by user during poll")
+                    break
                 poll_count += 1
                 try:
                     status_obj = _runway_client.tasks.retrieve(task_id)
@@ -3357,12 +3396,13 @@ def _cinemagraph_worker(article_id, images, prompts=None):
             else:
                 cinemagraph_urls.append(None)
 
+            cinemagraph_seeds.append(slide_seed)
             _set_status(f"running:{i+1}/{n}")
 
         # Persist all URLs (including None placeholders) to the articles table
         execute(
-            "UPDATE articles SET carousel_cinemagraphs = %s WHERE id = %s",
-            (json.dumps(cinemagraph_urls), article_id),
+            "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_seeds = %s WHERE id = %s",
+            (json.dumps(cinemagraph_urls), json.dumps(cinemagraph_seeds), article_id),
         )
         succeeded = sum(1 for u in cinemagraph_urls if u)
         _log(f"DONE — {succeeded}/{n} slides succeeded")
@@ -3373,6 +3413,7 @@ def _cinemagraph_worker(article_id, images, prompts=None):
         _log(f"EXCEPTION: {e}")
     finally:
         _clear_status()
+        execute("DELETE FROM site_settings WHERE `key` = %s", (cancel_key,))
         # ── Persist run log to DB and GCS ──────────────────────────────────────
         if log_lines:
             log_text = f"Run started: {ts_start}\n" + "\n".join(log_lines)
@@ -3385,6 +3426,8 @@ def _cinemagraph_worker(article_id, images, prompts=None):
                 (log_text[:65000], article_id),
             )
         # ──────────────────────────────────────────────────────────────────────
+        summary = "\n".join(log_lines) if log_lines else "No log output"
+        _add_activity_log(article_id, "Cinemagraph generation", summary)
 
 
 @app.route("/admin/articles/<int:article_id>/generate-cinemagraphs", methods=["POST"])
@@ -3439,7 +3482,21 @@ def admin_article_generate_cinemagraphs(article_id):
     return jsonify({"started": True, "n_slides": len(images)})
 
 
-def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
+@app.route("/admin/articles/<int:article_id>/cancel-cinemagraphs", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_cancel_cinemagraphs(article_id):
+    """Signal the cinemagraph worker to stop after the current slide."""
+    cancel_key = f"cinemagraph_cancel_{article_id}"
+    execute(
+        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+        "ON DUPLICATE KEY UPDATE value = %s",
+        (cancel_key, "1", "1"),
+    )
+    return jsonify({"cancelled": True})
+
+
+def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None):
     """Background thread: regenerate a single cinemagraph slide."""
     ts = int(time.time())
     status_key = f"cinemagraph_status_{article_id}"
@@ -3456,7 +3513,9 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
         print(f"Cinemagraph slide-worker: {msg}", flush=True)
 
     try:
+        slide_seed = seed if seed is not None else random.randint(0, 4294967295)
         _log(f"re-running slide {slide_idx + 1} with prompt: {prompt[:80]}")
+        _log(f"seed: {slide_seed}")
 
         # Resolve image
         if img_url.startswith("https://"):
@@ -3482,6 +3541,7 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
                 prompt_text=prompt or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
                 ratio="960:960",
                 duration=5,
+                seed=slide_seed,
             )
             task_id = task.id
             _log(f"Runway task_id={task_id}")
@@ -3527,16 +3587,19 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
                 saved_url = "/" + str(local_path).replace("\\", "/")
 
             # Patch just this slot in the DB array
-            row = query_one("SELECT carousel_cinemagraphs, carousel_cinemagraph_prompts FROM articles WHERE id = %s", (article_id,))
+            row = query_one("SELECT carousel_cinemagraphs, carousel_cinemagraph_prompts, carousel_cinemagraph_seeds FROM articles WHERE id = %s", (article_id,))
             urls    = json.loads(row[0]) if row and row[0] else []
             prompts = json.loads(row[1]) if row and row[1] else []
+            seeds   = json.loads(row[2]) if row and row[2] else []
             while len(urls)    <= slide_idx: urls.append(None)
             while len(prompts) <= slide_idx: prompts.append(None)
+            while len(seeds)   <= slide_idx: seeds.append(None)
             urls[slide_idx]    = saved_url
             prompts[slide_idx] = prompt or _CINE_DEFAULT_PROMPT
+            seeds[slide_idx]   = slide_seed
             execute(
-                "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_prompts = %s WHERE id = %s",
-                (json.dumps(urls), json.dumps(prompts), article_id),
+                "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_prompts = %s, carousel_cinemagraph_seeds = %s WHERE id = %s",
+                (json.dumps(urls), json.dumps(prompts), json.dumps(seeds), article_id),
             )
             _log(f"saved → {saved_url}")
         else:
@@ -3556,6 +3619,9 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
             upload_bytes_to_gcs(new_log.encode(), f"articles/{article_id}/cinemagraph/run_{ts}.log", content_type="text/plain")
             execute("UPDATE articles SET carousel_cinemagraph_log = %s WHERE id = %s",
                     (new_log[:65000], article_id))
+        # Activity log entry
+        summary = "\n".join(log_lines) if log_lines else "No log output"
+        _add_activity_log(article_id, f"Cinemagraph re-run slide {slide_idx + 1}", summary)
 
 
 @app.route("/admin/articles/<int:article_id>/regenerate-cinemagraph-slide", methods=["POST"])
@@ -3574,6 +3640,7 @@ def admin_article_regenerate_cinemagraph_slide(article_id):
     body = request.get_json(silent=True) or {}
     slide_idx = body.get("slide_idx")
     prompt    = (body.get("prompt") or "").strip() or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
+    seed      = body.get("seed")  # None = random, int = use that seed
 
     if slide_idx is None:
         return jsonify({"error": "slide_idx required"}), 400
@@ -3612,7 +3679,7 @@ def admin_article_regenerate_cinemagraph_slide(article_id):
 
     t = threading.Thread(
         target=_cinemagraph_slide_worker,
-        args=(article_id, slide_idx, images[slide_idx], prompt),
+        args=(article_id, slide_idx, images[slide_idx], prompt, seed),
         daemon=True,
     )
     t.start()
