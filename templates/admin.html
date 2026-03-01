@@ -472,6 +472,34 @@
             </div>
         </div>
 
+        <!-- AI Prompts -->
+        <div class="card mt-4">
+            <div class="card-header"><strong>AI Prompts</strong></div>
+            <div class="card-body">
+                <h6 class="fw-semibold mb-1">Cinemagraph Default Prompt</h6>
+                <p class="text-muted small mb-2">
+                    Sent to Runway Gen-4 Turbo for every slide without a custom prompt.
+                    Changes take effect on the next cinemagraph generation.
+                </p>
+                <textarea id="settings-cinemagraph-prompt" class="form-control font-monospace mb-2"
+                          rows="4">{{ cinemagraph_prompt }}</textarea>
+                <button type="button" class="btn btn-primary btn-sm" onclick="saveCinemagraphPromptSettings()">Save</button>
+                <span id="settings-cinemagraph-status" class="ms-3 small"></span>
+
+                <hr class="my-4" style="border-color:#dee2e6;">
+
+                <h6 class="fw-semibold mb-1">Instagram Caption Prompt</h6>
+                <p class="text-muted small mb-2">
+                    Sent to OpenAI when generating captions. This is the default &mdash;
+                    articles can override it from their edit page.
+                </p>
+                <textarea id="settings-ig-caption-prompt" class="form-control font-monospace mb-2"
+                          rows="6">{{ ig_caption_prompt }}</textarea>
+                <button type="button" class="btn btn-primary btn-sm" onclick="saveIgCaptionPromptSettings()">Save</button>
+                <span id="settings-ig-caption-status" class="ms-3 small"></span>
+            </div>
+        </div>
+
         <!-- Instagram API Credentials -->
         <div class="card mt-4">
             <div class="card-header"><strong>Instagram API</strong></div>
@@ -861,6 +889,40 @@ function saveSettings() {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({carousel_style: style})
+    })
+    .then(r => r.json())
+    .then(d => {
+        status.textContent = d.success ? 'Saved!' : ('Error: ' + d.error);
+        status.className = 'ms-3 small ' + (d.success ? 'text-success' : 'text-danger');
+    })
+    .catch(() => { status.textContent = 'Network error.'; status.className = 'ms-3 small text-danger'; });
+}
+function saveCinemagraphPromptSettings() {
+    const prompt = document.getElementById('settings-cinemagraph-prompt').value.trim();
+    const status = document.getElementById('settings-cinemagraph-status');
+    if (!prompt) { status.textContent = 'Prompt cannot be empty.'; status.className = 'ms-3 small text-danger'; return; }
+    status.textContent = 'Saving\u2026'; status.className = 'ms-3 small text-muted';
+    fetch('/admin/settings/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cinemagraph_prompt: prompt})
+    })
+    .then(r => r.json())
+    .then(d => {
+        status.textContent = d.success ? 'Saved!' : ('Error: ' + d.error);
+        status.className = 'ms-3 small ' + (d.success ? 'text-success' : 'text-danger');
+    })
+    .catch(() => { status.textContent = 'Network error.'; status.className = 'ms-3 small text-danger'; });
+}
+function saveIgCaptionPromptSettings() {
+    const prompt = document.getElementById('settings-ig-caption-prompt').value.trim();
+    const status = document.getElementById('settings-ig-caption-status');
+    if (!prompt) { status.textContent = 'Prompt cannot be empty.'; status.className = 'ms-3 small text-danger'; return; }
+    status.textContent = 'Saving\u2026'; status.className = 'ms-3 small text-muted';
+    fetch('/admin/settings/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ig_caption_prompt: prompt})
     })
     .then(r => r.json())
     .then(d => {

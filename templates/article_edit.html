@@ -45,7 +45,7 @@
     #carousel-tabs .nav-link { font-size: 0.85rem; padding: 0.3rem 0.75rem; cursor: pointer; border: none; }
     #carousel-tabs .nav-link.active { border-bottom: 2px solid #0d6efd; color: #0d6efd; font-weight: 600; }
     #carousel-tabs .nav-link:not(.active) { color: #6c757d; }
-    #carousel-tabs { border-bottom: 1px solid #dee2e6; margin-bottom: 0.75rem; }
+    #carousel-tabs { margin-bottom: 0.75rem; }
 
     /* === Component A — Browser Animation Preview === */
     @keyframes kb-tl  { from{transform:scale(1.0) translate(0,0)}   to{transform:scale(1.15) translate(-4%,-4%)} }
@@ -91,6 +91,43 @@
     .ai-clip-tile.generating { background: #ffc107; }
     .ai-clip-tile.done       { background: #198754; }
     .ai-clip-tile.error      { background: #dc3545; }
+
+    /* === Component D — Cinemagraph === */
+    #cinemagraph-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    #cinemagraph-grid .carousel-col { flex: 0 0 calc(20% - 0.4rem); }
+    @media (max-width: 768px) { #cinemagraph-grid .carousel-col { flex: 0 0 calc(33% - 0.4rem); } }
+    @media (max-width: 480px) { #cinemagraph-grid .carousel-col { flex: 0 0 calc(50% - 0.4rem); } }
+    /* Archived grid — mirrors #carousel-removed-grid */
+    #cinemagraph-removed-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    #cinemagraph-removed-grid .carousel-col { flex: 0 0 calc(20% - 0.4rem); }
+    @media (max-width: 768px) { #cinemagraph-removed-grid .carousel-col { flex: 0 0 calc(33% - 0.4rem); } }
+    @media (max-width: 480px) { #cinemagraph-removed-grid .carousel-col { flex: 0 0 calc(50% - 0.4rem); } }
+    #cinemagraph-removed-grid .carousel-thumb { opacity: 0.5; }
+    #cinemagraph-removed-grid .carousel-col::after {
+        content: 'archived'; position: absolute; bottom: 4px; left: 4px;
+        font-size: 10px; background: rgba(0,0,0,0.55); color: #fff;
+        padding: 1px 5px; border-radius: 3px; pointer-events: none;
+    }
+    /* Tabs — mirrors #carousel-tabs */
+    #cinemagraph-tabs .nav-link { font-size: 0.85rem; padding: 0.3rem 0.75rem; cursor: pointer; border: none; }
+    #cinemagraph-tabs .nav-link.active { border-bottom: 2px solid #0d6efd; color: #0d6efd; font-weight: 600; }
+    #cinemagraph-tabs .nav-link:not(.active) { color: #6c757d; }
+    #cinemagraph-tabs { margin-bottom: 0.75rem; }
+    /* Info button — matches .carousel-info-btn (top-right) */
+    .cine-info-btn {
+        position: absolute; top: 4px; right: 4px; width: 22px; height: 22px;
+        border-radius: 50%; border: none; background: rgba(0,0,0,0.55); color: #fff;
+        font-size: 12px; font-weight: 700; line-height: 22px; text-align: center;
+        cursor: pointer; padding: 0; z-index: 2; opacity: 0.7; transition: opacity 0.15s;
+    }
+    .cine-info-btn:hover { opacity: 1; }
+    .cine-info-btn.cine-btn-locked { opacity: 0.3; cursor: not-allowed; }
+    .cine-info-btn.cine-btn-locked:hover { opacity: 0.3; }
+    .cine-spinner-overlay {
+        position: absolute; inset: 0; background: rgba(255,255,255,0.6);
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 6px;
+    }
 </style>
 {% endblock %}
 
@@ -226,7 +263,7 @@
             <ul class="nav" id="carousel-tabs">
                 <li class="nav-item">
                     <button class="nav-link active" id="tab-current" onclick="showCarouselTab('current')">
-                        Current <span id="tab-current-count" class="badge bg-secondary ms-1">0</span>
+                        Images Grid <span id="tab-current-count" class="badge bg-secondary ms-1">0</span>
                     </button>
                 </li>
                 <li class="nav-item">
@@ -234,63 +271,66 @@
                         Archived <span id="tab-removed-count" class="badge bg-secondary ms-1">0</span>
                     </button>
                 </li>
+                <li class="nav-item ms-auto d-flex align-items-center pe-1">
+                    <button type="button" class="btn btn-sm btn-link text-muted p-0 lh-1"
+                            onclick="toggleCarouselGrid()" title="Toggle images">
+                        <svg id="carousel-grid-chevron" xmlns="http://www.w3.org/2000/svg"
+                             width="16" height="16" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                             stroke-linejoin="round" style="transition:transform 0.2s;">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </button>
+                </li>
             </ul>
-            <div id="carousel-grid"></div>
-            <div id="carousel-removed-grid" class="d-none"></div>
-            <div id="carousel-empty" class="text-muted small text-center py-3">
-                No carousel images yet. Click <strong>Generate Carousel</strong> to create them.
+            <div id="carousel-grid-wrap" class="d-none">
+                <div id="carousel-grid"></div>
+                <div id="carousel-removed-grid" class="d-none"></div>
+                <div id="carousel-empty" class="text-muted small text-center py-3">
+                    No carousel images yet. Click <strong>Generate Carousel</strong> to create them.
+                </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Instagram Accordion -->
-    {% if article and article.id %}
-    <div class="card mt-3" id="ig-accordion-card">
-        <div class="card-header d-flex align-items-center justify-content-between"
-             style="cursor:pointer" onclick="toggleIgAccordion()">
-            <span>
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+            {% if article and article.id %}
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="toggleIgSection('car')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
                      fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" class="me-1" style="vertical-align:-2px">
+                     stroke-linejoin="round" style="flex-shrink:0">
                     <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
                     <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
                     <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
                 </svg>
-                <strong>Instagram</strong>
-            </span>
-            <svg id="ig-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round" stroke-linejoin="round"
-                 style="transition:transform 0.2s">
-                <polyline points="6 9 12 15 18 9"/>
-            </svg>
-        </div>
-        <div class="card-body d-none" id="ig-accordion-body">
-            {% if not ig_configured %}
-            <div class="alert alert-warning mb-0 d-flex align-items-center gap-2 small">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" flex-shrink="0">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                <span class="small fw-semibold">Post Carousel Images to Instagram</span>
+                <svg id="car-ig-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round"
+                     class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
+                    <polyline points="6 9 12 15 18 9"/>
                 </svg>
-                Instagram credentials not configured. Set <code>IG_USER_ID</code> and
-                <code>IG_ACCESS_TOKEN</code> as environment variables and redeploy.
-                See <a href="/admin/settings" target="_blank">Settings</a> for status.
+            </div>
+            <div id="car-ig-body" class="d-none pt-1">
+            {% if not ig_configured %}
+            <div class="alert alert-warning mb-2 d-flex align-items-center gap-2 small">
+                Instagram credentials not configured. See <a href="/admin/settings" target="_blank">Settings</a>.
             </div>
             {% else %}
             <div class="mb-3">
-                <label for="ig-caption" class="form-label small fw-semibold mb-1">Caption</label>
-                <textarea id="ig-caption" class="form-control form-control-sm" rows="4"
+                <div class="d-flex align-items-center mb-1">
+                    <label for="car-ig-caption" class="form-label small fw-semibold mb-0">Caption</label>
+                    <a href="#" class="small ms-auto" id="car-ig-generate-caption-link"
+                       onclick="event.preventDefault(); generateIgCaption('car')">Generate caption <span class="text-muted">(~$0.01)</span></a>
+                </div>
+                <textarea id="car-ig-caption" class="form-control form-control-sm" rows="3"
                           placeholder="Write your caption here… #stamps #philately"
-                          maxlength="2200" oninput="updateIgCharCount()"></textarea>
+                          maxlength="2200" oninput="updateIgCharCount('car')"></textarea>
                 <div class="d-flex justify-content-between mt-1">
-                    <span class="text-muted small" id="ig-char-count">0 / 2200</span>
-                    <span class="text-muted small" id="ig-images-hint"></span>
+                    <span class="text-muted small" id="car-ig-char-count">0 / 2200</span>
+                    <span class="text-muted small" id="car-ig-images-hint"></span>
                 </div>
             </div>
-            <div id="ig-post-btn-row" class="mb-2">
-                <button type="button" class="btn btn-dark btn-sm" onclick="postToInstagram()" id="ig-post-btn">
+            <div id="car-ig-btn-row" class="d-flex gap-2 flex-wrap align-items-center mb-2">
+                <button type="button" class="btn btn-dark btn-sm" onclick="postToInstagram('car')" id="car-ig-post-btn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
                          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                          stroke-linejoin="round" class="me-1" style="vertical-align:-1px">
@@ -301,22 +341,26 @@
                     Post to Instagram
                 </button>
             </div>
-            <!-- Status area -->
-            <div id="ig-status-area" class="d-none">
-                <div class="d-flex align-items-center gap-2 mb-1" id="ig-status-running">
+            <div id="car-ig-status-area" class="d-none">
+                <div class="d-flex align-items-center gap-2 mb-1" id="car-ig-status-running">
                     <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-                    <span id="ig-status-text" class="text-muted small">Starting…</span>
+                    <span id="car-ig-status-text" class="text-muted small">Starting…</span>
                 </div>
-                <div class="progress mb-2" style="height:4px" id="ig-progress-wrap">
-                    <div id="ig-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                <div class="progress mb-2" style="height:4px" id="car-ig-progress-wrap">
+                    <div id="car-ig-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
                          role="progressbar" style="width:0%"></div>
                 </div>
-                <div id="ig-result" class="d-none small"></div>
+                <div id="car-ig-result" class="d-none small"></div>
+                <div id="car-ig-history" class="d-none mt-3">
+                    <div class="text-muted small fw-semibold mb-1">Past Posts</div>
+                    <div id="car-ig-history-list"></div>
+                </div>
+            </div>
+            {% endif %}
             </div>
             {% endif %}
         </div>
     </div>
-    {% endif %}
 
     <!-- Carousel Error Modal -->
     <div class="modal fade" id="carousel-error-modal" tabindex="-1" aria-hidden="true">
@@ -405,6 +449,175 @@
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         Component D — Cinemagraph (Runway Gen-4 per slide)
+         ══════════════════════════════════════════════════════════ -->
+    <div class="card mt-3 mb-4" id="cinemagraph-card">
+        <div class="card-header position-relative pe-5">
+            <h5 class="mb-0">Cinemagraph</h5>
+            <p class="text-muted small mb-2 mt-1">
+                Each slide animated via Runway Gen-4 Turbo (5 s loop). ~$2.50/run, ~5–15 min.
+            </p>
+            <!-- Locked placeholder: visible until carousel images exist -->
+            <button type="button" id="cinemagraph-locked-btn" class="btn btn-sm btn-secondary"
+                    disabled>Generate carousel images first</button>
+            <!-- Generate button: d-none by default, shown/hidden by updateCinemagraphTabCounts() -->
+            <button type="button" id="cinemagraph-btn" class="btn btn-sm btn-primary d-none"
+                    onclick="cinemagraphGenerate()">Generate Cinemagraph</button>
+            <!-- Kebab menu -->
+            <div class="dropdown position-absolute" style="top:0.6rem;right:0.75rem;">
+                <button type="button" class="btn btn-sm btn-link text-muted p-1 lh-1"
+                        style="font-size:1.25rem; text-decoration:none;"
+                        data-bs-toggle="dropdown" aria-expanded="false"
+                        title="Cinemagraph options">&#8942;</button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li><h6 class="dropdown-header">Images Grid</h6></li>
+                    <li>
+                        <button type="button" id="cinemagraph-menu-generate"
+                                class="dropdown-item small disabled"
+                                onclick="cinemagraphGenerate()">Generate Cinemagraph</button>
+                    </li>
+                    <li>
+                        <button type="button" id="cinemagraph-archive-all-btn"
+                                class="dropdown-item small disabled"
+                                onclick="archiveAllCinemagraphs()">Archive All</button>
+                    </li>
+                    <li>
+                        <button type="button" class="dropdown-item small"
+                                onclick="openCinemagraphPromptModal()">Edit Cinemagraph Prompt</button>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Instagram</h6></li>
+                    <li>
+                        <button type="button" class="dropdown-item small"
+                                onclick="openIgCaptionPromptModal()">Edit Caption Prompt</button>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Logs</h6></li>
+                    <li>
+                        <button type="button" id="cinemagraph-log-btn"
+                                class="dropdown-item small"
+                                onclick="viewActivityLog()">View Logs</button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="cinemagraph-status" class="d-none mb-3">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <div class="spinner-border spinner-border-sm text-primary" id="cinemagraph-spinner" role="status"></div>
+                    <span id="cinemagraph-status-text" class="text-muted small">Starting…</span>
+                </div>
+                <div class="progress mb-2" style="height:6px;">
+                    <div id="cinemagraph-progress" class="progress-bar progress-bar-striped progress-bar-animated"
+                         role="progressbar" style="width:0%"></div>
+                </div>
+            </div>
+            <!-- Tabs: Current / Archived -->
+            <ul class="nav" id="cinemagraph-tabs">
+                <li class="nav-item">
+                    <button type="button" class="nav-link active" id="cine-tab-current"
+                            onclick="showCinemagraphTab('current')">
+                        Images Grid <span id="cine-tab-current-count" class="badge bg-secondary ms-1">0</span>
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button type="button" class="nav-link" id="cine-tab-archived"
+                            onclick="showCinemagraphTab('archived')" style="display:none;">
+                        Archived <span id="cine-tab-archived-count" class="badge bg-secondary ms-1">0</span>
+                    </button>
+                </li>
+                <li class="nav-item ms-auto d-flex align-items-center pe-1">
+                    <button type="button" class="btn btn-sm btn-link text-muted p-0 lh-1"
+                            onclick="toggleCinemagraphGrid()" title="Toggle clips">
+                        <svg id="cinemagraph-grid-chevron" xmlns="http://www.w3.org/2000/svg"
+                             width="16" height="16" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                             stroke-linejoin="round" style="transition:transform 0.2s;">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </button>
+                </li>
+            </ul>
+            <div id="cinemagraph-grid-wrap" class="d-none">
+                <div id="cinemagraph-grid"></div>
+                <div id="cinemagraph-removed-grid" class="d-none"></div>
+                <div id="cinemagraph-empty" class="text-muted small text-center py-3">
+                    Generate a carousel first, then click <strong>Generate Cinemagraph</strong>.
+                </div>
+            </div>
+            {% if article and article.id %}
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="toggleIgSection('cine')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0">
+                    <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+                    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+                </svg>
+                <span class="small fw-semibold">Post Cinemagraph to Instagram</span>
+                <svg id="cine-ig-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round"
+                     class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+            <div id="cine-ig-body" class="d-none pt-1">
+            {% if not ig_configured %}
+            <div class="alert alert-warning mb-2 d-flex align-items-center gap-2 small">
+                Instagram credentials not configured. See <a href="/admin/settings" target="_blank">Settings</a>.
+            </div>
+            {% else %}
+            <div class="mb-3">
+                <div class="d-flex align-items-center mb-1">
+                    <label for="cine-ig-caption" class="form-label small fw-semibold mb-0">Caption</label>
+                    <a href="#" class="small ms-auto" id="cine-ig-generate-caption-link"
+                       onclick="event.preventDefault(); generateIgCaption('cine')">Generate caption <span class="text-muted">(~$0.01)</span></a>
+                </div>
+                <textarea id="cine-ig-caption" class="form-control form-control-sm" rows="3"
+                          placeholder="Write your caption here… #stamps #philately"
+                          maxlength="2200" oninput="updateIgCharCount('cine')"></textarea>
+                <div class="d-flex justify-content-between mt-1">
+                    <span class="text-muted small" id="cine-ig-char-count">0 / 2200</span>
+                    <span class="text-muted small" id="cine-ig-images-hint"></span>
+                </div>
+            </div>
+            <div id="cine-ig-btn-row" class="d-flex gap-2 flex-wrap align-items-center mb-2">
+                <button type="button" class="btn btn-dark btn-sm" onclick="postToInstagram('cine')" id="cine-ig-post-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                         stroke-linejoin="round" class="me-1" style="vertical-align:-1px">
+                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+                        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+                    </svg>
+                    Post to Instagram
+                </button>
+            </div>
+            <div id="cine-ig-status-area" class="d-none">
+                <div class="d-flex align-items-center gap-2 mb-1" id="cine-ig-status-running">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    <span id="cine-ig-status-text" class="text-muted small">Starting…</span>
+                </div>
+                <div class="progress mb-2" style="height:4px" id="cine-ig-progress-wrap">
+                    <div id="cine-ig-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                         role="progressbar" style="width:0%"></div>
+                </div>
+                <div id="cine-ig-result" class="d-none small"></div>
+                <div id="cine-ig-history" class="d-none mt-3">
+                    <div class="text-muted small fw-semibold mb-1">Past Posts</div>
+                    <div id="cine-ig-history-list"></div>
+                </div>
+            </div>
+            {% endif %}
+            </div>
+            {% endif %}
         </div>
     </div>
 
@@ -576,7 +789,8 @@
             </div>
             <div class="d-flex gap-2 align-items-center flex-wrap">
                 <button type="button" id="narrated-stop-btn" class="btn btn-sm btn-outline-danger d-none" onclick="narratedStop()">Stop</button>
-                <button type="button" id="narrated-btn" class="btn btn-sm btn-primary" disabled onclick="narratedGenerate()">Generate Narrated Video</button>
+                <button type="button" id="narrated-locked-btn" class="btn btn-sm btn-secondary" disabled>Generate carousel images first</button>
+                <button type="button" id="narrated-btn" class="btn btn-sm btn-primary d-none" onclick="narratedGenerate()">Generate Narrated Video</button>
             </div>
             <!-- Kebab menu -->
             <div class="dropdown position-absolute" style="top:0.6rem;right:0.75rem;">
@@ -732,7 +946,8 @@
             </div>
             <div class="d-flex gap-2 align-items-center">
                 <button type="button" id="ai-video-stop-btn" class="btn btn-sm btn-outline-danger d-none" onclick="aiVideoStop()">Stop</button>
-                <button type="button" id="ai-video-btn" class="btn btn-sm btn-primary" disabled onclick="aiVideoGenerate()">Generate AI Video</button>
+                <button type="button" id="ai-video-locked-btn" class="btn btn-sm btn-secondary" disabled>Generate carousel images first</button>
+                <button type="button" id="ai-video-btn" class="btn btn-sm btn-primary d-none" onclick="aiVideoGenerate()">Generate AI Video</button>
             </div>
         </div>
         <div class="card-body">
@@ -828,6 +1043,149 @@
         </div>
     </div>
 </div>
+
+<!-- Cinemagraph Edit Slide Modal -->
+<div class="modal fade" id="cinemagraph-edit-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Cinemagraph — Slide <span id="cine-edit-slide-num"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <video id="cine-edit-preview" autoplay loop muted playsinline
+                       class="w-100 mb-3" style="border-radius:6px; max-height:260px; object-fit:cover; display:none;"></video>
+                <label class="form-label small fw-semibold">Runway Prompt</label>
+                <textarea id="cine-edit-prompt" class="form-control font-monospace small" rows="4"
+                          placeholder="Describe the motion for this slide…"></textarea>
+                <p class="text-muted small mt-1 mb-0">Leave blank to use the default atmospheric motion prompt.</p>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <button type="button" class="btn btn-outline-danger btn-sm"
+                        onclick="cinemagraphArchiveSlide()">Archive clip</button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="cine-edit-rerun-btn"
+                            onclick="cinemagraphRerunSlide()">
+                        <span id="cine-edit-rerun-spinner" class="spinner-border spinner-border-sm d-none me-1" role="status"></span>
+                        Re-run this slide
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cinemagraph Default Prompt Modal -->
+<div class="modal fade" id="cinemagraph-prompt-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Runway Default Prompt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2">
+                    This prompt is sent to Runway Gen-4 Turbo for every slide that doesn't have a custom prompt set.
+                    Changes here affect future generations only — existing clips are not re-run.
+                </p>
+                <textarea id="cine-default-prompt-text" class="form-control font-monospace small" rows="5"
+                          placeholder="Subtle gentle atmospheric motion, cinematic still life…"></textarea>
+            </div>
+            <div class="modal-footer">
+                <span id="cine-prompt-save-status" class="me-auto small"></span>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm"
+                        onclick="saveCinemagraphPrompt()">Save as Default</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Instagram Caption Prompt Modal -->
+<div class="modal fade" id="ig-caption-prompt-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Instagram Caption Prompt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2">
+                    This prompt is sent to OpenAI when generating captions for this article only.
+                    The global default can be changed in Settings.
+                </p>
+                <textarea id="ig-caption-prompt-text" class="form-control font-monospace small"
+                          rows="6" placeholder="You are a social media copywriter..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <span id="ig-caption-prompt-save-status" class="me-auto small"></span>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm"
+                        onclick="saveIgCaptionPrompt()">Save as Default</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cinemagraph Re-run All Modal -->
+<div class="modal fade" id="cinemagraph-rerun-all-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Re-run All Cinemagraph Slides</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label small fw-semibold">Global Prompt (applied to every slide)</label>
+                <textarea id="cine-rerun-all-prompt" class="form-control font-monospace small" rows="4"
+                          placeholder="Subtle gentle atmospheric motion, cinematic still life…"></textarea>
+                <p class="text-muted small mt-1 mb-0">Leave blank to use each slide's saved prompt, or the default.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm"
+                        onclick="cinemagraphRerunAll()">Re-run All (~$2.50)</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Activity Log Modal -->
+<div class="modal fade" id="cinemagraph-log-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Activity Log</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="accordion accordion-flush" id="activity-log-accordion"></div>
+                <div id="activity-log-empty" class="text-muted small text-center py-3 d-none">
+                    No activity logged yet.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Instagram Archive Modal -->
+<div class="modal fade" id="ig-archive-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title">Archived Instagram Post</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="ig-archive-modal-images" class="d-flex flex-wrap gap-2 mb-3"></div>
+                <div id="ig-archive-modal-caption" class="small border rounded p-2 bg-light mb-3"
+                     style="white-space:pre-wrap;"></div>
+                <div id="ig-archive-modal-meta" class="text-muted small"></div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -839,7 +1197,10 @@ const ARTICLE_ID = parseInt(document.getElementById('article-form').dataset.arti
 const SAVE_URL = ARTICLE_ID
     ? '/admin/articles/' + ARTICLE_ID + '/save'
     : '/admin/articles/new';
-const CAROUSEL_STYLE = {{ carousel_style | tojson }};
+const CAROUSEL_STYLE     = {{ carousel_style | tojson }};
+const CINEMAGRAPH_PROMPT = {{ cinemagraph_prompt | tojson }};
+const IG_CAPTION_PROMPT  = {{ ig_caption_prompt | tojson }};
+const IG_ARTICLE_CAPTION_PROMPT = {{ ig_article_caption_prompt | tojson }};
 const ARTICLE_TITLE = {{ (article.title if article and article.title else '') | tojson }};
 const CAROUSEL_PUNCHLINES = {{ (article.carousel_punchlines if article and article.carousel_punchlines else []) | tojson }};
 const ARTICLE_URL = {{ ((site_url ~ '/articles/' ~ article.slug) if article and article.slug else '') | tojson }};
@@ -1056,6 +1417,7 @@ let carouselEditIndex = null;   // 0-based index of the slide currently being ed
                 initPreview(d.images.slice(0, 10), (d.punchlines || []).slice(0, 10));
                 narratedUnlock();
                 aiVideoUnlock();
+                cinemagraphUnlock();
             }
         }).catch(() => {});
 })();
@@ -1104,126 +1466,180 @@ function openIgPreview(slideIdx) {
 }
 
 /* ── Instagram accordion ─────────────────────────────────────── */
-let _igPollTimer = null;
+// ── Instagram posting — mode-aware ('cine' or 'car') ──────────────────────────
+const _ig = {
+    cine: { pollTimer: null, mediaId: null },
+    car:  { pollTimer: null, mediaId: null },
+};
 
-function toggleIgAccordion() {
-    const body    = document.getElementById('ig-accordion-body');
-    const chevron = document.getElementById('ig-chevron');
+// Return element ID for given mode + suffix, e.g. _igId('cine','caption') → 'cine-ig-caption'
+function _igId(mode, suffix) { return mode + '-ig-' + suffix; }
+
+function toggleIgSection(mode) {
+    const body    = document.getElementById(_igId(mode, 'body'));
+    const chevron = document.getElementById(_igId(mode, 'chevron'));
     if (!body) return;
-    const open = body.classList.toggle('d-none');
-    chevron.style.transform = open ? '' : 'rotate(180deg)';
-    if (!open) {
-        // Accordion opened — update image hint & check running status
-        updateIgImagesHint();
-        checkIgRunning();
+    const collapsed = body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = collapsed ? '' : 'rotate(180deg)';
+    // Refresh hint when opening
+    if (!collapsed) updateIgImagesHint(mode);
+}
+
+function toggleCarouselGrid() {
+    const wrap    = document.getElementById('carousel-grid-wrap');
+    const chevron = document.getElementById('carousel-grid-chevron');
+    if (!wrap) return;
+    const collapsed = wrap.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = collapsed ? '' : 'rotate(180deg)';
+}
+
+function toggleCinemagraphGrid() {
+    const wrap    = document.getElementById('cinemagraph-grid-wrap');
+    const chevron = document.getElementById('cinemagraph-grid-chevron');
+    if (!wrap) return;
+    const collapsed = wrap.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = collapsed ? '' : 'rotate(180deg)';
+}
+
+function updateIgImagesHint(mode) {
+    const hint = document.getElementById(_igId(mode, 'images-hint'));
+    if (!hint) return;
+    if (mode === 'cine') {
+        const active = Array.from(document.querySelectorAll('#cinemagraph-grid .carousel-col'))
+                            .filter(c => c.querySelector('video')).length;
+        hint.textContent = active + ' cinemagraph clip' + (active !== 1 ? 's' : '') + ' ready to post';
+    } else {
+        const active = Array.from(document.querySelectorAll('#carousel-grid .carousel-col[id^="cimg-"]')).length;
+        hint.textContent = active + ' carousel image' + (active !== 1 ? 's' : '') + ' ready to post';
     }
 }
 
-function updateIgImagesHint() {
-    const hint = document.getElementById('ig-images-hint');
-    if (!hint) return;
-    const active = document.querySelectorAll('#carousel-grid .carousel-col').length;
-    hint.textContent = active + ' image' + (active !== 1 ? 's' : '') + ' will be composited & posted';
-}
-
-function updateIgCharCount() {
-    const ta    = document.getElementById('ig-caption');
-    const lbl   = document.getElementById('ig-char-count');
+function updateIgCharCount(mode) {
+    const ta  = document.getElementById(_igId(mode, 'caption'));
+    const lbl = document.getElementById(_igId(mode, 'char-count'));
     if (!ta || !lbl) return;
     lbl.textContent = ta.value.length + ' / 2200';
 }
 
-function checkIgRunning() {
+function generateIgCaption(mode) {
     if (!ARTICLE_ID) return;
-    fetch('/admin/articles/' + ARTICLE_ID + '/ig-post-status')
+    var link = document.getElementById(_igId(mode, 'generate-caption-link'));
+    var captionEl = document.getElementById(_igId(mode, 'caption'));
+    if (!link || !captionEl) return;
+    var origText = link.textContent;
+    link.textContent = 'Generating…';
+    link.style.pointerEvents = 'none';
+    fetch('/admin/articles/' + ARTICLE_ID + '/generate-ig-caption', {method: 'POST'})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            link.textContent = origText;
+            link.style.pointerEvents = '';
+            if (d.error) { alert(d.error); return; }
+            captionEl.value = d.caption;
+            // Append article link if not already present in the generated caption
+            if (ARTICLE_URL && d.caption.indexOf(ARTICLE_URL) === -1) {
+                captionEl.value += '\n\nWant to read the full article? Access the following link:\n' + ARTICLE_URL;
+            }
+            updateIgCharCount(mode);
+        })
+        .catch(function(err) {
+            link.textContent = origText;
+            link.style.pointerEvents = '';
+            alert('Failed to generate caption: ' + err);
+        });
+}
+
+function checkIgRunning(mode) {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/ig-post-status?type=' + mode)
         .then(r => r.json())
         .then(d => {
             const status = d.status;
             const result = d.result;
+            if (d.media_id) _ig[mode].mediaId = d.media_id;
+            if (d.history && d.history.length) renderIgHistory(mode, d.history);
             if (status && status.startsWith('running')) {
-                showIgRunning(status);
-                _igPollTimer = setInterval(pollIgStatus, 5000);
+                showIgRunning(mode, status);
+                _ig[mode].pollTimer = setInterval(function() { pollIgStatus(mode); }, 5000);
             } else if (status && status.startsWith('done:')) {
-                showIgDone(status.slice(5));
+                showIgDone(mode, status.slice(5));
             } else if (status && status.startsWith('error:')) {
-                showIgError(status.slice(6));
+                showIgError(mode, status.slice(6));
             } else if (!status && result) {
-                // Status cleared but result exists from a previous post
-                if (result.startsWith('done:')) showIgDone(result.slice(5));
-                else if (result.startsWith('error:')) showIgError(result.slice(6));
+                if (result.startsWith('done:')) showIgDone(mode, result.slice(5));
+                else if (result.startsWith('error:')) showIgError(mode, result.slice(6));
             }
         })
         .catch(() => {});
 }
 
-function postToInstagram() {
+function postToInstagram(mode) {
     if (!ARTICLE_ID) return;
-    const caption = (document.getElementById('ig-caption') || {}).value || '';
-    document.getElementById('ig-post-btn').disabled = true;
-    showIgRunning('running:0');
+    const caption = (document.getElementById(_igId(mode, 'caption')) || {}).value || '';
+    document.getElementById(_igId(mode, 'post-btn')).disabled = true;
+    showIgRunning(mode, 'running:0');
 
     fetch('/admin/articles/' + ARTICLE_ID + '/post-to-instagram', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({caption: caption})
+        body: JSON.stringify({caption: caption, type: mode})
     })
     .then(r => r.json())
     .then(d => {
         if (d.error) {
-            showIgError(d.error);
-            document.getElementById('ig-post-btn').disabled = false;
+            showIgError(mode, d.error);
+            document.getElementById(_igId(mode, 'post-btn')).disabled = false;
             return;
         }
-        // Started — begin polling
-        clearInterval(_igPollTimer);
-        _igPollTimer = setInterval(pollIgStatus, 5000);
+        clearInterval(_ig[mode].pollTimer);
+        _ig[mode].pollTimer = setInterval(function() { pollIgStatus(mode); }, 5000);
     })
     .catch(err => {
-        showIgError(err.message || 'Request failed');
-        document.getElementById('ig-post-btn').disabled = false;
+        showIgError(mode, err.message || 'Request failed');
+        document.getElementById(_igId(mode, 'post-btn')).disabled = false;
     });
 }
 
-function pollIgStatus() {
+function pollIgStatus(mode) {
     if (!ARTICLE_ID) return;
-    fetch('/admin/articles/' + ARTICLE_ID + '/ig-post-status')
+    fetch('/admin/articles/' + ARTICLE_ID + '/ig-post-status?type=' + mode)
         .then(r => r.json())
         .then(d => {
             const status = d.status;
             const result = d.result;
+            if (d.media_id) _ig[mode].mediaId = d.media_id;
+            if (d.history && d.history.length) renderIgHistory(mode, d.history);
             if (!status || status === 'null') {
-                // Worker finished and cleared status — check result for outcome
-                clearInterval(_igPollTimer); _igPollTimer = null;
+                clearInterval(_ig[mode].pollTimer); _ig[mode].pollTimer = null;
                 if (result && result.startsWith('done:')) {
-                    showIgDone(result.slice(5));
+                    showIgDone(mode, result.slice(5));
                 } else if (result && result.startsWith('error:')) {
-                    showIgError(result.slice(6));
-                    document.getElementById('ig-post-btn').disabled = false;
+                    showIgError(mode, result.slice(6));
+                    document.getElementById(_igId(mode, 'post-btn')).disabled = false;
                 }
                 return;
             }
             if (status.startsWith('running')) {
-                showIgRunning(status);
+                showIgRunning(mode, status);
             } else if (status.startsWith('done:')) {
-                clearInterval(_igPollTimer); _igPollTimer = null;
-                showIgDone(status.slice(5));
-                document.getElementById('ig-post-btn').disabled = false;
+                clearInterval(_ig[mode].pollTimer); _ig[mode].pollTimer = null;
+                showIgDone(mode, status.slice(5));
+                document.getElementById(_igId(mode, 'post-btn')).disabled = false;
             } else if (status.startsWith('error:')) {
-                clearInterval(_igPollTimer); _igPollTimer = null;
-                showIgError(status.slice(6));
-                document.getElementById('ig-post-btn').disabled = false;
+                clearInterval(_ig[mode].pollTimer); _ig[mode].pollTimer = null;
+                showIgError(mode, status.slice(6));
+                document.getElementById(_igId(mode, 'post-btn')).disabled = false;
             }
         })
         .catch(() => {});
 }
 
-function showIgRunning(statusStr) {
-    // statusStr like "running:3/10" or "running:0"
-    const area     = document.getElementById('ig-status-area');
-    const running  = document.getElementById('ig-status-running');
-    const textEl   = document.getElementById('ig-status-text');
-    const progress = document.getElementById('ig-progress-bar');
-    const resultEl = document.getElementById('ig-result');
+function showIgRunning(mode, statusStr) {
+    const area     = document.getElementById(_igId(mode, 'status-area'));
+    const running  = document.getElementById(_igId(mode, 'status-running'));
+    const textEl   = document.getElementById(_igId(mode, 'status-text'));
+    const progress = document.getElementById(_igId(mode, 'progress-bar'));
+    const resultEl = document.getElementById(_igId(mode, 'result'));
     if (!area) return;
     area.classList.remove('d-none');
     running.classList.remove('d-none');
@@ -1232,7 +1648,7 @@ function showIgRunning(statusStr) {
     const cur = parseInt(parts[0]) || 0;
     const tot = parseInt(parts[1]) || 0;
     if (tot > 0) {
-        textEl.textContent = 'Compositing & uploading… ' + cur + ' / ' + tot;
+        textEl.textContent = 'Uploading… ' + cur + ' / ' + tot;
         progress.style.width = Math.round((cur / tot) * 100) + '%';
     } else if (statusStr.includes('carousel')) {
         textEl.textContent = 'Creating carousel container…';
@@ -1240,52 +1656,338 @@ function showIgRunning(statusStr) {
     } else if (statusStr.includes('publish')) {
         textEl.textContent = 'Publishing to Instagram…';
         progress.style.width = '97%';
+    } else if (statusStr.includes('compose') || statusStr.includes('containers')) {
+        textEl.textContent = 'Compositing images…';
+        progress.style.width = '40%';
     } else {
         textEl.textContent = 'Starting…';
         progress.style.width = '5%';
     }
 }
 
-function showIgDone(permalink) {
-    const area     = document.getElementById('ig-status-area');
-    const running  = document.getElementById('ig-status-running');
-    const progress = document.getElementById('ig-progress-wrap');
-    const resultEl = document.getElementById('ig-result');
+function showIgDone(mode, permalink) {
+    const area     = document.getElementById(_igId(mode, 'status-area'));
+    const running  = document.getElementById(_igId(mode, 'status-running'));
+    const progress = document.getElementById(_igId(mode, 'progress-wrap'));
+    const resultEl = document.getElementById(_igId(mode, 'result'));
     if (!area) return;
     area.classList.remove('d-none');
     running.classList.add('d-none');
     if (progress) progress.classList.add('d-none');
     resultEl.classList.remove('d-none');
-    resultEl.innerHTML = '<span class="text-success">✓ Posted!</span> ' +
-        (permalink ? '<a href="' + permalink + '" target="_blank" rel="noopener">View on Instagram</a>' : '');
+
+    // Disable Post button and inject Edit + Check buttons inline in btn-row
+    const postBtn = document.getElementById(_igId(mode, 'post-btn'));
+    if (postBtn) {
+        postBtn.disabled = true;
+        postBtn.style.pointerEvents = 'none'; // let parent span catch hover for tooltip
+        // Wrap in a span so the tooltip shows even on a disabled button
+        if (!postBtn.parentElement || !postBtn.parentElement.classList.contains('ig-post-tooltip-wrap')) {
+            const wrap = document.createElement('span');
+            wrap.className = 'ig-post-tooltip-wrap';
+            wrap.title = 'A post is already live on Instagram. Archive it first to post again.';
+            wrap.style.cursor = 'not-allowed';
+            postBtn.parentNode.insertBefore(wrap, postBtn);
+            wrap.appendChild(postBtn);
+        }
+    }
+    const btnRow = document.getElementById(_igId(mode, 'btn-row'));
+    if (btnRow) {
+        // Remove any previously injected done-buttons first
+        btnRow.querySelectorAll('.ig-done-btn').forEach(function(b) { b.remove(); });
+        const m = mode;
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'btn btn-outline-secondary btn-sm ig-done-btn';
+        editBtn.textContent = 'Edit caption';
+        editBtn.onclick = function() { igShowEditCaption(m); };
+        btnRow.appendChild(editBtn);
+
+        const checkBtn = document.createElement('button');
+        checkBtn.type = 'button';
+        checkBtn.className = 'btn btn-outline-secondary btn-sm ig-done-btn';
+        checkBtn.id = _igId(mode, 'check-live-btn');
+        checkBtn.textContent = 'Check if post is still live';
+        checkBtn.onclick = function() { igCheckPostLive(m); };
+        btnRow.appendChild(checkBtn);
+    }
+
+    const m = mode;
+    resultEl.innerHTML =
+        '<div class="mb-1">' +
+            '<span class="text-success fw-semibold">✓ Posted!</span>' +
+            (permalink ? ' <a href="' + permalink + '" target="_blank" rel="noopener">View on Instagram</a>' : '') +
+        '</div>' +
+        '<div class="text-muted mb-2" style="font-size:0.8rem;">To delete this post, remove it directly from the Instagram app.</div>' +
+        '<div id="' + m + '-ig-check-live-status" class="small mb-2"></div>' +
+        '<div id="' + m + '-ig-edit-caption-area" class="d-none mt-2">' +
+            '<textarea id="' + m + '-ig-edit-caption-text" class="form-control form-control-sm mb-2" rows="4" maxlength="2200" ' +
+                'placeholder="New caption…" oninput="igUpdateEditCount(\'' + m + '\')"></textarea>' +
+            '<div class="d-flex justify-content-between align-items-center">' +
+                '<span class="text-muted small" id="' + m + '-ig-edit-caption-count">0 / 2200</span>' +
+                '<div class="d-flex gap-2">' +
+                    '<button type="button" class="btn btn-secondary btn-sm" onclick="igHideEditCaption(\'' + m + '\')">Cancel</button>' +
+                    '<button type="button" class="btn btn-primary btn-sm" id="' + m + '-ig-edit-caption-btn" onclick="igSaveCaption(\'' + m + '\')">Save caption</button>' +
+                '</div>' +
+            '</div>' +
+            '<div id="' + m + '-ig-edit-caption-status" class="small mt-1"></div>' +
+        '</div>';
 }
 
-function showIgError(msg) {
-    const area     = document.getElementById('ig-status-area');
-    const running  = document.getElementById('ig-status-running');
-    const resultEl = document.getElementById('ig-result');
+function igShowEditCaption(mode) {
+    const area = document.getElementById(_igId(mode, 'edit-caption-area'));
+    if (!area) return;
+    const ta = document.getElementById(_igId(mode, 'edit-caption-text'));
+    if (ta && !ta.value) {
+        const current = (document.getElementById(_igId(mode, 'caption')) || {}).value || '';
+        ta.value = current.slice(0, 2200);
+        igUpdateEditCount(mode);
+    }
+    area.classList.remove('d-none');
+}
+
+function igHideEditCaption(mode) {
+    const area = document.getElementById(_igId(mode, 'edit-caption-area'));
+    if (area) area.classList.add('d-none');
+}
+
+function igUpdateEditCount(mode) {
+    const ta  = document.getElementById(_igId(mode, 'edit-caption-text'));
+    const lbl = document.getElementById(_igId(mode, 'edit-caption-count'));
+    if (ta && lbl) lbl.textContent = ta.value.length + ' / 2200';
+}
+
+function igSaveCaption(mode) {
+    if (!ARTICLE_ID || !_ig[mode].mediaId) return;
+    const ta     = document.getElementById(_igId(mode, 'edit-caption-text'));
+    const btn    = document.getElementById(_igId(mode, 'edit-caption-btn'));
+    const status = document.getElementById(_igId(mode, 'edit-caption-status'));
+    const caption = (ta ? ta.value : '').trim();
+    if (!caption) { status.textContent = 'Caption cannot be empty.'; return; }
+    btn.disabled = true;
+    status.textContent = 'Saving…';
+    fetch('/admin/articles/' + ARTICLE_ID + '/edit-instagram-caption', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({caption: caption, type: mode}),
+    })
+    .then(r => r.json())
+    .then(d => {
+        btn.disabled = false;
+        if (d.ok) {
+            status.innerHTML = '<span class="text-success">✓ Caption updated on Instagram!</span>';
+            const mainCaption = document.getElementById(_igId(mode, 'caption'));
+            if (mainCaption) { mainCaption.value = caption; updateIgCharCount(mode); }
+        } else {
+            status.innerHTML = '<span class="text-danger">Error: ' + (d.error || 'Unknown error') + '</span>';
+        }
+    })
+    .catch(err => { btn.disabled = false; status.innerHTML = '<span class="text-danger">Network error: ' + err + '</span>'; });
+}
+
+function showIgError(mode, msg) {
+    const area     = document.getElementById(_igId(mode, 'status-area'));
+    const running  = document.getElementById(_igId(mode, 'status-running'));
+    const progress = document.getElementById(_igId(mode, 'progress-wrap'));
+    const resultEl = document.getElementById(_igId(mode, 'result'));
     if (!area) return;
     area.classList.remove('d-none');
-    running.classList.add('d-none');
+    if (running)  running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
     resultEl.classList.remove('d-none');
-    resultEl.innerHTML = '<span class="text-danger">✗ Error: ' + msg + '</span>';
+
+    // Build a clear error box
+    var html = '<div class="alert alert-danger py-2 px-3 mb-2 small" role="alert">'
+             + '<div class="fw-semibold mb-1">&#10007; Instagram Posting Failed</div>'
+             + '<div>' + msg + '</div>';
+
+    // Add a hint for common errors
+    var lower = msg.toLowerCase();
+    if (lower.indexOf('status error') !== -1 || lower.indexOf('video') !== -1) {
+        html += '<hr class="my-2"><div class="text-muted" style="font-size:0.78rem">'
+              + 'This may be caused by Instagram rejecting a video format or being unable '
+              + 'to fetch the media URL. Ensure GCS is configured for public video URLs.'
+              + '</div>';
+    } else if (lower.indexOf('oauthexception') !== -1 || lower.indexOf('access') !== -1) {
+        html += '<hr class="my-2"><div class="text-muted" style="font-size:0.78rem">'
+              + 'Your Instagram access token may have expired. Regenerate it in the Meta Developer portal.'
+              + '</div>';
+    }
+
+    html += '</div>';
+    resultEl.innerHTML = html;
 }
 
-// Pre-populate caption with article title + punchlines when page loads
+function igCheckPostLive(mode) {
+    if (!ARTICLE_ID) return;
+    const btn = document.getElementById(_igId(mode, 'check-live-btn'));
+    if (!btn) { console.warn('[igCheckPostLive] check-live-btn not found for mode:', mode); return; }
+    // Locate or create the status display element
+    let status = document.getElementById(_igId(mode, 'check-live-status'));
+    if (!status) {
+        console.warn('[igCheckPostLive] check-live-status div missing, creating it dynamically');
+        status = document.createElement('div');
+        status.id = _igId(mode, 'check-live-status');
+        status.className = 'small mb-2 mt-2';
+        btn.closest('[id$="-ig-status-area"], [id$="-ig-body"]')
+            ? btn.closest('[id$="-ig-status-area"], [id$="-ig-body"]').appendChild(status)
+            : btn.parentNode.insertAdjacentElement('afterend', status);
+    }
+    btn.disabled = true;
+    status.textContent = 'Checking…';
+    fetch('/admin/articles/' + ARTICLE_ID + '/check-instagram-post?type=' + mode)
+        .then(r => r.json())
+        .then(d => {
+            btn.disabled = false;
+            if (d.error) { status.innerHTML = '<span class="text-danger">' + d.error + '</span>'; return; }
+            if (d.live) {
+                status.innerHTML = '<span class="text-success">✓ Post is still live on Instagram.</span>';
+            } else {
+                var apiNote = d.api_error ? ' <span class="text-muted">(' + d.api_error + ')</span>' : '';
+                status.innerHTML =
+                    '<span class="text-warning fw-semibold">Post not found on Instagram.</span>' + apiNote + ' ' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="igArchivePost(\'' + mode + '\')">Archive this post record</button>';
+            }
+        })
+        .catch(err => { btn.disabled = false; status.innerHTML = '<span class="text-danger">Network error: ' + err + '</span>'; });
+}
+
+function igArchivePost(mode) {
+    if (!ARTICLE_ID) return;
+    const status = document.getElementById(_igId(mode, 'check-live-status'));
+    if (status) status.innerHTML = 'Archiving…';
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-instagram-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: mode}),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.ok) {
+            const resultEl = document.getElementById(_igId(mode, 'result'));
+            if (resultEl) resultEl.innerHTML = '<span class="text-muted small">Post archived. You can now publish a new post.</span>';
+            _ig[mode].mediaId = null;
+            // Re-enable Post button and remove injected Edit/Check buttons
+            const postBtn = document.getElementById(_igId(mode, 'post-btn'));
+            if (postBtn) {
+                postBtn.disabled = false;
+                postBtn.style.pointerEvents = '';
+                // Unwrap from tooltip span if present
+                const wrap = postBtn.parentElement;
+                if (wrap && wrap.classList.contains('ig-post-tooltip-wrap')) {
+                    wrap.parentNode.insertBefore(postBtn, wrap);
+                    wrap.remove();
+                }
+            }
+            const btnRow = document.getElementById(_igId(mode, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.ig-done-btn').forEach(function(b) { b.remove(); });
+            if (d.history && d.history.length) renderIgHistory(mode, d.history);
+        } else {
+            if (status) status.innerHTML = '<span class="text-danger">' + (d.error || 'Archive failed') + '</span>';
+        }
+    })
+    .catch(err => { if (status) status.innerHTML = '<span class="text-danger">Network error: ' + err + '</span>'; });
+}
+
+function renderIgHistory(mode, history) {
+    const wrap = document.getElementById(_igId(mode, 'history'));
+    const list = document.getElementById(_igId(mode, 'history-list'));
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.slice().reverse().forEach(function(entry) {
+        const row = document.createElement('div');
+        row.className = 'mb-1 small text-muted';
+        row.style.cursor = 'pointer';
+        row.title = 'Click to view archived post';
+        const date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        row.textContent = '📷 Post archived' + (date ? ' — ' + date : '');
+        row.addEventListener('mouseenter', function() { row.style.color = '#0d6efd'; });
+        row.addEventListener('mouseleave', function() { row.style.color = ''; });
+        (function(e) { row.onclick = function() { showIgArchiveModal(e); }; })(entry);
+        list.appendChild(row);
+    });
+    wrap.classList.remove('d-none');
+    // Ensure the parent status-area is visible so history isn't hidden on page reload
+    const area = document.getElementById(_igId(mode, 'status-area'));
+    if (area) area.classList.remove('d-none');
+    // Hide spinner + progress so only history shows (they have no d-none by default)
+    var running  = document.getElementById(_igId(mode, 'status-running'));
+    var progress = document.getElementById(_igId(mode, 'progress-wrap'));
+    if (running)  running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+}
+
+function showIgArchiveModal(entry) {
+    var imagesEl  = document.getElementById('ig-archive-modal-images');
+    var captionEl = document.getElementById('ig-archive-modal-caption');
+    var metaEl    = document.getElementById('ig-archive-modal-meta');
+    if (!imagesEl || !captionEl || !metaEl) return;
+
+    // Build images/videos grid
+    imagesEl.innerHTML = '';
+    var urls = (entry.video_urls && entry.video_urls.length) ? entry.video_urls : (entry.image_urls || []);
+    var isVideo = !!(entry.video_urls && entry.video_urls.length);
+    if (urls.length) {
+        urls.forEach(function(url) {
+            if (!url) return;
+            var el;
+            if (isVideo) {
+                el = document.createElement('video');
+                el.src = url;
+                el.style.width = '120px';
+                el.style.height = '120px';
+                el.style.objectFit = 'cover';
+                el.style.borderRadius = '6px';
+                el.muted = true;
+                el.loop = true;
+                el.autoplay = true;
+                el.playsInline = true;
+            } else {
+                el = document.createElement('img');
+                el.src = url;
+                el.style.width = '120px';
+                el.style.height = '120px';
+                el.style.objectFit = 'cover';
+                el.style.borderRadius = '6px';
+            }
+            imagesEl.appendChild(el);
+        });
+    } else {
+        imagesEl.innerHTML = '<span class="text-muted small">No images/videos stored for this post.</span>';
+    }
+
+    // Caption
+    captionEl.textContent = entry.caption || '(no caption stored)';
+    captionEl.classList.toggle('text-muted', !entry.caption);
+
+    // Meta
+    var lines = [];
+    if (entry.post_type) lines.push('Type: ' + (entry.post_type === 'car' ? 'Carousel Images' : 'Cinemagraph Videos'));
+    if (entry.posted_at)   lines.push('Posted: ' + entry.posted_at.replace('T', ' ').replace('Z', ' UTC'));
+    if (entry.archived_at) lines.push('Archived: ' + entry.archived_at.replace('T', ' ').replace('Z', ' UTC'));
+    if (entry.permalink)   lines.push('Permalink: ' + entry.permalink);
+    metaEl.innerHTML = lines.join('<br>');
+
+    // Show modal
+    var modal = new bootstrap.Modal(document.getElementById('ig-archive-modal'));
+    modal.show();
+}
+
+// Pre-populate captions and start status checks for both modes
 document.addEventListener('DOMContentLoaded', function() {
-    const captionEl = document.getElementById('ig-caption');
-    if (!captionEl) return;
-    const lines = [];
-    if (typeof ARTICLE_TITLE !== 'undefined' && ARTICLE_TITLE) lines.push(ARTICLE_TITLE);
-    if (typeof CAROUSEL_PUNCHLINES !== 'undefined' && Array.isArray(CAROUSEL_PUNCHLINES)) {
-        CAROUSEL_PUNCHLINES.forEach(function(p) { if (p) lines.push(p); });
-    }
-    if (typeof ARTICLE_URL !== 'undefined' && ARTICLE_URL) lines.push('\n' + ARTICLE_URL);
-    if (lines.length) {
-        captionEl.value = lines.join('\n');
-        updateIgCharCount();
-    }
-    updateIgImagesHint();
+    var defaultLines = [];
+    if (typeof ARTICLE_TITLE !== 'undefined' && ARTICLE_TITLE) defaultLines.push(ARTICLE_TITLE);
+    if (typeof ARTICLE_URL !== 'undefined' && ARTICLE_URL) defaultLines.push('\n' + ARTICLE_URL);
+    var defaultCaption = defaultLines.join('\n');
+    ['cine', 'car'].forEach(function(mode) {
+        var captionEl = document.getElementById(_igId(mode, 'caption'));
+        if (captionEl && !captionEl.value.trim() && defaultCaption) {
+            captionEl.value = defaultCaption;
+        }
+        updateIgCharCount(mode);
+        updateIgImagesHint(mode);
+        if (typeof ARTICLE_ID !== 'undefined' && ARTICLE_ID) checkIgRunning(mode);
+    });
 });
 
 function addCarouselImage(i, url, initial, prompt, punchline) {
@@ -1442,7 +2144,7 @@ function carouselDone(count) {
     if (carouselErrors.length) showCarouselErrorBtn();
     updateCarouselTabCounts();
     // Unlock video components now that carousel images exist
-    if (count > 0) { narratedUnlock(); aiVideoUnlock(); }
+    if (count > 0) { narratedUnlock(); aiVideoUnlock(); cinemagraphUnlock(); }
 }
 
 function carouselStopped() {
@@ -1567,6 +2269,8 @@ function updateCarouselTabCounts() {
         genBtn.classList.remove('d-none');
         if (genMenuItem) { genMenuItem.disabled = false; genMenuItem.classList.remove('disabled'); }
     }
+    // Keep the Instagram carousel posting hint in sync
+    updateIgImagesHint('car');
 }
 
 function archiveAllCarousel() {
@@ -1831,8 +2535,10 @@ function previewRestart() {
 // (no abort controller needed — generation runs in a background thread)
 
 function narratedUnlock() {
+    const lockedBtn = document.getElementById('narrated-locked-btn');
+    if (lockedBtn) lockedBtn.classList.add('d-none');
     const btn = document.getElementById('narrated-btn');
-    if (btn) btn.disabled = false;
+    if (btn) btn.classList.remove('d-none');
     const accordion = document.getElementById('narrated-runs-accordion');
     if (!accordion || accordion.children.length === 0) {
         document.getElementById('narrated-empty').classList.remove('d-none');
@@ -2043,8 +2749,10 @@ function narratedFinish(error) {
 let aiVideoAbortCtrl = null;
 
 function aiVideoUnlock() {
+    const lockedBtn = document.getElementById('ai-video-locked-btn');
+    if (lockedBtn) lockedBtn.classList.add('d-none');
     const btn = document.getElementById('ai-video-btn');
-    if (btn) btn.disabled = false;
+    if (btn) btn.classList.remove('d-none');
     document.getElementById('ai-video-empty').classList.add('d-none');
 }
 
@@ -2218,7 +2926,674 @@ function _aiVideoFinish(error) {
             } else if (d.ai_url) {
                 showAiVideoOutput(d.ai_url);
             }
+            // Cinemagraph — resume or show existing
+            _cinePrompts = d.cinemagraph_prompts || [];
+            if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running')) {
+                _cinemagraphUnlocked = true;
+                const mc = d.cinemagraph_status.match(/^running:(\d+)\/(\d+)$/);
+                const nSlides = mc ? parseInt(mc[2]) : 10;
+                _cinemagraphShowRunning(nSlides);
+                _cinemagraphApplyStatus(d.cinemagraph_status, nSlides);
+                _cinemagraphUpdateGrid(d.cinemagraph_urls, _cinePrompts);
+            } else if (d.cinemagraph_status && d.cinemagraph_status.startsWith('slide_running')) {
+                _cinemagraphUnlocked = true;
+                // Single slide re-run in progress — show existing clips + spinner on that slot
+                const sm = d.cinemagraph_status.match(/^slide_running:(\d+)$/);
+                if (sm) _cineRerunningIdx = parseInt(sm[1]);  // so done branch force-clears the slot
+                if (d.cinemagraph_urls && d.cinemagraph_urls.some(u => u)) {
+                    _cinemagraphShowPreviews(d.cinemagraph_urls, _cinePrompts);
+                }
+                if (sm) _cinemagraphSetSlideSpinner(parseInt(sm[1]), true);
+                document.getElementById('cinemagraph-status').classList.remove('d-none');
+                document.getElementById('cinemagraph-status-text').textContent = 'Re-running slide ' + (parseInt(sm && sm[1] || 0) + 1) + '\u2026';
+                _cinemagraphPoll();
+            } else if (d.cinemagraph_urls && d.cinemagraph_urls.some(u => u)) {
+                _cinemagraphUnlocked = true;
+                _cinemagraphShowPreviews(d.cinemagraph_urls, _cinePrompts);
+            }
+            // Load archived clips into removed grid
+            if (d.cinemagraph_archived && d.cinemagraph_archived.length) {
+                d.cinemagraph_archived.forEach(function(url, i) {
+                    if (!url) return; // null = was restored, skip
+                    addCinemagraphArchived(url, i);
+                });
+            }
+            _cinemagraphUpdateLogBtn(d.has_cinemagraph_log);
         }).catch(() => {});
 })();
+
+// ════════════════════════════════════════════════════════════════
+// COMPONENT D — Cinemagraph (Runway Gen-4 per slide)
+// ════════════════════════════════════════════════════════════════
+
+let _CINE_DEFAULT_PROMPT = CINEMAGRAPH_PROMPT; // editable; kept in sync with site_settings via "Edit Default Prompt"
+let _IG_CAPTION_PROMPT   = IG_CAPTION_PROMPT;  // global default from site_settings
+let _igArticleCaptionPrompt = IG_ARTICLE_CAPTION_PROMPT; // per-article override (empty = use global)
+let _cinePrompts         = [];    // per-slide prompts, synced from /video-data
+let _cineEditIdx         = null;  // slide index open in edit modal
+let _cinemagraphUnlocked = false; // true once carousel images exist
+let _cineRerunningIdx    = null;  // slot currently being re-run (prevents old URL restoring)
+
+function cinemagraphUnlock() {
+    _cinemagraphUnlocked = true;
+    const lockedBtn = document.getElementById('cinemagraph-locked-btn');
+    if (lockedBtn) lockedBtn.classList.add('d-none');
+    const empty = document.getElementById('cinemagraph-empty');
+    if (empty && !document.getElementById('cinemagraph-grid').children.length)
+        empty.classList.add('d-none');
+    updateCinemagraphTabCounts();
+}
+
+// Mirrors updateCarouselTabCounts() — controls button visibility + badge counts
+function updateCinemagraphTabCounts() {
+    const grid          = document.getElementById('cinemagraph-grid');
+    const removedGrid   = document.getElementById('cinemagraph-removed-grid');
+    const btn           = document.getElementById('cinemagraph-btn');
+    const menuGenerate  = document.getElementById('cinemagraph-menu-generate');
+    const archiveAllBtn = document.getElementById('cinemagraph-archive-all-btn');
+    const tabArchived   = document.getElementById('cine-tab-archived');
+    const countCurrent  = document.getElementById('cine-tab-current-count');
+    const countArchived = document.getElementById('cine-tab-archived-count');
+    if (!grid) return;
+
+    const currentCols   = grid.querySelectorAll('.carousel-col');
+    const currentCount  = Array.from(currentCols).filter(c => c.querySelector('video')).length;
+    const archivedCount = removedGrid ? removedGrid.querySelectorAll('.carousel-col').length : 0;
+
+    if (countCurrent)  countCurrent.textContent  = currentCount;
+    if (countArchived) countArchived.textContent = archivedCount;
+
+    // Archived tab: always visible so user knows it exists; greyed when empty
+    if (tabArchived) {
+        tabArchived.style.display = '';
+        tabArchived.disabled = archivedCount === 0;
+        tabArchived.style.opacity = archivedCount === 0 ? '0.4' : '';
+        tabArchived.style.cursor  = archivedCount === 0 ? 'default' : '';
+    }
+
+    // Archive All: enabled only when there are current clips with video
+    if (archiveAllBtn) {
+        if (currentCount > 0) archiveAllBtn.classList.remove('disabled');
+        else                  archiveAllBtn.classList.add('disabled');
+    }
+
+    // Generate button + kebab item: shown only when unlocked, not all 10 slots filled,
+    // and no single-slide re-run is currently in progress
+    const isRerunning = _cineRerunningIdx !== null;
+
+    // Lock / unlock individual clip info-buttons during a single-slide re-run
+    document.querySelectorAll('#cinemagraph-grid .cine-info-btn').forEach(function(btn) {
+        if (isRerunning) {
+            btn.classList.add('cine-btn-locked');
+            btn.title = 'Wait for the current re-run to complete before starting another';
+        } else {
+            btn.classList.remove('cine-btn-locked');
+            btn.title = 'Edit prompt & re-run';
+        }
+    });
+
+    if (!_cinemagraphUnlocked || currentCount >= 10 || isRerunning) {
+        if (btn) btn.classList.add('d-none');
+        if (menuGenerate) menuGenerate.classList.add('disabled');
+    } else {
+        if (btn) btn.classList.remove('d-none');
+        if (menuGenerate) menuGenerate.classList.remove('disabled');
+    }
+    // Keep the Instagram posting hint in sync
+    updateIgImagesHint('cine');
+}
+
+function showCinemagraphTab(tab) {
+    const grid        = document.getElementById('cinemagraph-grid');
+    const removedGrid = document.getElementById('cinemagraph-removed-grid');
+    const tabCurrent  = document.getElementById('cine-tab-current');
+    const tabArchived = document.getElementById('cine-tab-archived');
+    if (tab === 'current') {
+        if (grid)        grid.classList.remove('d-none');
+        if (removedGrid) removedGrid.classList.add('d-none');
+        if (tabCurrent)  tabCurrent.classList.add('active');
+        if (tabArchived) tabArchived.classList.remove('active');
+    } else {
+        if (grid)        grid.classList.add('d-none');
+        if (removedGrid) removedGrid.classList.remove('d-none');
+        if (tabCurrent)  tabCurrent.classList.remove('active');
+        if (tabArchived) tabArchived.classList.add('active');
+    }
+}
+
+// Mirrors addRemovedImage() — add a clip URL to the archived grid with ↺ restore button
+// Always builds a fresh tile (never clones) so the video plays correctly
+function addCinemagraphArchived(url, archivedIdx) {
+    const removedGrid = document.getElementById('cinemagraph-removed-grid');
+    if (!removedGrid || !url) return;
+    const col = document.createElement('div');
+    col.className = 'carousel-col';
+    col.id = 'cine-archived-' + archivedIdx;
+    const v = document.createElement('video');
+    v.src = url; v.autoplay = true; v.loop = true; v.muted = true;
+    v.setAttribute('playsinline', '');
+    v.className = 'carousel-thumb';
+    const restoreBtn = document.createElement('button');
+    restoreBtn.type = 'button';
+    restoreBtn.className = 'cine-info-btn';
+    restoreBtn.title = 'Restore clip';
+    restoreBtn.textContent = '\u21ba';
+    restoreBtn.onclick = (function(idx) {
+        return function(e) { e.stopPropagation(); cinemagraphRestoreClip(idx); };
+    })(archivedIdx);
+    col.appendChild(v);
+    col.appendChild(restoreBtn);
+    removedGrid.appendChild(col);
+    v.play().catch(function() {});  // ensure autoplay after DOM insertion
+    updateCinemagraphTabCounts();
+}
+
+function _cinemagraphInitClipGrid(n) {
+    const grid = document.getElementById('cinemagraph-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    for (let i = 0; i < n; i++) {
+        const col = document.createElement('div');
+        col.className = 'carousel-col';
+        col.id = 'cine-col-' + i;
+        col.innerHTML = '<div class="carousel-placeholder">' + (i + 1) + '</div>';
+        grid.appendChild(col);
+    }
+}
+
+function _cinemagraphApplyStatus(status, nSlides) {
+    const prgEl    = document.getElementById('cinemagraph-progress');
+    const statusEl = document.getElementById('cinemagraph-status-text');
+    const m = status && status.match(/^running:(\d+)\/(\d+)$/);
+    if (m) {
+        const done  = parseInt(m[1]);
+        const total = parseInt(m[2]) || nSlides || 10;
+        const pct   = total ? Math.round(done / total * 100) : 0;
+        if (prgEl)    prgEl.style.width = pct + '%';
+        if (statusEl) statusEl.textContent = done + '/' + total + ' clips done';
+    } else {
+        if (prgEl)    prgEl.style.width = '0%';
+        if (statusEl) statusEl.textContent = 'Starting…';
+    }
+}
+
+// Build a video element for a cinemagraph slot
+function _cinemagraphMakeVideo(url, slideIdx, prompt) {
+    const v = document.createElement('video');
+    v.src = url;
+    v.autoplay = true; v.loop = true; v.muted = true;
+    v.setAttribute('playsinline', '');
+    v.className = 'carousel-thumb';
+    const iBtn = document.createElement('button');
+    iBtn.type = 'button';
+    iBtn.className = 'cine-info-btn';
+    iBtn.textContent = 'i';
+    iBtn.title = 'Edit prompt & re-run';
+    iBtn.onclick = (function(idx, u, p) {
+        return function(e) { e.stopPropagation(); openCinemagraphEditModal(idx, u, p); };
+    })(slideIdx, url, prompt);
+    return [v, iBtn];
+}
+
+// Replace placeholder slots with actual <video> elements as URLs arrive
+function _cinemagraphUpdateGrid(urls, prompts) {
+    if (!urls) return;
+    urls.forEach(function(url, i) {
+        if (!url) return;
+        const col = document.getElementById('cine-col-' + i);
+        if (!col || col.querySelector('video')) return;  // already showing video
+        col.innerHTML = '';
+        const prompt = (prompts && prompts[i]) || _CINE_DEFAULT_PROMPT;
+        const [v, iBtn] = _cinemagraphMakeVideo(url, i, prompt);
+        col.appendChild(v);
+        col.appendChild(iBtn);
+    });
+    updateCinemagraphTabCounts();
+}
+
+// Set/clear a spinner overlay on a single slot (for single-slide re-runs)
+function _cinemagraphSetSlideSpinner(slideIdx, show) {
+    const col = document.getElementById('cine-col-' + slideIdx);
+    if (!col) return;
+    const existing = col.querySelector('.cine-spinner-overlay');
+    if (show && !existing) {
+        const overlay = document.createElement('div');
+        overlay.className = 'cine-spinner-overlay';
+        overlay.innerHTML = '<div class="spinner-border spinner-border-sm text-primary" role="status"></div>';
+        col.appendChild(overlay);
+    } else if (!show && existing) {
+        existing.remove();
+    }
+}
+
+function _cinemagraphShowPreviews(urls, prompts) {
+    const grid  = document.getElementById('cinemagraph-grid');
+    const empty = document.getElementById('cinemagraph-empty');
+    if (!grid) return;
+    // If placeholders already exist (mid-run → finished), update in place
+    if (grid.querySelector('.carousel-col')) {
+        _cinemagraphUpdateGrid(urls, prompts);
+    } else {
+        // Fresh render (e.g. page load with existing results)
+        grid.innerHTML = '';
+        urls.forEach(function(url, i) {
+            const col = document.createElement('div');
+            col.className = 'carousel-col';
+            col.id = 'cine-col-' + i;
+            const prompt = (prompts && prompts[i]) || _CINE_DEFAULT_PROMPT;
+            if (url) {
+                const [v, iBtn] = _cinemagraphMakeVideo(url, i, prompt);
+                col.appendChild(v);
+                col.appendChild(iBtn);
+            } else {
+                col.innerHTML = '<div class="carousel-placeholder">' + (i + 1) + '</div>';
+            }
+            grid.appendChild(col);
+        });
+    }
+    if (grid.querySelector('video') && empty) empty.classList.add('d-none');
+    updateCinemagraphTabCounts();
+}
+
+function cinemagraphGenerate() {
+    if (!ARTICLE_ID) return;
+    const btn = document.getElementById('cinemagraph-btn');
+    if (btn) btn.classList.add('d-none');
+
+    fetch('/admin/articles/' + ARTICLE_ID + '/generate-cinemagraphs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompts: _cinePrompts }),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) {
+            if (d.error === 'already_running') {
+                _cinemagraphShowRunning(10);
+            } else {
+                updateCinemagraphTabCounts();
+                alert('Error: ' + d.error);
+            }
+            return;
+        }
+        _cinemagraphShowRunning(d.n_slides || 10);
+    })
+    .catch(err => {
+        updateCinemagraphTabCounts();
+        alert('Network error: ' + err);
+    });
+}
+
+function _cinemagraphShowRunning(nSlides) {
+    const btn = document.getElementById('cinemagraph-btn');
+    if (btn) btn.classList.add('d-none');
+    document.getElementById('cinemagraph-status').classList.remove('d-none');
+    document.getElementById('cinemagraph-status-text').textContent = 'Starting\u2026';
+    document.getElementById('cinemagraph-progress').style.width = '0%';
+    const empty = document.getElementById('cinemagraph-empty');
+    if (empty) empty.classList.add('d-none');
+    _cinemagraphInitClipGrid(nSlides);
+    _cinemagraphApplyStatus('running:0/' + nSlides, nSlides);
+    _cinemagraphPoll();
+}
+
+function _cinemagraphPoll() {
+    setTimeout(function () {
+        fetch('/admin/articles/' + ARTICLE_ID + '/video-data')
+            .then(r => r.json())
+            .then(d => {
+                _cinePrompts = d.cinemagraph_prompts || _cinePrompts;
+                if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running:')) {
+                    _cinemagraphApplyStatus(d.cinemagraph_status, null);
+                    _cinemagraphUpdateGrid(d.cinemagraph_urls, _cinePrompts);
+                    _cinemagraphPoll();
+                } else if (d.cinemagraph_status && d.cinemagraph_status.startsWith('slide_running:')) {
+                    // Single slide re-run — keep polling, DON'T restore old URL into slot
+                    const sm = d.cinemagraph_status.match(/^slide_running:(\d+)$/);
+                    if (sm) {
+                        _cinemagraphSetSlideSpinner(parseInt(sm[1]), true);
+                        document.getElementById('cinemagraph-status-text').textContent =
+                            'Re-running slide ' + (parseInt(sm[1]) + 1) + '\u2026';
+                    }
+                    _cinemagraphPoll();
+                } else {
+                    // Done (or no longer running)
+                    document.getElementById('cinemagraph-status').classList.add('d-none');
+                    // Clear any spinner overlays
+                    document.querySelectorAll('.cine-spinner-overlay').forEach(el => el.remove());
+                    // If a single-slide re-run just finished, clear the old video from that slot
+                    // so _cinemagraphUpdateGrid will fill it with the new URL
+                    if (_cineRerunningIdx !== null) {
+                        const rerunCol = document.getElementById('cine-col-' + _cineRerunningIdx);
+                        if (rerunCol) rerunCol.innerHTML = '<div class="carousel-placeholder">' + (_cineRerunningIdx + 1) + '</div>';
+                        _cineRerunningIdx = null;
+                    }
+                    _cinemagraphUpdateLogBtn(d.has_cinemagraph_log);
+                    if (d.cinemagraph_urls && d.cinemagraph_urls.some(u => u)) {
+                        _cinemagraphShowPreviews(d.cinemagraph_urls, _cinePrompts);
+                    } else {
+                        const empty = document.getElementById('cinemagraph-empty');
+                        if (empty) { empty.textContent = 'Generation finished \u2014 no clips were saved.'; empty.classList.remove('d-none'); }
+                        updateCinemagraphTabCounts();
+                    }
+                }
+            })
+            .catch(() => _cinemagraphPoll());
+    }, 20000);
+}
+
+// ── Edit single slide ──────────────────────────────────────────
+
+function openCinemagraphEditModal(slideIdx, url, prompt) {
+    if (_cineRerunningIdx !== null) return;  // block while a re-run is in progress
+    _cineEditIdx = slideIdx;
+    document.getElementById('cine-edit-slide-num').textContent = slideIdx + 1;
+    const preview = document.getElementById('cine-edit-preview');
+    if (url) { preview.src = url; preview.style.display = ''; }
+    else      { preview.src = ''; preview.style.display = 'none'; }
+    document.getElementById('cine-edit-prompt').value = prompt || _CINE_DEFAULT_PROMPT;
+    document.getElementById('cine-edit-rerun-spinner').classList.add('d-none');
+    document.getElementById('cine-edit-rerun-btn').disabled = false;
+    new bootstrap.Modal(document.getElementById('cinemagraph-edit-modal')).show();
+}
+
+function cinemagraphArchiveSlide() {
+    if (_cineEditIdx === null || !ARTICLE_ID) return;
+    if (!confirm('Archive this clip? The slot will revert to a placeholder.')) return;
+    const idx = _cineEditIdx;
+    const col = document.getElementById('cine-col-' + idx);
+    const video = col ? col.querySelector('video') : null;
+    const clipUrl = video ? video.src : null;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-cinemagraph-slide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slide_idx: idx }),
+    })
+    .then(r => r.json())
+    .then(d => {
+        bootstrap.Modal.getInstance(document.getElementById('cinemagraph-edit-modal')).hide();
+        _cinePrompts[idx] = null;
+        if (col) col.innerHTML = '<div class="carousel-placeholder">' + (idx + 1) + '</div>';
+        if (clipUrl) addCinemagraphArchived(clipUrl, d.archived_idx);
+    })
+    .catch(() => alert('Could not archive clip.'));
+}
+
+function cinemagraphRerunSlide() {
+    if (_cineEditIdx === null || !ARTICLE_ID) return;
+    const idx    = _cineEditIdx;
+    const prompt = document.getElementById('cine-edit-prompt').value.trim() || _CINE_DEFAULT_PROMPT;
+    const spinner = document.getElementById('cine-edit-rerun-spinner');
+    const btn     = document.getElementById('cine-edit-rerun-btn');
+    spinner.classList.remove('d-none');
+    btn.disabled = true;
+
+    // Capture the current clip URL now, before the modal closes and the slot changes
+    const col = document.getElementById('cine-col-' + idx);
+    const existingVideo = col ? col.querySelector('video') : null;
+    const oldClipUrl = existingVideo ? existingVideo.src : null;
+
+    fetch('/admin/articles/' + ARTICLE_ID + '/regenerate-cinemagraph-slide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slide_idx: idx, prompt: prompt }),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) { alert('Error: ' + d.error); spinner.classList.add('d-none'); btn.disabled = false; return; }
+        bootstrap.Modal.getInstance(document.getElementById('cinemagraph-edit-modal')).hide();
+        _cinePrompts[idx] = prompt;
+        // Move old clip to archive tab (backend already archived it)
+        if (oldClipUrl && d.archived_idx !== null && d.archived_idx !== undefined) {
+            addCinemagraphArchived(oldClipUrl, d.archived_idx);
+        }
+        // Revert slot to placeholder + spinner overlay
+        if (col) {
+            col.innerHTML = '<div class="carousel-placeholder">' + (idx + 1) + '</div>';
+            _cinemagraphSetSlideSpinner(idx, true);
+        }
+        document.getElementById('cinemagraph-status').classList.remove('d-none');
+        document.getElementById('cinemagraph-status-text').textContent = 'Re-running slide ' + (idx + 1) + '\u2026';
+        document.getElementById('cinemagraph-progress').style.width = '0%';
+        _cineRerunningIdx = idx;
+        updateCinemagraphTabCounts();
+        _cinemagraphPoll();
+    })
+    .catch(err => { spinner.classList.add('d-none'); btn.disabled = false; alert('Network error: ' + err); });
+}
+
+// ── Default Prompt modal ───────────────────────────────────────
+
+function openCinemagraphPromptModal() {
+    document.getElementById('cine-default-prompt-text').value = _CINE_DEFAULT_PROMPT;
+    document.getElementById('cine-prompt-save-status').textContent = '';
+    new bootstrap.Modal(document.getElementById('cinemagraph-prompt-modal')).show();
+}
+
+function saveCinemagraphPrompt() {
+    const val    = document.getElementById('cine-default-prompt-text').value.trim();
+    const status = document.getElementById('cine-prompt-save-status');
+    if (!val) { status.textContent = 'Prompt cannot be empty.'; status.className = 'ms-2 small text-danger'; return; }
+    status.textContent = 'Saving\u2026';
+    status.className   = 'ms-2 small text-muted';
+    fetch('/admin/settings/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cinemagraph_prompt: val }),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) {
+            _CINE_DEFAULT_PROMPT = val;
+            bootstrap.Modal.getInstance(document.getElementById('cinemagraph-prompt-modal')).hide();
+        } else {
+            status.textContent = 'Error: ' + (d.error || 'Could not save.');
+            status.className   = 'ms-2 small text-danger';
+        }
+    })
+    .catch(() => { status.textContent = 'Network error.'; status.className = 'ms-2 small text-danger'; });
+}
+
+// ── Instagram Caption Prompt (edit / save) ─────────────────────
+function openIgCaptionPromptModal() {
+    // Per-article override takes priority, then global default
+    document.getElementById('ig-caption-prompt-text').value =
+        _igArticleCaptionPrompt || _IG_CAPTION_PROMPT;
+    document.getElementById('ig-caption-prompt-save-status').textContent = '';
+    new bootstrap.Modal(document.getElementById('ig-caption-prompt-modal')).show();
+}
+
+function saveIgCaptionPrompt() {
+    const val    = document.getElementById('ig-caption-prompt-text').value.trim();
+    const status = document.getElementById('ig-caption-prompt-save-status');
+    if (!val) { status.textContent = 'Prompt cannot be empty.'; status.className = 'ms-2 small text-danger'; return; }
+    status.textContent = 'Saving\u2026';
+    status.className   = 'ms-2 small text-muted';
+    fetch('/admin/settings/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ig_caption_prompt: val, article_id: ARTICLE_ID }),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) {
+            _igArticleCaptionPrompt = val;
+            bootstrap.Modal.getInstance(document.getElementById('ig-caption-prompt-modal')).hide();
+        } else {
+            status.textContent = 'Error: ' + (d.error || 'Could not save.');
+            status.className   = 'ms-2 small text-danger';
+        }
+    })
+    .catch(() => { status.textContent = 'Network error.'; status.className = 'ms-2 small text-danger'; });
+}
+
+// ── Re-run all with new prompt ─────────────────────────────────
+
+function openCinemagraphRerunAllModal() {
+    document.getElementById('cine-rerun-all-prompt').value = '';
+    new bootstrap.Modal(document.getElementById('cinemagraph-rerun-all-modal')).show();
+}
+
+function cinemagraphRerunAll() {
+    if (!ARTICLE_ID) return;
+    const globalPrompt = document.getElementById('cine-rerun-all-prompt').value.trim();
+    bootstrap.Modal.getInstance(document.getElementById('cinemagraph-rerun-all-modal')).hide();
+
+    fetch('/admin/articles/' + ARTICLE_ID + '/generate-cinemagraphs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ global_prompt: globalPrompt }),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) { updateCinemagraphTabCounts(); alert('Error: ' + d.error); return; }
+        _cinemagraphShowRunning(d.n_slides || 10);
+    })
+    .catch(err => { updateCinemagraphTabCounts(); alert('Network error: ' + err); });
+}
+
+// ── Archive All ────────────────────────────────────────────────
+
+function archiveAllCinemagraphs() {
+    if (!ARTICLE_ID) return;
+    if (!confirm('Archive all current clips? They can be restored from the Archived tab.')) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-all-cinemagraphs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (!d.ok) { alert('Could not archive all clips.'); return; }
+        const grid = document.getElementById('cinemagraph-grid');
+        if (!grid) return;
+        let archivedIdx = d.archived_start_idx;
+        Array.from(grid.querySelectorAll('.carousel-col')).forEach(function(col) {
+            const video = col.querySelector('video');
+            if (video) {
+                const clipUrl  = video.src;
+                const slotNum  = parseInt(col.id.replace('cine-col-', '')) + 1;
+                col.innerHTML  = '<div class="carousel-placeholder">' + slotNum + '</div>';
+                addCinemagraphArchived(clipUrl, archivedIdx++);
+            }
+        });
+        _cinePrompts = [];
+        showCinemagraphTab('current');
+        updateCinemagraphTabCounts();
+    })
+    .catch(() => alert('Could not archive all clips.'));
+}
+
+// ── Restore archived clip ──────────────────────────────────────
+
+function cinemagraphRestoreClip(archivedIdx) {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/restore-cinemagraph-clip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived_idx: archivedIdx }),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (!d.ok) { alert('Could not restore clip.'); return; }
+        const archivedCol = document.getElementById('cine-archived-' + archivedIdx);
+        if (archivedCol) archivedCol.remove();
+        const col = document.getElementById('cine-col-' + d.slot_idx);
+        if (col) {
+            col.innerHTML = '';
+            const prompt = (_cinePrompts && _cinePrompts[d.slot_idx]) || _CINE_DEFAULT_PROMPT;
+            const [v, iBtn] = _cinemagraphMakeVideo(d.url, d.slot_idx, prompt);
+            col.appendChild(v);
+            col.appendChild(iBtn);
+        }
+        showCinemagraphTab('current');
+        updateCinemagraphTabCounts();
+    })
+    .catch(() => alert('Could not restore clip.'));
+}
+
+// ── Log button & modal ─────────────────────────────────────────
+
+function _cinemagraphUpdateLogBtn(hasLog) {
+    // Log button is always enabled when ARTICLE_ID exists (activity log is always available)
+    const btn = document.getElementById('cinemagraph-log-btn');
+    if (!btn) return;
+    if (ARTICLE_ID) btn.classList.remove('disabled');
+}
+
+function viewActivityLog() {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/activity-log')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var accordion = document.getElementById('activity-log-accordion');
+            var emptyMsg  = document.getElementById('activity-log-empty');
+            accordion.innerHTML = '';
+
+            var allEntries = [];
+
+            // Add cinemagraph run log as the first entry if it exists
+            if (d.cinemagraph_log) {
+                allEntries.push({
+                    title: 'Cinemagraph Generation Log',
+                    timestamp: '',
+                    content: d.cinemagraph_log
+                });
+            }
+
+            // Add activity log entries (already chronological)
+            if (d.entries && d.entries.length) {
+                d.entries.forEach(function(e) { allEntries.push(e); });
+            }
+
+            if (!allEntries.length) {
+                emptyMsg.classList.remove('d-none');
+                new bootstrap.Modal(document.getElementById('cinemagraph-log-modal')).show();
+                return;
+            }
+            emptyMsg.classList.add('d-none');
+
+            // Build accordion items (newest first for activity entries)
+            allEntries.slice().reverse().forEach(function(entry, idx) {
+                var itemId = 'activity-log-item-' + idx;
+                var ts = entry.timestamp
+                    ? entry.timestamp.replace('T', ' ').replace('Z', ' UTC')
+                    : '';
+                var header = document.createElement('h2');
+                header.className = 'accordion-header';
+                var btn = document.createElement('button');
+                btn.className = 'accordion-button collapsed small py-2';
+                btn.type = 'button';
+                btn.setAttribute('data-bs-toggle', 'collapse');
+                btn.setAttribute('data-bs-target', '#' + itemId);
+                btn.innerHTML = '<span class="fw-semibold">' + entry.title + '</span>' +
+                    (ts ? '<span class="text-muted ms-2" style="font-size:0.75rem">' + ts + '</span>' : '');
+                header.appendChild(btn);
+
+                var collapseDiv = document.createElement('div');
+                collapseDiv.id = itemId;
+                collapseDiv.className = 'accordion-collapse collapse';
+                var body = document.createElement('div');
+                body.className = 'accordion-body small';
+                body.style.whiteSpace = 'pre-wrap';
+                body.style.wordBreak = 'break-all';
+                body.style.fontSize = '0.78rem';
+                body.style.background = '#f8f9fa';
+                body.style.borderRadius = '4px';
+                body.style.padding = '0.75rem';
+                body.textContent = entry.content || 'No details.';
+                collapseDiv.appendChild(body);
+
+                var item = document.createElement('div');
+                item.className = 'accordion-item';
+                item.appendChild(header);
+                item.appendChild(collapseDiv);
+                accordion.appendChild(item);
+            });
+
+            new bootstrap.Modal(document.getElementById('cinemagraph-log-modal')).show();
+        })
+        .catch(function() { alert('Could not load activity log.'); });
+}
 </script>
 {% endblock %}

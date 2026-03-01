@@ -88,6 +88,22 @@ CAROUSEL_STYLE_SUFFIX = (
     "Square 1:1 format for Instagram. No text, lettering, numbers, or watermarks in the image."
 )
 
+# Default Runway prompt for Cinemagraph generation (stored in site_settings, editable by admins)
+_CINE_DEFAULT_PROMPT = (
+    "Subtle gentle atmospheric motion, cinematic still life, "
+    "minimal movement, soft breathing effect, loop-friendly"
+)
+
+# Default OpenAI prompt for Instagram caption generation (stored in site_settings, editable by admins)
+_IG_CAPTION_DEFAULT_PROMPT = (
+    "You are a social media copywriter for an online store called Obelisk Stamps "
+    "that sells handcrafted framed stamp displays. Write an Instagram caption for "
+    "a post about the article described below. The caption should convey an inviting "
+    "idea of the article's content and encourage readers to visit the link. Include "
+    "relevant hashtags at the end. Keep the total caption under 2000 characters. "
+    "Return ONLY the caption text, no extra commentary."
+)
+
 # --- Runway ML client ---
 try:
     import runwayml as _runwayml_module
@@ -414,19 +430,19 @@ def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides):
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
     w, h = img.size
 
-    # ── Dark gradient overlay (bottom ~42 % of image) ──────────────────────
-    gradient_h = int(h * 0.42)
+    # ── Dark gradient overlay (bottom ~55 % of image) ──────────────────────
+    gradient_h = int(h * 0.55)
     gradient   = Image.new("RGBA", (w, gradient_h), (0, 0, 0, 0))
     draw_g     = ImageDraw.Draw(gradient)
     for y in range(gradient_h):
-        alpha = int(235 * (y / gradient_h) ** 1.6)   # smooth curve, max ≈ 235
+        alpha = int(255 * (y / gradient_h) ** 1.0)   # linear curve, max 255
         draw_g.line([(0, y), (w, y)], fill=(0, 0, 0, alpha))
     img.paste(gradient, (0, h - gradient_h), gradient)
 
     # ── Font loading ────────────────────────────────────────────────────────
     try:
-        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.075))
-        font_hint = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.032))
+        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.092))
+        font_hint = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.021))
     except Exception:
         font_main = ImageFont.load_default(size=40)
         font_hint = ImageFont.load_default(size=20)
@@ -450,7 +466,7 @@ def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides):
     if line:
         lines.append(line)
 
-    line_h       = int(font_main.size * 1.25)
+    line_h       = int(font_main.size * 1.05)
     hint_h       = int(font_hint.size * 2.4)
     total_text_h = len(lines) * line_h + hint_h
     text_y       = h - total_text_h - int(h * 0.04)
@@ -553,7 +569,11 @@ def init_articles_table():
                 "carousel_punchlines TEXT", "carousel_style TEXT",
                 "video_narrated_url TEXT", "video_narrated_script TEXT",
                 "video_ai_url TEXT", "video_narrated_runs TEXT",
-                "video_ai_status TEXT", "video_narrated_status TEXT"):
+                "video_ai_status TEXT", "video_narrated_status TEXT",
+                "carousel_cinemagraphs TEXT",
+                "carousel_cinemagraph_log TEXT",
+                "carousel_cinemagraph_prompts TEXT",
+                "carousel_cinemagraph_archived TEXT"):
         try:
             cur.execute(f"ALTER TABLE articles ADD COLUMN {col}")
         except Exception:
@@ -584,6 +604,14 @@ def init_site_settings():
         "INSERT IGNORE INTO site_settings (`key`, value) VALUES ('carousel_style', %s)",
         (CAROUSEL_STYLE_SUFFIX,),
     )
+    # Seed cinemagraph_prompt default only on first run
+    cur.execute(
+        "INSERT IGNORE INTO site_settings (`key`, value) VALUES ('cinemagraph_prompt', %s)",
+        (_CINE_DEFAULT_PROMPT,),
+    )
+    # Clear stale cinemagraph status keys left over from a server restart mid-run
+    # (the daemon thread is killed but the DB key remains set to "running:N/M")
+    cur.execute("DELETE FROM site_settings WHERE `key` LIKE 'cinemagraph_status_%'")
     conn.commit()
     cur.close()
     conn.close()
@@ -882,7 +910,7 @@ def articles():
 def article_view(slug):
     row = query_one(
         "SELECT id, slug, title, subtitle, content, excerpt, image_url, published_at, "
-        "carousel_images, carousel_punchlines "
+        "carousel_images, carousel_punchlines, carousel_cinemagraphs "
         "FROM articles WHERE slug = %s AND is_published = TRUE",
         (slug,),
     )
@@ -893,8 +921,9 @@ def article_view(slug):
         "content": row[4], "excerpt": row[5] or "",
         "image_url": row[6],
         "published_at": row[7].strftime("%d %B %Y").lstrip("0") if row[7] else None,
-        "carousel_images":     json.loads(row[8]) if row[8] else [],
-        "carousel_punchlines": json.loads(row[9]) if row[9] else [],
+        "carousel_images":       json.loads(row[8])  if row[8]  else [],
+        "carousel_punchlines":   json.loads(row[9])  if row[9]  else [],
+        "carousel_cinemagraphs": json.loads(row[10]) if row[10] else [],
     }
     return render_template("article.html", article=article)
 
@@ -2121,9 +2150,13 @@ def admin_user_activity(user_id):
 @login_required
 @admin_required
 def admin_settings():
-    carousel_style = get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
+    carousel_style     = get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
+    cinemagraph_prompt = get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
+    ig_caption_prompt  = get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT)
     return render_template("admin.html", active_tab="settings",
                            carousel_style=carousel_style,
+                           cinemagraph_prompt=cinemagraph_prompt,
+                           ig_caption_prompt=ig_caption_prompt,
                            ig_user_id_set=bool(IG_USER_ID),
                            ig_token_set=bool(IG_ACCESS_TOKEN))
 
@@ -2133,18 +2166,35 @@ def admin_settings():
 @admin_required
 def admin_settings_save():
     data = request.get_json()
+    # Handle carousel style
     carousel_style = (data.get("carousel_style") or "").strip()
-    if not carousel_style:
-        return jsonify({"error": "Style cannot be empty"}), 400
-    try:
+    if carousel_style:
         execute(
             "INSERT INTO site_settings (`key`, value) VALUES ('carousel_style', %s) "
             "ON DUPLICATE KEY UPDATE value = %s",
             (carousel_style, carousel_style),
         )
-        return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Handle cinemagraph prompt
+    cinemagraph_prompt = (data.get("cinemagraph_prompt") or "").strip()
+    if cinemagraph_prompt:
+        execute(
+            "INSERT INTO site_settings (`key`, value) VALUES ('cinemagraph_prompt', %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (cinemagraph_prompt, cinemagraph_prompt),
+        )
+    # Handle Instagram caption prompt (global or per-article)
+    ig_caption_prompt = (data.get("ig_caption_prompt") or "").strip()
+    if ig_caption_prompt:
+        aid = data.get("article_id")
+        key = f"ig_caption_prompt_{aid}" if aid else "ig_caption_prompt"
+        execute(
+            "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (key, ig_caption_prompt, ig_caption_prompt),
+        )
+    if not carousel_style and not cinemagraph_prompt and not ig_caption_prompt:
+        return jsonify({"error": "Nothing to save"}), 400
+    return jsonify({"success": True})
 
 
 # ------------------------------------------------------------
@@ -2175,6 +2225,9 @@ def admin_articles():
 @admin_required
 def admin_article_new():
     return render_template("article_edit.html", article=None, carousel_style=CAROUSEL_STYLE_SUFFIX,
+                           cinemagraph_prompt=get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
+                           ig_caption_prompt=get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT),
+                           ig_article_caption_prompt='',
                            ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN))
 
 
@@ -2228,6 +2281,9 @@ def admin_article_edit(article_id):
     article_carousel_style = row[12] or get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
     return render_template("article_edit.html", article=article,
                            carousel_style=article_carousel_style,
+                           cinemagraph_prompt=get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
+                           ig_caption_prompt=get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT),
+                           ig_article_caption_prompt=get_setting(f'ig_caption_prompt_{article_id}', ''),
                            ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN))
 
 
@@ -2742,25 +2798,71 @@ def admin_article_regenerate_carousel_image(article_id):
 @login_required
 @admin_required
 def admin_article_video_data(article_id):
-    """Return existing video URLs and narration script from DB (shared by Components B & C)."""
+    """Return existing video URLs and narration script from DB (shared by Components B, C & D)."""
     row = query_one(
         "SELECT video_narrated_url, video_narrated_script, video_ai_url, video_narrated_runs, "
-        "video_ai_status, video_narrated_status "
+        "video_ai_status, video_narrated_status, carousel_cinemagraphs, carousel_cinemagraph_log, "
+        "carousel_cinemagraph_prompts, carousel_cinemagraph_archived "
         "FROM articles WHERE id = %s",
         (article_id,),
     )
     if not row:
         return jsonify({"error": "Article not found"}), 404
-    narrated_url, narrated_script_raw, ai_url, narrated_runs_raw, ai_status, narrated_status = row
-    narrated_script = json.loads(narrated_script_raw) if narrated_script_raw else []
-    narrated_runs   = json.loads(narrated_runs_raw)   if narrated_runs_raw   else []
+    (narrated_url, narrated_script_raw, ai_url, narrated_runs_raw, ai_status, narrated_status,
+     cinemagraphs_raw, cinemagraph_log_raw, cinemagraph_prompts_raw, cinemagraph_archived_raw) = row
+    narrated_script      = json.loads(narrated_script_raw)      if narrated_script_raw      else []
+    narrated_runs        = json.loads(narrated_runs_raw)        if narrated_runs_raw        else []
+    cinemagraph_urls     = json.loads(cinemagraphs_raw)         if cinemagraphs_raw         else []
+    cinemagraph_prompts  = json.loads(cinemagraph_prompts_raw)  if cinemagraph_prompts_raw  else []
+    cinemagraph_archived = json.loads(cinemagraph_archived_raw) if cinemagraph_archived_raw else []
+    cinemagraph_status   = get_setting(f"cinemagraph_status_{article_id}")
     return jsonify({
-        "narrated_url":     narrated_url or None,
-        "narrated_script":  narrated_script,
-        "narrated_runs":    narrated_runs,
-        "narrated_status":  narrated_status or None,
-        "ai_url":           ai_url or None,
-        "ai_status":        ai_status or None,
+        "narrated_url":           narrated_url or None,
+        "narrated_script":        narrated_script,
+        "narrated_runs":          narrated_runs,
+        "narrated_status":        narrated_status or None,
+        "ai_url":                 ai_url or None,
+        "ai_status":              ai_status or None,
+        "cinemagraph_urls":       cinemagraph_urls,
+        "cinemagraph_prompts":    cinemagraph_prompts,
+        "cinemagraph_archived":   cinemagraph_archived,
+        "cinemagraph_status":     cinemagraph_status or None,
+        "has_cinemagraph_log":    bool(cinemagraph_log_raw and cinemagraph_log_raw.strip()),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/cinemagraph-log")
+@login_required
+@admin_required
+def admin_article_cinemagraph_log(article_id):
+    """Return the stored cinemagraph run log for an article."""
+    row = query_one(
+        "SELECT carousel_cinemagraph_log FROM articles WHERE id = %s", (article_id,)
+    )
+    if not row or not row[0]:
+        return jsonify({"log": None, "has_log": False})
+    return jsonify({"log": row[0], "has_log": True})
+
+
+@app.route("/admin/articles/<int:article_id>/activity-log")
+@login_required
+@admin_required
+def admin_article_activity_log(article_id):
+    """Return the unified activity log for an article (Instagram + cinemagraph entries)."""
+    # Instagram / API activity log (stored in site_settings)
+    key = f"ig_activity_log_{article_id}"
+    raw = get_setting(key)
+    entries = json.loads(raw) if raw else []
+
+    # Include cinemagraph run log as an additional entry if it exists
+    row = query_one(
+        "SELECT carousel_cinemagraph_log FROM articles WHERE id = %s", (article_id,)
+    )
+    cinemagraph_log = row[0] if row and row[0] else None
+
+    return jsonify({
+        "entries": entries,
+        "cinemagraph_log": cinemagraph_log,
     })
 
 
@@ -3142,6 +3244,495 @@ def _ai_video_worker(article_id, images, prompts, ts):
                 pass
 
 
+def _cinemagraph_worker(article_id, images, prompts=None):
+    """Background thread: Runway Gen-4 per carousel slide → store MP4 GCS URLs in DB."""
+    n = len(images)
+    ts = int(time.time())
+    status_key = f"cinemagraph_status_{article_id}"
+
+    def _set_status(s):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, s, s))
+
+    def _clear_status():
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    # ── Log capture ────────────────────────────────────────────────────────────
+    log_lines = []
+    ts_start  = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    def _log(msg):
+        line = f"[{time.strftime('%H:%M:%S')}] {msg}"
+        log_lines.append(line)
+        print(f"Cinemagraph worker: {msg}", flush=True)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    cinemagraph_urls = []
+    try:
+        for i, img_url in enumerate(images):
+            _set_status(f"running:{i}/{n}")
+            _log(f"slide {i+1}/{n} submitting to Runway")
+
+            # Resolve image to something Runway can access (HTTPS URL or base64)
+            if img_url.startswith("https://"):
+                prompt_image = img_url
+                _log(f"slide {i+1} using GCS URL")
+            else:
+                img_path = resolve_image_to_local_path(img_url)
+                if img_path and img_path.exists():
+                    # Always base64-encode local files — SITE_URL may point to production
+                    # where local images don't exist, causing Runway to get a 404
+                    img_bytes = img_path.read_bytes()
+                    img_b64 = base64.b64encode(img_bytes).decode()
+                    ext = img_path.suffix.lower()
+                    mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
+                    prompt_image = f"data:{mime};base64,{img_b64}"
+                    _log(f"slide {i+1} using base64 ({mime}, {len(img_bytes)//1024}KB)")
+                else:
+                    _log(f"slide {i+1} image not found: {img_url}")
+                    cinemagraph_urls.append(None)
+                    continue
+
+            slide_prompt = (prompts[i] if prompts and i < len(prompts) and prompts[i] else None) or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
+            _log(f"slide {i+1} prompt: {slide_prompt[:80]}")
+            try:
+                task = _runway_client.image_to_video.create(
+                    model="gen4_turbo",
+                    prompt_image=prompt_image,
+                    prompt_text=slide_prompt,
+                    ratio="960:960",
+                    duration=5,
+                )
+                task_id = task.id
+                _log(f"slide {i+1} Runway task_id={task_id}")
+            except Exception as e:
+                _log(f"slide {i+1} Runway submit FAILED: {e}")
+                cinemagraph_urls.append(None)
+                continue
+
+            # Poll Runway until the clip is ready
+            mp4_url = None
+            poll_count = 0
+            while True:
+                time.sleep(6)
+                poll_count += 1
+                try:
+                    status_obj = _runway_client.tasks.retrieve(task_id)
+                    runway_status = status_obj.status
+                except Exception as e:
+                    _log(f"slide {i+1} poll error: {e}")
+                    break
+                if runway_status == "SUCCEEDED":
+                    mp4_url = status_obj.output[0] if status_obj.output else None
+                    _log(f"slide {i+1}/{n} Runway SUCCEEDED after {poll_count} polls")
+                    break
+                elif runway_status == "FAILED":
+                    failure_reason = getattr(status_obj, "failure", "") or getattr(status_obj, "failureCode", "")
+                    _log(f"slide {i+1}/{n} Runway FAILED (reason: {failure_reason})")
+                    break
+                else:
+                    _log(f"slide {i+1} still generating (poll {poll_count}, status={runway_status})")
+
+            if mp4_url:
+                try:
+                    r = http_requests.get(mp4_url, timeout=120)
+                    # Save locally first — needed as fallback when GCS is not configured
+                    local_dir = Path(f"static/articles/{article_id}/cinemagraph")
+                    local_dir.mkdir(parents=True, exist_ok=True)
+                    local_path = local_dir / f"slide_{i+1}_{ts}.mp4"
+                    local_path.write_bytes(r.content)
+                    # Upload to GCS; fall back to local /static/... URL if unavailable
+                    gcs_obj = f"articles/{article_id}/cinemagraph/slide_{i+1}_{ts}.mp4"
+                    gcs_url = upload_bytes_to_gcs(r.content, gcs_obj, content_type="video/mp4")
+                    if gcs_url:
+                        local_path.unlink(missing_ok=True)  # GCS has it — clean up local copy
+                        saved_url = gcs_url
+                    else:
+                        saved_url = "/" + str(local_path).replace("\\", "/")
+                    cinemagraph_urls.append(saved_url)
+                    _log(f"slide {i+1}/{n} saved → {saved_url}")
+                except Exception as e:
+                    _log(f"slide {i+1} save FAILED: {e}")
+                    cinemagraph_urls.append(None)
+            else:
+                cinemagraph_urls.append(None)
+
+            _set_status(f"running:{i+1}/{n}")
+
+        # Persist all URLs (including None placeholders) to the articles table
+        execute(
+            "UPDATE articles SET carousel_cinemagraphs = %s WHERE id = %s",
+            (json.dumps(cinemagraph_urls), article_id),
+        )
+        succeeded = sum(1 for u in cinemagraph_urls if u)
+        _log(f"DONE — {succeeded}/{n} slides succeeded")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        _log(f"EXCEPTION: {e}")
+    finally:
+        _clear_status()
+        # ── Persist run log to DB and GCS ──────────────────────────────────────
+        if log_lines:
+            log_text = f"Run started: {ts_start}\n" + "\n".join(log_lines)
+            # GCS (best-effort — may be None in local dev)
+            gcs_log_obj = f"articles/{article_id}/cinemagraph/run_{ts}.log"
+            upload_bytes_to_gcs(log_text.encode(), gcs_log_obj, content_type="text/plain")
+            # Always save to DB (truncated to 64 KB to stay within TEXT column limit)
+            execute(
+                "UPDATE articles SET carousel_cinemagraph_log = %s WHERE id = %s",
+                (log_text[:65000], article_id),
+            )
+        # ──────────────────────────────────────────────────────────────────────
+
+
+@app.route("/admin/articles/<int:article_id>/generate-cinemagraphs", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_generate_cinemagraphs(article_id):
+    """Start a background thread for per-slide cinemagraph generation via Runway Gen-4."""
+    if not _runway_client:
+        return jsonify({"error": "Runway ML not configured. Set RUNWAY_API_KEY."}), 400
+
+    status_key = f"cinemagraph_status_{article_id}"
+    current_status = get_setting(status_key)
+    if current_status and (current_status.startswith("running") or current_status.startswith("slide_running")):
+        return jsonify({"error": "already_running"}), 409
+
+    row = query_one("SELECT carousel_images, carousel_cinemagraph_prompts FROM articles WHERE id = %s", (article_id,))
+    if not row or not row[0]:
+        return jsonify({"error": "No carousel images found."}), 400
+
+    images = [x for x in (json.loads(row[0]) if row[0] else [])[:10] if x]
+    if not images:
+        return jsonify({"error": "No carousel images found."}), 400
+
+    body = request.get_json(silent=True) or {}
+    global_prompt = (body.get("global_prompt") or "").strip()
+    incoming_prompts = body.get("prompts") or []  # per-slide list from client
+
+    # Build saved prompts: prefer incoming_prompts, else global_prompt, else keep existing
+    # Always resolve to an explicit string — never store None — so each slide's prompt is auditable
+    existing_prompts = json.loads(row[1]) if row[1] else []
+    resolved_default = get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
+    saved_prompts = []
+    for i in range(len(images)):
+        if i < len(incoming_prompts) and incoming_prompts[i]:
+            saved_prompts.append(incoming_prompts[i])
+        elif global_prompt:
+            saved_prompts.append(global_prompt)
+        elif i < len(existing_prompts) and existing_prompts[i]:
+            saved_prompts.append(existing_prompts[i])
+        else:
+            saved_prompts.append(resolved_default)
+
+    execute("UPDATE articles SET carousel_cinemagraph_prompts = %s WHERE id = %s",
+            (json.dumps(saved_prompts), article_id))
+
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (status_key, f"running:0/{len(images)}", f"running:0/{len(images)}"))
+
+    t = threading.Thread(target=_cinemagraph_worker, args=(article_id, images, saved_prompts), daemon=True)
+    t.start()
+    return jsonify({"started": True, "n_slides": len(images)})
+
+
+def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
+    """Background thread: regenerate a single cinemagraph slide."""
+    ts = int(time.time())
+    status_key = f"cinemagraph_status_{article_id}"
+
+    def _clear_status():
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    log_lines = []
+    ts_start = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    def _log(msg):
+        line = f"[{time.strftime('%H:%M:%S')}] slide {slide_idx + 1}: {msg}"
+        log_lines.append(line)
+        print(f"Cinemagraph slide-worker: {msg}", flush=True)
+
+    try:
+        _log(f"re-running slide {slide_idx + 1} with prompt: {prompt[:80]}")
+
+        # Resolve image
+        if img_url.startswith("https://"):
+            prompt_image = img_url
+            _log("using GCS URL")
+        else:
+            img_path = resolve_image_to_local_path(img_url)
+            if img_path and img_path.exists():
+                img_bytes = img_path.read_bytes()
+                img_b64 = base64.b64encode(img_bytes).decode()
+                ext = img_path.suffix.lower()
+                mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
+                prompt_image = f"data:{mime};base64,{img_b64}"
+                _log(f"using base64 ({mime}, {len(img_bytes)//1024}KB)")
+            else:
+                _log(f"image not found: {img_url}")
+                return
+
+        try:
+            task = _runway_client.image_to_video.create(
+                model="gen4_turbo",
+                prompt_image=prompt_image,
+                prompt_text=prompt or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
+                ratio="960:960",
+                duration=5,
+            )
+            task_id = task.id
+            _log(f"Runway task_id={task_id}")
+        except Exception as e:
+            _log(f"Runway submit FAILED: {e}")
+            return
+
+        # Poll until ready
+        mp4_url = None
+        poll_count = 0
+        while True:
+            time.sleep(6)
+            poll_count += 1
+            try:
+                status_obj = _runway_client.tasks.retrieve(task_id)
+                runway_status = status_obj.status
+            except Exception as e:
+                _log(f"poll error: {e}")
+                break
+            if runway_status == "SUCCEEDED":
+                mp4_url = status_obj.output[0] if status_obj.output else None
+                _log(f"SUCCEEDED after {poll_count} polls")
+                break
+            elif runway_status == "FAILED":
+                reason = getattr(status_obj, "failure", "") or getattr(status_obj, "failureCode", "")
+                _log(f"FAILED (reason: {reason})")
+                break
+            else:
+                _log(f"still generating (poll {poll_count}, status={runway_status})")
+
+        if mp4_url:
+            r = http_requests.get(mp4_url, timeout=120)
+            local_dir = Path(f"static/articles/{article_id}/cinemagraph")
+            local_dir.mkdir(parents=True, exist_ok=True)
+            local_path = local_dir / f"slide_{slide_idx + 1}_{ts}.mp4"
+            local_path.write_bytes(r.content)
+            gcs_obj = f"articles/{article_id}/cinemagraph/slide_{slide_idx + 1}_{ts}.mp4"
+            gcs_url = upload_bytes_to_gcs(r.content, gcs_obj, content_type="video/mp4")
+            if gcs_url:
+                local_path.unlink(missing_ok=True)
+                saved_url = gcs_url
+            else:
+                saved_url = "/" + str(local_path).replace("\\", "/")
+
+            # Patch just this slot in the DB array
+            row = query_one("SELECT carousel_cinemagraphs, carousel_cinemagraph_prompts FROM articles WHERE id = %s", (article_id,))
+            urls    = json.loads(row[0]) if row and row[0] else []
+            prompts = json.loads(row[1]) if row and row[1] else []
+            while len(urls)    <= slide_idx: urls.append(None)
+            while len(prompts) <= slide_idx: prompts.append(None)
+            urls[slide_idx]    = saved_url
+            prompts[slide_idx] = prompt or _CINE_DEFAULT_PROMPT
+            execute(
+                "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_prompts = %s WHERE id = %s",
+                (json.dumps(urls), json.dumps(prompts), article_id),
+            )
+            _log(f"saved → {saved_url}")
+        else:
+            _log("no output URL — slide not saved")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        _log(f"EXCEPTION: {e}")
+    finally:
+        _clear_status()
+        # Append to existing log
+        if log_lines:
+            existing_log = query_one("SELECT carousel_cinemagraph_log FROM articles WHERE id = %s", (article_id,))
+            prev = (existing_log[0] or "") if existing_log else ""
+            new_log = (prev + f"\n\nRe-run slide {slide_idx + 1} started: {ts_start}\n" + "\n".join(log_lines)).strip()
+            upload_bytes_to_gcs(new_log.encode(), f"articles/{article_id}/cinemagraph/run_{ts}.log", content_type="text/plain")
+            execute("UPDATE articles SET carousel_cinemagraph_log = %s WHERE id = %s",
+                    (new_log[:65000], article_id))
+
+
+@app.route("/admin/articles/<int:article_id>/regenerate-cinemagraph-slide", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_regenerate_cinemagraph_slide(article_id):
+    """Re-run Runway Gen-4 for a single cinemagraph slide."""
+    if not _runway_client:
+        return jsonify({"error": "Runway ML not configured."}), 400
+
+    status_key = f"cinemagraph_status_{article_id}"
+    current_status = get_setting(status_key)
+    if current_status:
+        return jsonify({"error": "already_running"}), 409
+
+    body = request.get_json(silent=True) or {}
+    slide_idx = body.get("slide_idx")
+    prompt    = (body.get("prompt") or "").strip() or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
+
+    if slide_idx is None:
+        return jsonify({"error": "slide_idx required"}), 400
+
+    row = query_one(
+        "SELECT carousel_images, carousel_cinemagraphs, carousel_cinemagraph_archived "
+        "FROM articles WHERE id = %s", (article_id,)
+    )
+    if not row or not row[0]:
+        return jsonify({"error": "No carousel images found."}), 400
+
+    images   = json.loads(row[0]) if row[0] else []
+    cine_urls = json.loads(row[1]) if row[1] else []
+    archived  = json.loads(row[2]) if row[2] else []
+
+    if slide_idx >= len(images) or not images[slide_idx]:
+        return jsonify({"error": "Slide image not found."}), 400
+
+    # Auto-archive the existing clip for this slot (if any) before re-running
+    archived_idx = None
+    existing_url = cine_urls[slide_idx] if slide_idx < len(cine_urls) else None
+    if existing_url:
+        archived_idx = len(archived)
+        archived.append(existing_url)
+        while len(cine_urls) <= slide_idx:
+            cine_urls.append(None)
+        cine_urls[slide_idx] = None
+        execute(
+            "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_archived = %s WHERE id = %s",
+            (json.dumps(cine_urls), json.dumps(archived), article_id),
+        )
+
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (status_key, f"slide_running:{slide_idx}", f"slide_running:{slide_idx}"))
+
+    t = threading.Thread(
+        target=_cinemagraph_slide_worker,
+        args=(article_id, slide_idx, images[slide_idx], prompt),
+        daemon=True,
+    )
+    t.start()
+    return jsonify({"started": True, "slide_idx": slide_idx, "archived_idx": archived_idx})
+
+
+@app.route("/admin/articles/<int:article_id>/archive-cinemagraph-slide", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_archive_cinemagraph_slide(article_id):
+    """Move a single cinemagraph slot into the archived array."""
+    body = request.get_json(silent=True) or {}
+    slide_idx = body.get("slide_idx")
+    if slide_idx is None:
+        return jsonify({"error": "slide_idx required"}), 400
+
+    row = query_one(
+        "SELECT carousel_cinemagraphs, carousel_cinemagraph_prompts, carousel_cinemagraph_archived "
+        "FROM articles WHERE id = %s", (article_id,)
+    )
+    if not row:
+        return jsonify({"error": "Article not found"}), 404
+
+    urls     = json.loads(row[0]) if row[0] else []
+    prompts  = json.loads(row[1]) if row[1] else []
+    archived = json.loads(row[2]) if row[2] else []
+
+    while len(urls)    <= slide_idx: urls.append(None)
+    while len(prompts) <= slide_idx: prompts.append(None)
+
+    archived_idx = len(archived)
+    if slide_idx < len(urls) and urls[slide_idx]:
+        archived.append(urls[slide_idx])
+    urls[slide_idx]    = None
+    prompts[slide_idx] = None
+
+    execute(
+        "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_prompts = %s, "
+        "carousel_cinemagraph_archived = %s WHERE id = %s",
+        (json.dumps(urls), json.dumps(prompts), json.dumps(archived), article_id),
+    )
+    return jsonify({"ok": True, "archived_idx": archived_idx})
+
+
+@app.route("/admin/articles/<int:article_id>/restore-cinemagraph-clip", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_restore_cinemagraph_clip(article_id):
+    """Move a clip from the archived array back to the first empty slot in the main array."""
+    body = request.get_json(silent=True) or {}
+    archived_idx = body.get("archived_idx")
+    if archived_idx is None:
+        return jsonify({"error": "archived_idx required"}), 400
+
+    row = query_one(
+        "SELECT carousel_cinemagraphs, carousel_cinemagraph_archived FROM articles WHERE id = %s",
+        (article_id,)
+    )
+    if not row:
+        return jsonify({"error": "Article not found"}), 404
+
+    urls     = json.loads(row[0]) if row[0] else []
+    archived = json.loads(row[1]) if row[1] else []
+
+    if archived_idx >= len(archived) or not archived[archived_idx]:
+        return jsonify({"error": "Archived clip not found"}), 404
+
+    clip_url = archived[archived_idx]
+    archived[archived_idx] = None  # clear from archived (keep index stable)
+
+    # Find first empty slot in 0..9
+    slot_idx = None
+    for i in range(10):
+        while len(urls) <= i: urls.append(None)
+        if not urls[i]:
+            slot_idx = i
+            break
+
+    if slot_idx is None:
+        return jsonify({"error": "No empty slots available"}), 409
+
+    urls[slot_idx] = clip_url
+    execute(
+        "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_archived = %s WHERE id = %s",
+        (json.dumps(urls), json.dumps(archived), article_id),
+    )
+    return jsonify({"ok": True, "url": clip_url, "slot_idx": slot_idx, "archived_idx": archived_idx})
+
+
+@app.route("/admin/articles/<int:article_id>/archive-all-cinemagraphs", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_archive_all_cinemagraphs(article_id):
+    """Move all current cinemagraph clips into the archived array."""
+    row = query_one(
+        "SELECT carousel_cinemagraphs, carousel_cinemagraph_prompts, carousel_cinemagraph_archived "
+        "FROM articles WHERE id = %s", (article_id,)
+    )
+    if not row:
+        return jsonify({"error": "Article not found"}), 404
+
+    urls     = json.loads(row[0]) if row[0] else []
+    prompts  = json.loads(row[1]) if row[1] else []
+    archived = json.loads(row[2]) if row[2] else []
+
+    archived_start_idx = len(archived)
+    for i in range(min(10, len(urls))):
+        if urls[i]:
+            archived.append(urls[i])
+            urls[i] = None
+            if i < len(prompts): prompts[i] = None
+
+    execute(
+        "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_prompts = %s, "
+        "carousel_cinemagraph_archived = %s WHERE id = %s",
+        (json.dumps(urls), json.dumps(prompts), json.dumps(archived), article_id),
+    )
+    return jsonify({"ok": True, "archived_start_idx": archived_start_idx})
+
+
 @app.route("/admin/articles/<int:article_id>/generate-ai-video", methods=["POST"])
 @login_required
 @admin_required
@@ -3231,18 +3822,53 @@ def sitemap_xml():
 # INSTAGRAM CAROUSEL POSTING
 # ------------------------------------------------------------
 
-def _post_to_instagram_worker(article_id, caption):
+def _ig_keys(post_type, article_id):
+    """Return dict of site_settings keys for a given post type ('cine' or 'car')."""
+    prefix = "ig_car_post_" if post_type == "car" else "ig_post_"
+    return {
+        "status":   f"{prefix}status_{article_id}",
+        "result":   f"{prefix}result_{article_id}",
+        "media_id": f"{prefix}media_id_{article_id}",
+        "history":  f"{prefix}history_{article_id}",
+        "snapshot": f"{prefix}snapshot_{article_id}",
+    }
+
+
+def _add_activity_log(article_id, title, content):
+    """Append an entry to the article's activity log (stored in site_settings)."""
+    import datetime as _dt
+    key = f"ig_activity_log_{article_id}"
+    raw = get_setting(key)
+    entries = json.loads(raw) if raw else []
+    entries.append({
+        "title":     title,
+        "timestamp": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "content":   content,
+    })
+    # Keep only the last 50 entries
+    entries = entries[-50:]
+    val = json.dumps(entries)
+    execute(
+        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+        "ON DUPLICATE KEY UPDATE value = %s",
+        (key, val, val),
+    )
+
+
+def _post_to_instagram_worker(article_id, caption, post_type="cine"):
     """
     Background thread: compose each carousel slide → upload to GCS →
     create IG child containers → create carousel container → publish.
-    Progress stored in site_settings key ig_post_status_{article_id}.
-    Result stored in ig_post_result_{article_id}.
+    post_type: 'cine' = use cinemagraph video clips; 'car' = use static carousel images.
+    Progress stored in site_settings key ig_post_status_{article_id} (cine)
+    or ig_car_post_status_{article_id} (car).
     """
     import time as _time
     import requests as _req
 
-    status_key = f"ig_post_status_{article_id}"
-    result_key = f"ig_post_result_{article_id}"
+    keys       = _ig_keys(post_type, article_id)
+    status_key = keys["status"]
+    result_key = keys["result"]
 
     def _set_status(s):
         execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
@@ -3261,7 +3887,8 @@ def _post_to_instagram_worker(article_id, caption):
     try:
         # ── 1. Load carousel data ──────────────────────────────────────────
         row = query_one(
-            "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+            "SELECT carousel_images, carousel_punchlines, carousel_cinemagraphs "
+            "FROM articles WHERE id = %s",
             (article_id,)
         )
         if not row:
@@ -3269,70 +3896,133 @@ def _post_to_instagram_worker(article_id, caption):
             _clear_status()
             return
 
-        images     = [x for x in (json.loads(row[0]) if row[0] else [])[:10] if x]
-        punchlines = json.loads(row[1]) if row[1] else []
-        n          = len(images)
+        images        = [x for x in (json.loads(row[0]) if row[0] else [])[:10] if x]
+        punchlines    = json.loads(row[1]) if row[1] else []
+        cinemagraphs  = json.loads(row[2]) if row[2] else []
+        n             = len(images)
+        # For carousel posts use only static images; for cine posts use videos if available
+        use_video     = (post_type != "car") and bool(cinemagraphs and any(u for u in cinemagraphs if u))
 
         if n < 2:
             _set_result("error:Need at least 2 images to post a carousel")
             _clear_status()
             return
 
-        print(f"IG worker: article={article_id} posting {n} images ig_user={ig_user_id}", flush=True)
+        print(f"IG worker: article={article_id} posting {n} slides ig_user={ig_user_id} "
+              f"mode={'video' if use_video else 'image'}", flush=True)
 
-        # ── 2. Compose + upload each slide to GCS ─────────────────────────
-        ts = int(_time.time())
-        composed_urls = []
-        for i, img_url in enumerate(images):
-            _set_status(f"running:compose:{i+1}/{n}")
-            try:
-                if img_url.startswith("https://"):
-                    resp = _req.get(img_url, timeout=20)
-                    resp.raise_for_status()
-                    img_bytes = resp.content
+        # ── 2a. Video carousel path (cinemagraphs exist) ───────────────────
+        if use_video:
+            _set_status(f"running:containers:0/{n}")
+            container_ids = []
+            for i, img_url in enumerate(images):
+                _set_status(f"running:containers:{i+1}/{n}")
+                video_url = cinemagraphs[i] if i < len(cinemagraphs) else None
+                if video_url:
+                    # Post as video carousel item
+                    resp = _req.post(
+                        f"{_IG_GRAPH_URL}/{ig_user_id}/media",
+                        data={"video_url": video_url, "media_type": "VIDEO",
+                              "is_carousel_item": "true", "access_token": access_token},
+                        timeout=30,
+                    )
                 else:
-                    local = resolve_image_to_local_path(img_url)
-                    if not local or not local.exists():
-                        _set_result(f"error:Image not found: {img_url}")
-                        _clear_status()
-                        return
-                    img_bytes = local.read_bytes()
-            except Exception as e:
-                _set_result(f"error:Could not fetch image {i+1}: {e}")
-                _clear_status()
-                return
+                    # Fallback: this slide has no cinemagraph → use static image
+                    ts_fb = int(_time.time())
+                    try:
+                        if img_url.startswith("https://"):
+                            resp_img = _req.get(img_url, timeout=20)
+                            img_bytes = resp_img.content
+                        else:
+                            local = resolve_image_to_local_path(img_url)
+                            img_bytes = local.read_bytes() if local and local.exists() else b""
+                    except Exception:
+                        img_bytes = b""
+                    punchline  = punchlines[i] if i < len(punchlines) else ""
+                    jpeg_bytes = compose_carousel_slide(img_bytes, punchline, i, n)
+                    gcs_obj    = f"articles/{article_id}/instagram/composed_{i+1}_{ts_fb}.jpg"
+                    public_url = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+                    resp = _req.post(
+                        f"{_IG_GRAPH_URL}/{ig_user_id}/media",
+                        data={"image_url": public_url or img_url,
+                              "is_carousel_item": "true", "access_token": access_token},
+                        timeout=30,
+                    )
 
-            punchline   = punchlines[i] if i < len(punchlines) else ""
-            jpeg_bytes  = compose_carousel_slide(img_bytes, punchline, i, n)
-            gcs_obj     = f"articles/{article_id}/instagram/composed_{i+1}_{ts}.jpg"
-            public_url  = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
-            if not public_url:
-                _set_result("error:GCS upload failed — GCS_BUCKET_NAME must be set")
-                _clear_status()
-                return
-            print(f"IG worker: slide {i+1}/{n} composed → {public_url}", flush=True)
-            composed_urls.append(public_url)
+                data = resp.json()
+                if "id" not in data:
+                    err = data.get("error", {}).get("message", str(data))
+                    print(f"IG worker: child container {i+1} FAILED: {err}", flush=True)
+                    _set_result(f"error:Child container {i+1} failed: {err}")
+                    _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                                      f"Child container {i+1}/{n} creation failed.\nAPI error: {err}")
+                    _clear_status()
+                    return
+                print(f"IG worker: child container {i+1}/{n} id={data['id']}", flush=True)
+                container_ids.append(data["id"])
 
-        # ── 3. Create IG child containers ─────────────────────────────────
-        _set_status(f"running:containers:0/{n}")
-        container_ids = []
-        for i, url in enumerate(composed_urls):
-            _set_status(f"running:containers:{i+1}/{n}")
-            resp = _req.post(
-                f"{_IG_GRAPH_URL}/{ig_user_id}/media",
-                data={"image_url": url, "is_carousel_item": "true",
-                      "access_token": access_token},
-                timeout=30,
-            )
-            data = resp.json()
-            if "id" not in data:
-                err = data.get("error", {}).get("message", str(data))
-                print(f"IG worker: child container {i+1} FAILED: {err}", flush=True)
-                _set_result(f"error:Child container {i+1} failed: {err}")
-                _clear_status()
-                return
-            print(f"IG worker: child container {i+1}/{n} id={data['id']}", flush=True)
-            container_ids.append(data["id"])
+        # ── 2b. Image carousel path (no cinemagraphs) ─────────────────────
+        else:
+            ts = int(_time.time())
+            composed_urls = []
+            for i, img_url in enumerate(images):
+                _set_status(f"running:compose:{i+1}/{n}")
+                try:
+                    if img_url.startswith("https://"):
+                        resp_img = _req.get(img_url, timeout=20)
+                        resp_img.raise_for_status()
+                        img_bytes = resp_img.content
+                    else:
+                        local = resolve_image_to_local_path(img_url)
+                        if not local or not local.exists():
+                            _set_result(f"error:Image not found: {img_url}")
+                            _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                                              f"Image not found: {img_url}")
+                            _clear_status()
+                            return
+                        img_bytes = local.read_bytes()
+                except Exception as e:
+                    _set_result(f"error:Could not fetch image {i+1}: {e}")
+                    _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                                      f"Could not fetch image {i+1}: {e}")
+                    _clear_status()
+                    return
+
+                punchline   = punchlines[i] if i < len(punchlines) else ""
+                jpeg_bytes  = compose_carousel_slide(img_bytes, punchline, i, n)
+                gcs_obj     = f"articles/{article_id}/instagram/composed_{i+1}_{ts}.jpg"
+                public_url  = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+                if not public_url:
+                    _set_result("error:GCS upload failed — GCS_BUCKET_NAME must be set")
+                    _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                                      "GCS upload failed — GCS_BUCKET_NAME must be set")
+                    _clear_status()
+                    return
+                print(f"IG worker: slide {i+1}/{n} composed → {public_url}", flush=True)
+                composed_urls.append(public_url)
+
+            # ── 3. Create IG child containers ─────────────────────────────────
+            _set_status(f"running:containers:0/{n}")
+            container_ids = []
+            for i, url in enumerate(composed_urls):
+                _set_status(f"running:containers:{i+1}/{n}")
+                resp = _req.post(
+                    f"{_IG_GRAPH_URL}/{ig_user_id}/media",
+                    data={"image_url": url, "is_carousel_item": "true",
+                          "access_token": access_token},
+                    timeout=30,
+                )
+                data = resp.json()
+                if "id" not in data:
+                    err = data.get("error", {}).get("message", str(data))
+                    print(f"IG worker: child container {i+1} FAILED: {err}", flush=True)
+                    _set_result(f"error:Child container {i+1} failed: {err}")
+                    _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                                      f"Child container {i+1}/{n} creation failed.\nAPI error: {err}")
+                    _clear_status()
+                    return
+                print(f"IG worker: child container {i+1}/{n} id={data['id']}", flush=True)
+                container_ids.append(data["id"])
 
         # ── 4. Poll each container until FINISHED ─────────────────────────
         _set_status(f"running:poll:0/{n}")
@@ -3342,21 +4032,29 @@ def _post_to_instagram_worker(article_id, caption):
             while _time.time() < deadline:
                 r = _req.get(
                     f"{_IG_GRAPH_URL}/{cid}",
-                    params={"fields": "status_code", "access_token": access_token},
+                    params={"fields": "status_code,status", "access_token": access_token},
                     timeout=15,
                 )
-                status_code = r.json().get("status_code", "")
+                poll_data    = r.json()
+                status_code  = poll_data.get("status_code", "")
+                status_detail = poll_data.get("status", "")
                 if status_code == "FINISHED":
                     print(f"IG worker: container {i+1}/{n} FINISHED", flush=True)
                     break
                 if status_code == "ERROR":
-                    print(f"IG worker: container {i+1}/{n} ERROR", flush=True)
-                    _set_result(f"error:Container {i+1} status ERROR")
+                    err_msg = f"Container {i+1} status ERROR: {status_detail}" if status_detail else f"Container {i+1} status ERROR"
+                    print(f"IG worker: {err_msg}", flush=True)
+                    _set_result(f"error:{err_msg}")
+                    _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                                      f"Container {i+1}/{n} (id={cid}) returned ERROR.\nStatus detail: {status_detail or 'none'}")
                     _clear_status()
                     return
                 _time.sleep(5)
             else:
-                _set_result(f"error:Container {i+1} timed out waiting for FINISHED")
+                err_msg = f"Container {i+1} timed out waiting for FINISHED"
+                _set_result(f"error:{err_msg}")
+                _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                                  f"Container {i+1}/{n} (id={cid}) timed out after 5 minutes.")
                 _clear_status()
                 return
 
@@ -3376,6 +4074,8 @@ def _post_to_instagram_worker(article_id, caption):
             err = data.get("error", {}).get("message", str(data))
             print(f"IG worker: carousel container FAILED: {err}", flush=True)
             _set_result(f"error:Carousel container failed: {err}")
+            _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                              f"Carousel container creation failed.\nChildren: {n}\nAPI error: {err}")
             _clear_status()
             return
         carousel_id = data["id"]
@@ -3394,13 +4094,44 @@ def _post_to_instagram_worker(article_id, caption):
             err = data.get("error", {}).get("message", str(data))
             print(f"IG worker: publish FAILED: {err}", flush=True)
             _set_result(f"error:Publish failed: {err}")
+            _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                              f"Publish failed for carousel {carousel_id}.\nAPI error: {err}")
             _clear_status()
             return
 
-        post_id   = data["id"]
-        permalink = f"https://www.instagram.com/p/{post_id}/"
+        post_id = data["id"]
+        # Fetch the real shortcode permalink (numeric ID ≠ shortcode in URL)
+        try:
+            plink_resp = _req.get(
+                f"{_IG_GRAPH_URL}/{post_id}",
+                params={"fields": "permalink", "access_token": access_token},
+                timeout=15,
+            )
+            plink_data = plink_resp.json()
+            permalink  = plink_data.get("permalink") or f"https://www.instagram.com/p/{post_id}/"
+        except Exception:
+            permalink = f"https://www.instagram.com/p/{post_id}/"
         print(f"IG worker: SUCCESS post_id={post_id} permalink={permalink}", flush=True)
         _set_result(f"done:{permalink}")
+        # Store media_id for later caption editing / archive
+        media_id_key = keys["media_id"]
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (media_id_key, str(post_id), str(post_id)))
+        # Store snapshot of what was posted (for archive modal)
+        import datetime as _dt
+        snapshot = json.dumps({
+            "caption":    caption,
+            "image_urls": images[:10] if not use_video else [],
+            "video_urls": [u for u in cinemagraphs[:10] if u] if use_video else [],
+            "post_type":  post_type,
+            "posted_at":  _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (keys["snapshot"], snapshot, snapshot))
+        _add_activity_log(article_id, f"Posted to Instagram ({post_type})",
+                          f"post_id={post_id}\npermalink={permalink}\nSlides: {len(images)}")
         _clear_status()
 
     except Exception as e:
@@ -3408,6 +4139,8 @@ def _post_to_instagram_worker(article_id, caption):
         traceback.print_exc()
         print(f"IG worker EXCEPTION: {e}", flush=True)
         _set_result(f"error:Unexpected error: {e}")
+        _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                          f"Error: {e}")
         _clear_status()
 
 
@@ -3415,30 +4148,47 @@ def _post_to_instagram_worker(article_id, caption):
 @login_required
 @admin_required
 def admin_article_post_to_instagram(article_id):
-    """Start a background thread to post carousel to Instagram."""
+    """Start a background thread to post to Instagram.
+    Body: {caption, type} where type is 'cine' (default) or 'car'.
+    """
     if not IG_USER_ID or not IG_ACCESS_TOKEN:
         return jsonify({"error": "Instagram credentials not configured. "
                         "Set IG_USER_ID and IG_ACCESS_TOKEN environment variables."}), 400
 
-    status_key  = f"ig_post_status_{article_id}"
+    data      = request.get_json() or {}
+    caption   = (data.get("caption") or "").strip()[:2200]
+    post_type = data.get("type", "cine")
+    if post_type not in ("cine", "car"):
+        post_type = "cine"
+
+    keys       = _ig_keys(post_type, article_id)
+    status_key = keys["status"]
+    result_key = keys["result"]
+
     current_status = get_setting(status_key)
     if current_status and current_status.startswith("running"):
         return jsonify({"error": "already_running"}), 409
 
-    data    = request.get_json() or {}
-    caption = (data.get("caption") or "").strip()[:2200]
-
+    # Validate media availability based on post type
     row = query_one(
-        "SELECT carousel_images FROM articles WHERE id = %s", (article_id,)
+        "SELECT carousel_images, carousel_cinemagraphs FROM articles WHERE id = %s",
+        (article_id,),
     )
-    if not row or not row[0]:
-        return jsonify({"error": "No carousel images found."}), 400
-    images = [x for x in (json.loads(row[0]) if row[0] else [])[:10] if x]
-    if len(images) < 2:
-        return jsonify({"error": "Need at least 2 carousel images to post."}), 400
+    if not row:
+        return jsonify({"error": "Article not found."}), 404
 
-    # Clear stale result from any previous post, then seed running status
-    result_key = f"ig_post_result_{article_id}"
+    if post_type == "car":
+        images = [x for x in (json.loads(row[0]) if row[0] else [])[:10] if x]
+        if len(images) < 2:
+            return jsonify({"error": "Need at least 2 carousel images to post."}), 400
+        n_media = len(images)
+    else:
+        clips = [x for x in (json.loads(row[1]) if row[1] else [])[:10] if x]
+        if len(clips) < 2:
+            return jsonify({"error": "Need at least 2 cinemagraph clips to post."}), 400
+        n_media = len(clips)
+
+    # Clear stale result, seed running status
     execute("DELETE FROM site_settings WHERE `key` = %s", (result_key,))
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s",
@@ -3446,21 +4196,274 @@ def admin_article_post_to_instagram(article_id):
 
     t = threading.Thread(
         target=_post_to_instagram_worker,
-        args=(article_id, caption),
+        args=(article_id, caption, post_type),
         daemon=True,
     )
     t.start()
-    return jsonify({"started": True, "n_images": len(images)})
+    return jsonify({"started": True, "n_media": n_media, "type": post_type})
 
 
 @app.route("/admin/articles/<int:article_id>/ig-post-status")
 @login_required
 @admin_required
 def admin_article_ig_post_status(article_id):
-    """Poll endpoint: returns current Instagram post status and last result."""
-    status = get_setting(f"ig_post_status_{article_id}")
-    result = get_setting(f"ig_post_result_{article_id}")
-    return jsonify({"status": status, "result": result})
+    """Poll endpoint: returns current Instagram post status and last result.
+    Query param: ?type=cine (default) or ?type=car
+    """
+    post_type   = request.args.get("type", "cine")
+    if post_type not in ("cine", "car"):
+        post_type = "cine"
+    keys        = _ig_keys(post_type, article_id)
+    status      = get_setting(keys["status"])
+    result      = get_setting(keys["result"])
+    media_id    = get_setting(keys["media_id"])
+    history_raw = get_setting(keys["history"])
+    history     = json.loads(history_raw) if history_raw else []
+    return jsonify({"status": status, "result": result, "media_id": media_id, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/edit-instagram-caption", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_edit_instagram_caption(article_id):
+    """Update the caption of the most recently published Instagram post.
+    Body: {caption, type} where type is 'cine' (default) or 'car'.
+    """
+    if not IG_ACCESS_TOKEN:
+        return jsonify({"error": "Instagram credentials not configured."}), 400
+
+    data      = request.get_json() or {}
+    post_type = data.get("type", "cine")
+    if post_type not in ("cine", "car"):
+        post_type = "cine"
+    keys      = _ig_keys(post_type, article_id)
+    media_id  = get_setting(keys["media_id"])
+    if not media_id:
+        import re as _re
+        result_val = get_setting(keys["result"]) or ""
+        if result_val.startswith("done:"):
+            m = _re.search(r'/p/(\d{10,})', result_val)
+            if m:
+                media_id = m.group(1)
+                execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE value = %s",
+                        (keys["media_id"], media_id, media_id))
+    if not media_id:
+        return jsonify({"error": "No published post found for this article."}), 400
+
+    caption = (data.get("caption") or "").strip()[:2200]
+    if not caption:
+        return jsonify({"error": "Caption cannot be empty."}), 400
+
+    import requests as _req
+    resp = _req.post(
+        f"{_IG_GRAPH_URL}/{media_id}",
+        data={"caption": caption, "access_token": IG_ACCESS_TOKEN},
+        timeout=30,
+    )
+    result = resp.json()
+    if result.get("success") or result.get("id"):
+        _add_activity_log(article_id, f"Caption Edited on Instagram ({post_type})",
+                          f"media_id={media_id}\nNew caption: {caption[:200]}…")
+        return jsonify({"ok": True})
+    err = result.get("error", {}).get("message", str(result))
+    _add_activity_log(article_id, f"Caption Edit Failed ({post_type})",
+                      f"media_id={media_id}, error: {err}")
+    return jsonify({"error": err}), 400
+
+
+@app.route("/admin/articles/<int:article_id>/check-instagram-post")
+@login_required
+@admin_required
+def admin_article_check_instagram_post(article_id):
+    """Check if the published Instagram post is still live via the Graph API.
+    Query param: ?type=cine (default) or ?type=car
+    """
+    if not IG_ACCESS_TOKEN:
+        return jsonify({"error": "Instagram credentials not configured."}), 400
+    post_type = request.args.get("type", "cine")
+    if post_type not in ("cine", "car"):
+        post_type = "cine"
+    ig_keys  = _ig_keys(post_type, article_id)
+    media_id = get_setting(ig_keys["media_id"])
+    if not media_id:
+        # Fallback: older posts stored "done:https://instagram.com/p/{numeric_id}/" in the
+        # result key before media_id was saved separately.  Extract and back-fill.
+        import re as _re
+        result_val = get_setting(ig_keys["result"]) or ""
+        if result_val.startswith("done:"):
+            m = _re.search(r'/p/(\d{10,})', result_val)
+            if m:
+                media_id = m.group(1)
+                # Persist so subsequent calls are instant
+                execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE value = %s",
+                        (ig_keys["media_id"], media_id, media_id))
+                print(f"IG check-post-live: back-filled media_id={media_id!r} from result URL", flush=True)
+    if not media_id:
+        return jsonify({"error": "No published post found for this article."}), 400
+    import requests as _req
+    print(f"IG check-post-live: media_id={media_id!r} type={post_type}", flush=True)
+    try:
+        resp = _req.get(
+            f"{_IG_GRAPH_URL}/{media_id}",
+            params={"fields": "id,permalink", "access_token": IG_ACCESS_TOKEN},
+            timeout=15,
+        )
+        data = resp.json()
+        print(f"IG check-post-live response: {data}", flush=True)
+        if "id" in data:
+            _add_activity_log(article_id, f"Check Post Live ({post_type})",
+                              f"Post is live. media_id={media_id}, permalink={data.get('permalink', '')}")
+            return jsonify({"live": True, "permalink": data.get("permalink", "")})
+        api_err = data.get("error", {}).get("message", "Post not found on Instagram.")
+        # Strip the boilerplate "Please read the Graph API documentation at …" suffix
+        for _suffix in (". Please read the Graph API", ". See the Graph API"):
+            if _suffix in api_err:
+                api_err = api_err[:api_err.index(_suffix)]
+                break
+        _add_activity_log(article_id, f"Check Post Live ({post_type})",
+                          f"Post not found. media_id={media_id}, API response: {api_err}")
+        return jsonify({"live": False, "api_error": api_err})
+    except Exception as exc:
+        print(f"IG check-post-live exception: {exc}", flush=True)
+        _add_activity_log(article_id, f"Check Post Live Failed ({post_type})",
+                          f"Exception: {exc}")
+        return jsonify({"error": f"Failed to reach Instagram API: {exc}"}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/archive-instagram-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_archive_instagram_post(article_id):
+    """Archive the current Instagram post record, preserving history.
+    Body: {type} where type is 'cine' (default) or 'car'.
+    """
+    data      = request.get_json() or {}
+    post_type = data.get("type", "cine")
+    if post_type not in ("cine", "car"):
+        post_type = "cine"
+    keys     = _ig_keys(post_type, article_id)
+    media_id = get_setting(keys["media_id"])
+    result   = get_setting(keys["result"])
+    if not media_id:
+        import re as _re
+        result_val = result or ""
+        if result_val.startswith("done:"):
+            m = _re.search(r'/p/(\d{10,})', result_val)
+            if m:
+                media_id = m.group(1)
+                execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE value = %s",
+                        (keys["media_id"], media_id, media_id))
+    if not media_id:
+        return jsonify({"error": "No published post found for this article."}), 400
+
+    # Parse permalink from the stored result (format: "done:https://…")
+    permalink = None
+    if result and result.startswith("done:"):
+        permalink = result[5:]
+
+    # Load existing history
+    history_raw = get_setting(keys["history"])
+    history = json.loads(history_raw) if history_raw else []
+
+    # Load snapshot of the original post (caption, image/video URLs)
+    snapshot_raw = get_setting(keys["snapshot"])
+    snapshot     = json.loads(snapshot_raw) if snapshot_raw else {}
+
+    # Append new archive entry with full snapshot data
+    import datetime as _dt
+    history.append({
+        "media_id":    media_id,
+        "permalink":   permalink,
+        "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "caption":     snapshot.get("caption", ""),
+        "image_urls":  snapshot.get("image_urls", []),
+        "video_urls":  snapshot.get("video_urls", []),
+        "post_type":   snapshot.get("post_type", post_type),
+        "posted_at":   snapshot.get("posted_at", ""),
+    })
+
+    # Persist history, clear current post keys + snapshot
+    execute(
+        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+        (keys["history"], json.dumps(history), json.dumps(history)),
+    )
+    execute(
+        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+        (keys["media_id"], "", ""),
+    )
+    execute(
+        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+        (keys["result"], "", ""),
+    )
+    execute(
+        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+        (keys["snapshot"], "", ""),
+    )
+    _add_activity_log(article_id, f"Post Archived ({post_type})",
+                      f"media_id={media_id}, permalink={permalink or 'N/A'}")
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/generate-ig-caption", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_generate_ig_caption(article_id):
+    """Use OpenAI to generate an Instagram caption for this article."""
+    if not _openai_client:
+        return jsonify({"error": "OpenAI is not configured on this server."}), 400
+
+    row = query_one(
+        "SELECT title, content, slug FROM articles WHERE id = %s",
+        (article_id,),
+    )
+    if not row:
+        return jsonify({"error": "Article not found."}), 404
+
+    title   = row[0] or ""
+    content = row[1] or ""
+    slug    = row[2] or ""
+
+    # Strip HTML tags to get plain text excerpt for context
+    import re as _re
+    plain = _re.sub(r"<[^>]+>", " ", content)
+    plain = _re.sub(r"\s+", " ", plain).strip()[:500]
+
+    site_url = os.getenv("SITE_URL", "").rstrip("/")
+    article_link = f"{site_url}/articles/{slug}" if site_url and slug else ""
+
+    # Per-article prompt takes priority, then global, then hardcoded default
+    system_msg = (
+        get_setting(f'ig_caption_prompt_{article_id}')
+        or get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT)
+    )
+    user_msg = f"Article title: {title}\n\nArticle summary: {plain}"
+
+    try:
+        response = _openai_client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=600,
+        )
+        caption = response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"IG caption generation error: {e}", flush=True)
+        _add_activity_log(article_id, "Caption Generation Failed",
+                          f"OpenAI error: {e}")
+        return jsonify({"error": f"Caption generation failed: {e}"}), 500
+
+    # Append call-to-action with article link
+    if article_link:
+        caption += f"\n\nWant to read the full article? Access the following link:\n{article_link}"
+
+    _add_activity_log(article_id, "Caption Generated (OpenAI)",
+                      f"Prompt: {system_msg[:120]}…\n\nGenerated caption:\n{caption[:300]}…")
+    return jsonify({"caption": caption})
 
 
 # ------------------------------------------------------------

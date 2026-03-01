@@ -58,12 +58,12 @@
         position: absolute; inset: 0;
         opacity: 0;
     }
-    .asl-layer img {
+    .asl-layer img, .asl-layer video {
         position: absolute; inset: 0;
         width: 100%; height: 100%;
         object-fit: cover;
         display: block;
-        /* Ken Burns animation applied via JS on this element */
+        /* Ken Burns animation applied via JS on img; video plays natively */
     }
     #asl-punchline {
         position: absolute; bottom: 0; left: 0; right: 0; z-index: 2;
@@ -145,8 +145,8 @@
     <div class="asl-wrap">
         <p class="asl-label">Visual Summary &mdash; Article in Motion</p>
         <div id="asl-viewport">
-            <div class="asl-layer" id="asl-layer-a"><img id="asl-img-a" src="" alt=""></div>
-            <div class="asl-layer" id="asl-layer-b"><img id="asl-img-b" src="" alt=""></div>
+            <div class="asl-layer" id="asl-layer-a"><img id="asl-img-a" src="" alt=""><video id="asl-vid-a" autoplay loop muted playsinline style="display:none;"></video></div>
+            <div class="asl-layer" id="asl-layer-b"><img id="asl-img-b" src="" alt=""><video id="asl-vid-b" autoplay loop muted playsinline style="display:none;"></video></div>
             <div id="asl-punchline"></div>
             <div id="asl-swipe-hint">Slide right for more &raquo;&raquo;&raquo;</div>
             <div id="asl-counter"></div>
@@ -173,9 +173,10 @@
 {% if article.carousel_images %}
 <script>
 (function () {
-    var ANIMS      = ['asl-tl', 'asl-tr', 'asl-bl', 'asl-br', 'asl-zoom'];
-    var images     = {{ article.carousel_images | tojson }};
-    var punchlines = {{ article.carousel_punchlines | tojson }};
+    var ANIMS        = ['asl-tl', 'asl-tr', 'asl-bl', 'asl-br', 'asl-zoom'];
+    var images       = {{ article.carousel_images | tojson }};
+    var punchlines   = {{ article.carousel_punchlines | tojson }};
+    var cinemagraphs = {{ article.carousel_cinemagraphs | tojson }};
 
     /* Ensure URLs are root-relative (handle any storage format) */
     var valid = images.filter(Boolean).slice(0, 10).map(function (u) {
@@ -192,6 +193,8 @@
     var lb       = document.getElementById('asl-layer-b');
     var imgA     = document.getElementById('asl-img-a');
     var imgB     = document.getElementById('asl-img-b');
+    var vidA     = document.getElementById('asl-vid-a');
+    var vidB     = document.getElementById('asl-vid-b');
     var plEl     = document.getElementById('asl-punchline');
     var ctrEl    = document.getElementById('asl-counter');
     var scrubFill= document.getElementById('asl-scrub-fill');
@@ -220,12 +223,26 @@
     }
     requestAnimationFrame(scrubTick);
 
-    /* ── Apply Ken Burns to an img element ──────────────────────── */
-    function applyKB(img, i, dur) {
-        img.src = valid[i];
-        img.style.animation = 'none';
-        void img.offsetWidth;
-        img.style.animation = ANIMS[i % ANIMS.length] + ' ' + ((dur || DURATION) / 1000) + 's ease-in-out forwards';
+    /* ── Apply Ken Burns (or cinemagraph video) to a layer ─────── */
+    function applyKB(img, vid, i, dur) {
+        var cineUrl = cinemagraphs && cinemagraphs[i] ? cinemagraphs[i] : null;
+        if (cineUrl) {
+            // Show video, hide image, skip Ken Burns animation
+            img.style.display = 'none';
+            if (vid) {
+                vid.src = cineUrl;
+                vid.style.display = 'block';
+                vid.play().catch(function () {});
+            }
+        } else {
+            // Show image with Ken Burns, hide video
+            if (vid) { vid.style.display = 'none'; vid.pause(); vid.src = ''; }
+            img.style.display = 'block';
+            img.src = valid[i];
+            img.style.animation = 'none';
+            void img.offsetWidth;
+            img.style.animation = ANIMS[i % ANIMS.length] + ' ' + ((dur || DURATION) / 1000) + 's ease-in-out forwards';
+        }
     }
 
     /* ── Punchline overlay ──────────────────────────────────────── */
@@ -247,9 +264,10 @@
         var incomingLayer = aFront ? lb : la;
         var outgoingLayer = aFront ? la : lb;
         var incomingImg   = aFront ? imgB : imgA;
+        var incomingVid   = aFront ? vidB : vidA;
         var outgoingImg   = aFront ? imgA : imgB;
 
-        applyKB(incomingImg, curIdx);
+        applyKB(incomingImg, incomingVid, curIdx);
 
         ctrEl.textContent = (curIdx + 1) + ' / ' + valid.length;
         timeBase          = performance.now();
@@ -283,10 +301,11 @@
             pausedAt = performance.now();
             clearTimeout(nextTimer);
             clearTimeout(plHideTimer);            /* freeze punchline hide timer */
-            /* freeze Ken Burns mid-frame */
+            /* freeze Ken Burns mid-frame + pause any cinemagraph videos */
             [imgA, imgB].forEach(function (img) {
                 img.style.animationPlayState = 'paused';
             });
+            [vidA, vidB].forEach(function (v) { if (v) v.pause(); });
             btn.textContent = '▶';
             btn.title = 'Resume';
         } else {
@@ -295,6 +314,7 @@
             [imgA, imgB].forEach(function (img) {
                 img.style.animationPlayState = 'running';
             });
+            [vidA, vidB].forEach(function (v) { if (v && v.src) v.play().catch(function(){}); });
             var remaining = Math.max(500, DURATION - elapsed());
             nextTimer = setTimeout(advance, remaining);
             /* restart punchline hide timer with remaining delay, or hide immediately if overdue */
@@ -315,7 +335,7 @@
     la.style.opacity    = '1';
     lb.style.transition = 'none';
     lb.style.opacity    = '0';
-    applyKB(imgA, 0);
+    applyKB(imgA, vidA, 0);
     ctrEl.textContent     = '1 / ' + valid.length;
     timeBase              = performance.now();
     scrubFill.style.width = '0%';
