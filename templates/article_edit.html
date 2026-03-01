@@ -2061,7 +2061,20 @@ function addCarouselImage(i, url, initial, prompt, punchline) {
         return function() { openCarouselEditModal(slideIndex, p, pl, false); };
     })(i - 1, prompt, punchline);
     col.appendChild(btn);
-    g.appendChild(col);
+    // Insert at the correct position (sorted by slot number) instead of always appending.
+    // Each tile has id="cimg-N" where N is 1-based. Find the first tile with a higher N.
+    var inserted = false;
+    var children = g.children;
+    for (var c = 0; c < children.length; c++) {
+        var cid = children[c].id || '';
+        var m = cid.match(/^cimg-(\d+)$/);
+        if (m && parseInt(m[1]) > i) {
+            g.insertBefore(col, children[c]);
+            inserted = true;
+            break;
+        }
+    }
+    if (!inserted) g.appendChild(col);
 }
 
 function startCarousel() {
