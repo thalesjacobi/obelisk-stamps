@@ -2176,13 +2176,15 @@ def admin_settings_save():
             "ON DUPLICATE KEY UPDATE value = %s",
             (carousel_style, carousel_style),
         )
-    # Handle cinemagraph prompt
+    # Handle cinemagraph prompt (global or per-article)
     cinemagraph_prompt = (data.get("cinemagraph_prompt") or "").strip()
     if cinemagraph_prompt:
+        aid = data.get("article_id")
+        key = f"cinemagraph_prompt_{aid}" if aid else "cinemagraph_prompt"
         execute(
-            "INSERT INTO site_settings (`key`, value) VALUES ('cinemagraph_prompt', %s) "
+            "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s",
-            (cinemagraph_prompt, cinemagraph_prompt),
+            (key, cinemagraph_prompt, cinemagraph_prompt),
         )
     # Handle Instagram caption prompt (global or per-article)
     ig_caption_prompt = (data.get("ig_caption_prompt") or "").strip()
@@ -2284,6 +2286,7 @@ def admin_article_edit(article_id):
     return render_template("article_edit.html", article=article,
                            carousel_style=article_carousel_style,
                            cinemagraph_prompt=get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
+                           cinemagraph_article_prompt=get_setting(f'cinemagraph_prompt_{article_id}', ''),
                            ig_caption_prompt=get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT),
                            ig_article_caption_prompt=get_setting(f'ig_caption_prompt_{article_id}', ''),
                            ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN))
@@ -3341,7 +3344,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                     _log(f"slide {slide_num} image not found: {img_url}")
                     continue
 
-            slide_prompt = (prompts[i] if prompts and i < len(prompts) and prompts[i] else None) or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
+            slide_prompt = (prompts[i] if prompts and i < len(prompts) and prompts[i] else None) or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
             slide_seed = random.randint(0, 4294967295)
             _log(f"slide {slide_num} prompt: {slide_prompt[:80]}")
             _log(f"slide {slide_num} seed: {slide_seed}")
@@ -3471,7 +3474,7 @@ def admin_article_generate_cinemagraphs(article_id):
 
     # Build saved prompts for all 10 slots
     existing_prompts = json.loads(row[1]) if row[1] else []
-    resolved_default = get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
+    resolved_default = get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
     saved_prompts = []
     for i in range(10):
         if i < len(incoming_prompts) and incoming_prompts[i]:
@@ -3572,7 +3575,7 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
             task = _runway_client.image_to_video.create(
                 model="gen4_turbo",
                 prompt_image=prompt_image,
-                prompt_text=prompt or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
+                prompt_text=prompt or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
                 ratio="960:960",
                 duration=5,
                 seed=slide_seed,
@@ -3673,7 +3676,7 @@ def admin_article_regenerate_cinemagraph_slide(article_id):
 
     body = request.get_json(silent=True) or {}
     slide_idx = body.get("slide_idx")
-    prompt    = (body.get("prompt") or "").strip() or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
+    prompt    = (body.get("prompt") or "").strip() or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
     seed      = body.get("seed")  # None = random, int = use that seed
 
     if slide_idx is None:

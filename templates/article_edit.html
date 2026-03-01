@@ -502,7 +502,7 @@
                     </li>
                     <li>
                         <button type="button" class="dropdown-item small"
-                                onclick="openCinemagraphPromptModal()">Edit Cinemagraph Prompt</button>
+                                onclick="openCinemagraphPromptModal()">View Cinemagraph Prompt</button>
                     </li>
                     <li><hr class="dropdown-divider"></li>
                     <li><h6 class="dropdown-header">Instagram</h6></li>
@@ -1120,12 +1120,12 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Runway Default Prompt</h5>
+                <h5 class="modal-title">Cinemagraph Prompt</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <p class="text-muted small mb-2">
-                    This prompt is sent to Runway Gen-4 Turbo for every slide that doesn't have a custom prompt set.
+                    This prompt is sent to Runway Gen-4 Turbo for every slide in this article that doesn't have a custom prompt set.
                     Changes here affect future generations only — existing clips are not re-run.
                 </p>
                 <textarea id="cine-default-prompt-text" class="form-control font-monospace small" rows="5"
@@ -1135,7 +1135,7 @@
                 <span id="cine-prompt-save-status" class="me-auto small"></span>
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary btn-sm"
-                        onclick="saveCinemagraphPrompt()">Save as Default</button>
+                        onclick="saveCinemagraphPrompt()">Save for this Article</button>
             </div>
         </div>
     </div>
@@ -1238,6 +1238,7 @@ const SAVE_URL = ARTICLE_ID
     : '/admin/articles/new';
 const CAROUSEL_STYLE     = {{ carousel_style | tojson }};
 const CINEMAGRAPH_PROMPT = {{ cinemagraph_prompt | tojson }};
+const CINEMAGRAPH_ARTICLE_PROMPT = {{ cinemagraph_article_prompt | tojson }};
 const IG_CAPTION_PROMPT  = {{ ig_caption_prompt | tojson }};
 const IG_ARTICLE_CAPTION_PROMPT = {{ ig_article_caption_prompt | tojson }};
 const ARTICLE_TITLE = {{ (article.title if article and article.title else '') | tojson }};
@@ -3024,7 +3025,8 @@ function _aiVideoFinish(error) {
 // COMPONENT D — Cinemagraph (Runway Gen-4 per slide)
 // ════════════════════════════════════════════════════════════════
 
-let _CINE_DEFAULT_PROMPT = CINEMAGRAPH_PROMPT; // editable; kept in sync with site_settings via "Edit Default Prompt"
+let _CINE_DEFAULT_PROMPT = CINEMAGRAPH_PROMPT; // global default from site_settings
+let _cineArticlePrompt   = CINEMAGRAPH_ARTICLE_PROMPT; // per-article override (empty = use global)
 let _IG_CAPTION_PROMPT   = IG_CAPTION_PROMPT;  // global default from site_settings
 let _igArticleCaptionPrompt = IG_ARTICLE_CAPTION_PROMPT; // per-article override (empty = use global)
 let _cinePrompts         = [];    // per-slide prompts, synced from /video-data
@@ -3466,7 +3468,9 @@ function cinemagraphRerunSlide() {
 // ── Default Prompt modal ───────────────────────────────────────
 
 function openCinemagraphPromptModal() {
-    document.getElementById('cine-default-prompt-text').value = _CINE_DEFAULT_PROMPT;
+    // Per-article override takes priority, then global default
+    document.getElementById('cine-default-prompt-text').value =
+        _cineArticlePrompt || _CINE_DEFAULT_PROMPT;
     document.getElementById('cine-prompt-save-status').textContent = '';
     new bootstrap.Modal(document.getElementById('cinemagraph-prompt-modal')).show();
 }
@@ -3480,12 +3484,12 @@ function saveCinemagraphPrompt() {
     fetch('/admin/settings/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cinemagraph_prompt: val }),
+        body: JSON.stringify({ cinemagraph_prompt: val, article_id: ARTICLE_ID }),
     })
     .then(r => r.json())
     .then(d => {
         if (d.success) {
-            _CINE_DEFAULT_PROMPT = val;
+            _cineArticlePrompt = val;
             bootstrap.Modal.getInstance(document.getElementById('cinemagraph-prompt-modal')).hide();
         } else {
             status.textContent = 'Error: ' + (d.error || 'Could not save.');
