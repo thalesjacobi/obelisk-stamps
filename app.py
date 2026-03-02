@@ -123,6 +123,19 @@ else:
     if not RUNWAY_API_KEY:
         print("INFO: RUNWAY_API_KEY not set — AI video generation disabled")
 
+
+def _is_runway_billing_error(msg):
+    """Non-transient Runway errors — stop immediately instead of retrying."""
+    msg_lower = str(msg).lower()
+    return any(phrase in msg_lower for phrase in [
+        "enough credits",
+        "insufficient credits",
+        "billing",
+        "payment required",
+        "quota exceeded",
+    ])
+
+
 # --- Google Cloud Storage (optional — for persistent file hosting) ---
 _gcs_bucket = None
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "")
@@ -2838,6 +2851,7 @@ def admin_article_video_data(article_id):
     cinemagraph_archived = json.loads(cinemagraph_archived_raw) if cinemagraph_archived_raw else []
     cinemagraph_seeds    = json.loads(cinemagraph_seeds_raw)    if cinemagraph_seeds_raw    else []
     cinemagraph_status   = get_setting(f"cinemagraph_status_{article_id}")
+    cinemagraph_result   = get_setting(f"cinemagraph_result_{article_id}")
     return jsonify({
         "narrated_url":           narrated_url or None,
         "narrated_script":        narrated_script,
@@ -2850,6 +2864,7 @@ def admin_article_video_data(article_id):
         "cinemagraph_seeds":      cinemagraph_seeds,
         "cinemagraph_archived":   cinemagraph_archived,
         "cinemagraph_status":     cinemagraph_status or None,
+        "cinemagraph_result":     cinemagraph_result or None,
         "has_cinemagraph_log":    bool(cinemagraph_log_raw and cinemagraph_log_raw.strip()),
     })
 
@@ -2865,6 +2880,16 @@ def admin_article_cinemagraph_log(article_id):
     if not row or not row[0]:
         return jsonify({"log": None, "has_log": False})
     return jsonify({"log": row[0], "has_log": True})
+
+
+@app.route("/admin/articles/<int:article_id>/cinemagraph-result", methods=["DELETE"])
+@login_required
+@admin_required
+def admin_article_clear_cinemagraph_result(article_id):
+    """Clear the cinemagraph generation result so it doesn't persist on reload."""
+    execute("DELETE FROM site_settings WHERE `key` = %s",
+            (f"cinemagraph_result_{article_id}",))
+    return jsonify({"success": True})
 
 
 @app.route("/admin/articles/<int:article_id>/activity-log")
@@ -3291,6 +3316,11 @@ def _cinemagraph_worker(article_id, images, prompts=None,
     def _clear_status():
         execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
 
+    result_key = f"cinemagraph_result_{article_id}"
+    def _set_result(s):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, s, s))
+
     # ── Cancel support ────────────────────────────────────────────────────────
     cancel_key = f"cinemagraph_cancel_{article_id}"
     execute("DELETE FROM site_settings WHERE `key` = %s", (cancel_key,))
@@ -3313,6 +3343,9 @@ def _cinemagraph_worker(article_id, images, prompts=None,
     cinemagraph_seeds = list(existing_seeds or [])[:10]
     while len(cinemagraph_urls)  < 10: cinemagraph_urls.append(None)
     while len(cinemagraph_seeds) < 10: cinemagraph_seeds.append(None)
+    new_succeeded = 0
+    billing_abort = False
+    billing_abort_msg = ""
 
     try:
         for i, img_url in enumerate(images):
@@ -3361,6 +3394,11 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                 _log(f"slide {slide_num} Runway task_id={task_id}")
             except Exception as e:
                 _log(f"slide {slide_num} Runway submit FAILED: {e}")
+                if _is_runway_billing_error(e):
+                    _log("Non-transient billing error — skipping remaining slides")
+                    billing_abort = True
+                    billing_abort_msg = str(e)
+                    break
                 continue
 
             # Poll Runway until the clip is ready
@@ -3406,6 +3444,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                     else:
                         saved_url = "/" + str(local_path).replace("\\", "/")
                     cinemagraph_urls[real_idx] = saved_url
+                    new_succeeded += 1
                     _log(f"slide {slide_num} ({i+1}/{n}) saved → {saved_url}")
                 except Exception as e:
                     _log(f"slide {slide_num} save FAILED: {e}")
@@ -3413,18 +3452,30 @@ def _cinemagraph_worker(article_id, images, prompts=None,
             cinemagraph_seeds[real_idx] = slide_seed
             _set_status(f"running:{i+1}/{n}")
 
-        # Persist full 10-slot arrays (existing clips preserved, new ones merged in)
-        execute(
-            "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_seeds = %s WHERE id = %s",
-            (json.dumps(cinemagraph_urls), json.dumps(cinemagraph_seeds), article_id),
-        )
-        succeeded = sum(1 for u in cinemagraph_urls if u)
-        _log(f"DONE — {succeeded}/{n} slides succeeded")
+        if new_succeeded > 0:
+            # Only write to DB when at least one new clip was generated
+            execute(
+                "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_seeds = %s WHERE id = %s",
+                (json.dumps(cinemagraph_urls), json.dumps(cinemagraph_seeds), article_id),
+            )
+
+        if billing_abort:
+            _log(f"ABORTED — billing error after {new_succeeded}/{n} new clips: {billing_abort_msg}")
+            _set_result(f"error:Runway billing — not enough credits to complete generation")
+        elif new_succeeded == 0:
+            _set_result("error:All slides failed — check logs for details")
+        else:
+            _log(f"DONE — {new_succeeded}/{n} new clips generated")
+            _set_result(f"done:{new_succeeded}")
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         _log(f"EXCEPTION: {e}")
+        try:
+            _set_result(f"error:{e}")
+        except Exception:
+            pass
     finally:
         _clear_status()
         execute("DELETE FROM site_settings WHERE `key` = %s", (cancel_key,))
@@ -3506,6 +3557,9 @@ def admin_article_generate_cinemagraphs(article_id):
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s",
             (status_key, f"running:0/{n_empty}", f"running:0/{n_empty}"))
+    # Clear any stale result from a previous run
+    execute("DELETE FROM site_settings WHERE `key` = %s",
+            (f"cinemagraph_result_{article_id}",))
 
     t = threading.Thread(
         target=_cinemagraph_worker,
@@ -3583,7 +3637,10 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
             task_id = task.id
             _log(f"Runway task_id={task_id}")
         except Exception as e:
-            _log(f"Runway submit FAILED: {e}")
+            if _is_runway_billing_error(e):
+                _log(f"Runway submit FAILED (billing/credits): {e}")
+            else:
+                _log(f"Runway submit FAILED: {e}")
             return
 
         # Poll until ready

@@ -258,6 +258,7 @@
             </div>
         </div>
         <div class="card-body">
+            <div id="carousel-error" class="d-none"></div>
             <div id="carousel-status" class="d-none mb-3">
                 <div class="d-flex align-items-center gap-2 mb-1">
                     <div class="spinner-border spinner-border-sm text-primary" id="carousel-spinner" role="status"></div>
@@ -521,6 +522,7 @@
             </div>
         </div>
         <div class="card-body">
+            <div id="cinemagraph-error" class="d-none"></div>
             <div id="cinemagraph-status" class="d-none mb-3">
                 <div class="d-flex align-items-center gap-2 mb-1">
                     <div class="spinner-border spinner-border-sm text-primary" id="cinemagraph-spinner" role="status"></div>
@@ -2083,6 +2085,7 @@ function startCarousel() {
     carouselAbortCtrl = new AbortController();
     carouselErrors = [];
     document.getElementById('carousel-error-btn').classList.add('d-none');
+    document.getElementById('carousel-error').classList.add('d-none');
 
     _carouselGenerating = true;
     const btn = document.getElementById('carousel-btn');
@@ -2132,11 +2135,9 @@ function startCarousel() {
             if (err.name === 'AbortError') {
                 carouselStopped();
             } else {
-                document.getElementById('carousel-status-text').textContent = 'Error: ' + err.message;
-                document.getElementById('carousel-spinner').classList.add('d-none');
-                document.getElementById('carousel-stop-btn').classList.add('d-none');
-                btn.disabled = false;
-                btn.textContent = 'Generate Carousel';
+                _carouselGenerating = false;
+                document.getElementById('carousel-status').classList.add('d-none');
+                _showCarouselError(err.message || 'Connection failed');
                 updateCarouselTabCounts();
             }
         });
@@ -2181,6 +2182,17 @@ function showCarouselErrorBtn() {
     btn.classList.remove('d-none');
 }
 
+function _showCarouselError(msg) {
+    var container = document.getElementById('carousel-error');
+    container.innerHTML =
+        '<div class="alert alert-danger alert-dismissible py-2 px-3 mb-2 small" role="alert">'
+      + '<button type="button" class="btn-close" style="padding:0.4rem 0.5rem;font-size:0.65rem;" data-bs-dismiss="alert" aria-label="Close"></button>'
+      + '<div class="fw-semibold mb-1">&#10007; Carousel Generation Failed</div>'
+      + '<div>' + msg + '</div>'
+      + '</div>';
+    container.classList.remove('d-none');
+}
+
 function carouselDone(count) {
     _carouselGenerating = false;
     document.getElementById('carousel-spinner').classList.add('d-none');
@@ -2195,7 +2207,10 @@ function carouselDone(count) {
     document.querySelectorAll('[id^="cph-"]').forEach(el => el.remove());
     if (!document.getElementById('carousel-grid').children.length)
         document.getElementById('carousel-empty').classList.remove('d-none');
-    if (carouselErrors.length) showCarouselErrorBtn();
+    if (carouselErrors.length) {
+        showCarouselErrorBtn();
+        if (count === 0) _showCarouselError(carouselErrors.join('; '));
+    }
     updateCarouselTabCounts();
     // Unlock video components now that carousel images exist
     if (count > 0) { narratedUnlock(); aiVideoUnlock(); cinemagraphUnlock(); }
@@ -3265,8 +3280,11 @@ function _cinemagraphShowPreviews(urls, prompts) {
 function cinemagraphGenerate() {
     if (!ARTICLE_ID) return;
     _cinemagraphGenerating = true;
-    const btn = document.getElementById('cinemagraph-btn');
+    var btn = document.getElementById('cinemagraph-btn');
     if (btn) btn.classList.add('d-none');
+    // Clear any previous error
+    var errEl = document.getElementById('cinemagraph-error');
+    if (errEl) errEl.classList.add('d-none');
 
     fetch('/admin/articles/' + ARTICLE_ID + '/generate-cinemagraphs', {
         method: 'POST',
@@ -3366,6 +3384,13 @@ function _cinemagraphPoll() {
                         if (rerunCol) rerunCol.innerHTML = '<div class="carousel-placeholder">' + (_cineRerunningIdx + 1) + '</div>';
                         _cineRerunningIdx = null;
                     }
+                    // Check for error result from the worker
+                    if (d.cinemagraph_result && d.cinemagraph_result.startsWith('error:')) {
+                        _showCinemagraphError(d.cinemagraph_result.slice(6));
+                        // Clear the result so it doesn't reappear on page reload
+                        fetch('/admin/articles/' + ARTICLE_ID + '/cinemagraph-result',
+                              { method: 'DELETE' }).catch(function() {});
+                    }
                     _cinemagraphUpdateLogBtn(d.has_cinemagraph_log);
                     if (d.cinemagraph_urls && d.cinemagraph_urls.some(u => u)) {
                         _cinemagraphShowPreviews(d.cinemagraph_urls, _cinePrompts);
@@ -3378,6 +3403,17 @@ function _cinemagraphPoll() {
             })
             .catch(() => _cinemagraphPoll());
     }, 20000);
+}
+
+function _showCinemagraphError(msg) {
+    var container = document.getElementById('cinemagraph-error');
+    container.innerHTML =
+        '<div class="alert alert-danger alert-dismissible py-2 px-3 mb-2 small" role="alert">'
+      + '<button type="button" class="btn-close" style="padding:0.4rem 0.5rem;font-size:0.65rem;" data-bs-dismiss="alert" aria-label="Close"></button>'
+      + '<div class="fw-semibold mb-1">&#10007; Cinemagraph Generation Failed</div>'
+      + '<div>' + msg + '</div>'
+      + '</div>';
+    container.classList.remove('d-none');
 }
 
 // ── Edit single slide ──────────────────────────────────────────
