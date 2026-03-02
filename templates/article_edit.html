@@ -1141,8 +1141,14 @@
                     <label class="form-label small fw-semibold mb-0">Seed</label>
                     <input type="text" id="archived-info-seed" class="form-control form-control-sm font-monospace" readonly style="max-width:200px;">
                 </div>
-                <div id="archived-info-date-group" class="mt-2" style="display:none;">
+                <div id="archived-info-created-group" class="mt-2" style="display:none;">
+                    <small class="text-muted" id="archived-info-created"></small>
+                </div>
+                <div id="archived-info-date-group" class="mt-1" style="display:none;">
                     <small class="text-muted" id="archived-info-date"></small>
+                </div>
+                <div id="archived-info-slot-source-group" class="mt-1" style="display:none;">
+                    <small class="text-muted" id="archived-info-slot-source"></small>
                 </div>
                 <hr class="my-3">
                 <label class="form-label small fw-semibold">Restore to slot</label>
@@ -1461,6 +1467,8 @@ let _carouselGenerating = false;
             if (d.images && d.images.length) {
                 const prompts = d.prompts || [];
                 const punchlines = d.punchlines || [];
+                const createdAt = d.created_at || [];
+                const archivedMeta = d.archived_meta || {};
                 d.images.forEach((url, i) => {
                     if (i < 10) {
                         // Current images (slots 0-9)
@@ -1468,7 +1476,12 @@ let _carouselGenerating = false;
                     } else {
                         // Archived/removed images (slot 10+)
                         if (url) {
-                            _addCarouselArchivedTile(url, i, prompts[i] || '', punchlines[i] || '');
+                            var meta = archivedMeta[String(i)] || {};
+                            _addCarouselArchivedTile(url, i, prompts[i] || '', punchlines[i] || '', {
+                                created_at: createdAt[i] || null,
+                                archived_at: meta.archived_at || null,
+                                slot_source: meta.slot_source || null,
+                            });
                         }
                     }
                 });
@@ -2292,11 +2305,16 @@ function rerunCarouselImage() {
             document.getElementById('carousel-rerun-spinner').classList.add('d-none');
             return;
         }
-        // Move the old image tile to the removed grid
+        // Remove old image tile from current grid
         const oldCol = document.getElementById('cimg-' + (carouselEditIndex + 1));
-        if (oldCol) {
-            oldCol.remove();
-            addRemovedImage(oldCol);
+        if (oldCol) oldCol.remove();
+        // Add old image to archived grid with full metadata
+        if (d.archived_idx !== null && d.archived_idx !== undefined) {
+            _addCarouselArchivedTile(d.old_image, d.archived_idx, d.old_prompt, d.old_punchline, {
+                created_at: d.old_created_at || null,
+                archived_at: d.archived_at || null,
+                slot_source: d.slot_source || null,
+            });
         }
         // Add the new image tile in the current grid
         addCarouselImage(carouselEditIndex + 1, d.url, false, d.prompt, d.punchline);
@@ -2386,13 +2404,21 @@ function archiveAllCarousel() {
     .then(r => r.json())
     .then(d => {
         if (d.error) { alert('Error: ' + d.error); return; }
-        // Move all current image tiles to the removed grid
+        // Remove all current image tiles from the grid
         const currentTiles = document.getElementById('carousel-grid')
             .querySelectorAll('.carousel-col[id^="cimg-"]');
-        currentTiles.forEach(col => {
-            col.remove();
-            addRemovedImage(col);
-        });
+        currentTiles.forEach(col => col.remove());
+        // Add archived tiles with full metadata from backend response
+        if (d.archived_items) {
+            d.archived_items.forEach(function(item) {
+                _addCarouselArchivedTile(item.url, item.archived_idx,
+                    item.prompt, item.punchline, {
+                        created_at: item.created_at || null,
+                        archived_at: item.archived_at || null,
+                        slot_source: item.slot_source || null,
+                    });
+            });
+        }
         // Switch to current tab (now empty) and show empty state
         showCarouselTab('current');
         document.getElementById('carousel-empty').classList.remove('d-none');
@@ -3030,8 +3056,9 @@ function _aiVideoFinish(error) {
                 showAiVideoOutput(d.ai_url);
             }
             // Cinemagraph — resume or show existing
-            _cinePrompts = d.cinemagraph_prompts || [];
-            _cineSeeds   = d.cinemagraph_seeds   || [];
+            _cinePrompts   = d.cinemagraph_prompts    || [];
+            _cineSeeds     = d.cinemagraph_seeds      || [];
+            _cineCreatedAt = d.cinemagraph_created_at || [];
             if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running')) {
                 _cinemagraphUnlocked = true;
                 const mc = d.cinemagraph_status.match(/^running:(\d+)\/(\d+)$/);
@@ -3076,6 +3103,7 @@ let _IG_CAPTION_PROMPT   = IG_CAPTION_PROMPT;  // global default from site_setti
 let _igArticleCaptionPrompt = IG_ARTICLE_CAPTION_PROMPT; // per-article override (empty = use global)
 let _cinePrompts         = [];    // per-slide prompts, synced from /video-data
 let _cineSeeds           = [];    // per-slide seeds, synced from /video-data
+let _cineCreatedAt       = [];    // per-slide created_at timestamps, synced from /video-data
 let _cineEditIdx         = null;  // slide index open in edit modal
 let _cinemagraphUnlocked = false; // true once carousel images exist
 let _cineRerunningIdx    = null;  // slot currently being re-run (prevents old URL restoring)
@@ -3220,6 +3248,20 @@ function openArchivedInfoModal(type, idx, url, prompt, options) {
         seedGroup.style.display = 'none';
     }
 
+    // Created date
+    var createdGroup = document.getElementById('archived-info-created-group');
+    if (options.created_at) {
+        createdGroup.style.display = '';
+        try {
+            var cd = new Date(options.created_at);
+            document.getElementById('archived-info-created').textContent = 'Created: ' + cd.toLocaleDateString() + ' ' + cd.toLocaleTimeString();
+        } catch(e) {
+            document.getElementById('archived-info-created').textContent = 'Created: ' + options.created_at;
+        }
+    } else {
+        createdGroup.style.display = 'none';
+    }
+
     // Archived date
     var dateGroup = document.getElementById('archived-info-date-group');
     if (options.archived_at) {
@@ -3232,6 +3274,15 @@ function openArchivedInfoModal(type, idx, url, prompt, options) {
         }
     } else {
         dateGroup.style.display = 'none';
+    }
+
+    // Source slot
+    var slotSrcGroup = document.getElementById('archived-info-slot-source-group');
+    if (options.slot_source) {
+        slotSrcGroup.style.display = '';
+        document.getElementById('archived-info-slot-source').textContent = 'Originally in Slot ' + options.slot_source;
+    } else {
+        slotSrcGroup.style.display = 'none';
     }
 
     // Build slot picker
@@ -3305,7 +3356,11 @@ function carouselRestoreImage(archivedIdx, targetSlot) {
         // If target slot was occupied, auto-archive the displaced image
         if (d.displaced) {
             _addCarouselArchivedTile(d.displaced.url, d.displaced.archived_idx,
-                d.displaced.prompt, d.displaced.punchline);
+                d.displaced.prompt, d.displaced.punchline, {
+                    created_at: d.displaced.created_at || null,
+                    archived_at: d.displaced.archived_at || null,
+                    slot_source: d.displaced.slot_source || null,
+                });
             // Remove the old current-grid tile
             var oldCol = document.getElementById('cimg-' + (targetSlot + 1));
             if (oldCol) oldCol.remove();
@@ -3319,7 +3374,8 @@ function carouselRestoreImage(archivedIdx, targetSlot) {
 }
 
 // Helper: add a single tile to the carousel archived grid
-function _addCarouselArchivedTile(url, archivedIdx, prompt, punchline) {
+function _addCarouselArchivedTile(url, archivedIdx, prompt, punchline, options) {
+    options = options || {};
     var grid = document.getElementById('carousel-removed-grid');
     if (!grid || !url) return;
     var col = document.createElement('div');
@@ -3333,12 +3389,15 @@ function _addCarouselArchivedTile(url, archivedIdx, prompt, punchline) {
     iBtn.className = 'carousel-info-btn';
     iBtn.textContent = 'i';
     iBtn.title = 'View info & restore';
-    (function(_idx, _url, _p, _pl) {
+    (function(_idx, _url, _p, _pl, _opts) {
         iBtn.onclick = function(e) {
             e.stopPropagation();
-            openArchivedInfoModal('carousel', _idx, _url, _p, { punchline: _pl });
+            openArchivedInfoModal('carousel', _idx, _url, _p, {
+                punchline: _pl, created_at: _opts.created_at,
+                archived_at: _opts.archived_at, slot_source: _opts.slot_source
+            });
         };
-    })(archivedIdx, url, prompt || '', punchline || '');
+    })(archivedIdx, url, prompt || '', punchline || '', options);
     col.appendChild(iBtn);
     grid.appendChild(col);
     updateCarouselTabCounts();
@@ -3348,12 +3407,13 @@ function _addCarouselArchivedTile(url, archivedIdx, prompt, punchline) {
 // Always builds a fresh tile (never clones) so the video plays correctly
 function addCinemagraphArchived(entry, archivedIdx) {
     var removedGrid = document.getElementById('cinemagraph-removed-grid');
-    // entry can be a string (legacy) or object { url, prompt, seed, archived_at }
-    var url, prompt, seed, archived_at;
+    // entry can be a string (legacy) or object { url, prompt, seed, archived_at, created_at, slot_source }
+    var url, prompt, seed, archived_at, created_at, slot_source;
     if (typeof entry === 'string') {
-        url = entry; prompt = null; seed = null; archived_at = null;
+        url = entry; prompt = null; seed = null; archived_at = null; created_at = null; slot_source = null;
     } else if (entry && typeof entry === 'object') {
-        url = entry.url; prompt = entry.prompt; seed = entry.seed; archived_at = entry.archived_at;
+        url = entry.url; prompt = entry.prompt; seed = entry.seed;
+        archived_at = entry.archived_at; created_at = entry.created_at; slot_source = entry.slot_source;
     } else {
         return;
     }
@@ -3370,12 +3430,14 @@ function addCinemagraphArchived(entry, archivedIdx) {
     iBtn.className = 'cine-info-btn';
     iBtn.title = 'View info & restore';
     iBtn.textContent = 'i';
-    (function(_idx, _url, _prompt, _seed, _archived_at) {
+    (function(_idx, _url, _prompt, _seed, _archived_at, _created_at, _slot_source) {
         iBtn.onclick = function(e) {
             e.stopPropagation();
-            openArchivedInfoModal('cinemagraph', _idx, _url, _prompt, { seed: _seed, archived_at: _archived_at });
+            openArchivedInfoModal('cinemagraph', _idx, _url, _prompt, {
+                seed: _seed, archived_at: _archived_at, created_at: _created_at, slot_source: _slot_source
+            });
         };
-    })(archivedIdx, url, prompt, seed, archived_at);
+    })(archivedIdx, url, prompt, seed, archived_at, created_at, slot_source);
     col.appendChild(v);
     col.appendChild(iBtn);
     removedGrid.appendChild(col);
@@ -3569,8 +3631,9 @@ function _cinemagraphPoll() {
         fetch('/admin/articles/' + ARTICLE_ID + '/video-data')
             .then(r => r.json())
             .then(d => {
-                _cinePrompts = d.cinemagraph_prompts || _cinePrompts;
-                _cineSeeds   = d.cinemagraph_seeds   || _cineSeeds;
+                _cinePrompts   = d.cinemagraph_prompts    || _cinePrompts;
+                _cineSeeds     = d.cinemagraph_seeds      || _cineSeeds;
+                _cineCreatedAt = d.cinemagraph_created_at || _cineCreatedAt;
                 if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running:')) {
                     _cinemagraphApplyStatus(d.cinemagraph_status, null);
                     _cinemagraphUpdateGrid(d.cinemagraph_urls, _cinePrompts);
@@ -3665,10 +3728,13 @@ function cinemagraphArchiveSlide() {
             url: clipUrl,
             prompt: _cinePrompts[idx] || null,
             seed: (_cineSeeds && _cineSeeds[idx]) || null,
+            created_at: (_cineCreatedAt && _cineCreatedAt[idx]) || null,
             archived_at: new Date().toISOString(),
+            slot_source: idx + 1,
         };
         _cinePrompts[idx] = null;
         if (_cineSeeds) _cineSeeds[idx] = null;
+        if (_cineCreatedAt) _cineCreatedAt[idx] = null;
         if (col) col.innerHTML = '<div class="carousel-placeholder">' + (idx + 1) + '</div>';
         if (clipUrl) addCinemagraphArchived(archivedEntry, d.archived_idx);
     })
@@ -3689,9 +3755,10 @@ function cinemagraphRerunSlide() {
     // Capture the current clip URL and metadata now, before the modal closes and the slot changes
     const col = document.getElementById('cine-col-' + idx);
     const existingVideo = col ? col.querySelector('video') : null;
-    const oldClipUrl = existingVideo ? existingVideo.src : null;
-    const oldPrompt  = (_cinePrompts && _cinePrompts[idx]) || null;
-    const oldSeed    = (_cineSeeds && _cineSeeds[idx]) || null;
+    const oldClipUrl    = existingVideo ? existingVideo.src : null;
+    const oldPrompt     = (_cinePrompts && _cinePrompts[idx]) || null;
+    const oldSeed       = (_cineSeeds && _cineSeeds[idx]) || null;
+    const oldCreatedAt  = (_cineCreatedAt && _cineCreatedAt[idx]) || null;
 
     fetch('/admin/articles/' + ARTICLE_ID + '/regenerate-cinemagraph-slide', {
         method: 'POST',
@@ -3708,7 +3775,9 @@ function cinemagraphRerunSlide() {
         if (oldClipUrl && d.archived_idx !== null && d.archived_idx !== undefined) {
             addCinemagraphArchived({
                 url: oldClipUrl, prompt: oldPrompt, seed: oldSeed,
+                created_at: oldCreatedAt,
                 archived_at: new Date().toISOString(),
+                slot_source: idx + 1,
             }, d.archived_idx);
         }
         // Revert slot to placeholder + spinner overlay
@@ -3844,12 +3913,15 @@ function archiveAllCinemagraphs() {
                     url: clipUrl,
                     prompt: (_cinePrompts && _cinePrompts[slotIdx]) || null,
                     seed: (_cineSeeds && _cineSeeds[slotIdx]) || null,
+                    created_at: (_cineCreatedAt && _cineCreatedAt[slotIdx]) || null,
                     archived_at: new Date().toISOString(),
+                    slot_source: slotIdx + 1,
                 }, archivedIdx++);
             }
         });
         _cinePrompts = [];
         _cineSeeds = [];
+        _cineCreatedAt = [];
         showCinemagraphTab('current');
         updateCinemagraphTabCounts();
     })
@@ -3875,11 +3947,13 @@ function cinemagraphRestoreClip(archivedIdx, targetSlot) {
         if (d.displaced) {
             addCinemagraphArchived(d.displaced.entry, d.displaced.archived_idx);
         }
-        // Restore prompt and seed into local arrays
+        // Restore prompt, seed, and created_at into local arrays
         while (_cinePrompts.length <= d.slot_idx) _cinePrompts.push(null);
         while (_cineSeeds.length <= d.slot_idx) _cineSeeds.push(null);
-        _cinePrompts[d.slot_idx] = d.prompt || null;
-        _cineSeeds[d.slot_idx]   = d.seed || null;
+        while (_cineCreatedAt.length <= d.slot_idx) _cineCreatedAt.push(null);
+        _cinePrompts[d.slot_idx]   = d.prompt || null;
+        _cineSeeds[d.slot_idx]     = d.seed || null;
+        _cineCreatedAt[d.slot_idx] = d.created_at || null;
         // Place the restored clip in the target slot
         const col = document.getElementById('cine-col-' + d.slot_idx);
         if (col) {
