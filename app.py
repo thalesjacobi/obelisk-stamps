@@ -2759,7 +2759,7 @@ def admin_article_generate_carousel(article_id):
         # Activity log
         try:
             _add_activity_log(article_id, "Carousel generation",
-                              f"Generated {ok} of {N} images via DALL-E 3")
+                              f"Generated {ok} of {N} images\nModel: dall-e-3 (1024×1024, quality=standard, style=vivid)")
         except Exception:
             pass  # non-fatal
 
@@ -3133,7 +3133,7 @@ def admin_article_regenerate_carousel_image(article_id):
         return jsonify({"error": f"DB save failed: {e}"}), 500
 
     _add_activity_log(article_id, f"Carousel re-run slide {index + 1}",
-                      f"Prompt: {new_prompt[:120]}...")
+                      f"Model: dall-e-3\nPrompt: {new_prompt[:120]}...")
     static_url = gcs_url if gcs_url else url_for("static", filename=f"articles/{article_id}/carousel/{filename}")
     return jsonify({
         "url": static_url, "prompt": new_prompt, "punchline": new_punchline,
@@ -3823,7 +3823,8 @@ def _cinemagraph_worker(article_id, images, prompts=None,
             )
         # ──────────────────────────────────────────────────────────────────────
         summary = "\n".join(log_lines) if log_lines else "No log output"
-        _add_activity_log(article_id, "Cinemagraph generation", summary)
+        _add_activity_log(article_id, "Cinemagraph generation",
+                          "Model: runway gen4.5 (960×960, 5s)\n" + summary)
 
 
 @app.route("/admin/articles/<int:article_id>/generate-cinemagraphs", methods=["POST"])
@@ -4051,7 +4052,8 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
                     (new_log[:65000], article_id))
         # Activity log entry
         summary = "\n".join(log_lines) if log_lines else "No log output"
-        _add_activity_log(article_id, f"Cinemagraph re-run slide {slide_idx + 1}", summary)
+        _add_activity_log(article_id, f"Cinemagraph re-run slide {slide_idx + 1}",
+                          "Model: runway gen4.5 (960×960, 5s)\n" + summary)
 
 
 @app.route("/admin/articles/<int:article_id>/regenerate-cinemagraph-slide", methods=["POST"])
