@@ -3701,6 +3701,16 @@ def _cinemagraph_worker(article_id, images, prompts=None,
         log_lines.append(line)
         print(f"Cinemagraph worker: {msg}", flush=True)
 
+    def _flush_log():
+        """Write current log_lines to DB so the log modal shows live progress."""
+        if log_lines:
+            log_text = f"Run started: {ts_start}\n" + "\n".join(log_lines)
+            try:
+                execute("UPDATE articles SET carousel_cinemagraph_log = %s WHERE id = %s",
+                        (log_text[:65000], article_id))
+            except Exception:
+                pass
+
     def _is_cancelled():
         return bool(get_setting(cancel_key))
     # ──────────────────────────────────────────────────────────────────────────
@@ -3727,6 +3737,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                 _log("Cancelled by user")
                 break
             _set_status(f"running:{i}/{n}")
+            _flush_log()
             _log(f"slide {slide_num} ({i+1}/{n}) submitting to Kling")
 
             # Resolve image to base64 for Kling
@@ -3765,6 +3776,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
             # Poll Kling until the clip is ready
             mp4_url = None
             poll_count = 0
+            last_sub_status = None
             while True:
                 time.sleep(6)
                 if _is_cancelled():
@@ -3785,6 +3797,10 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                     break
                 else:
                     _log(f"slide {slide_num} still generating (poll {poll_count}, status={kling_status})")
+                    if kling_status != last_sub_status:
+                        _set_status(f"running:{i}/{n}:{kling_status}")
+                        _flush_log()
+                        last_sub_status = kling_status
 
             if mp4_url:
                 try:
@@ -3819,6 +3835,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                     _log(f"slide {slide_num} save FAILED: {e}")
 
             _set_status(f"running:{i+1}/{n}")
+            _flush_log()
 
         if billing_abort:
             _log(f"ABORTED — billing error after {new_succeeded}/{n} new clips: {billing_abort_msg}")
@@ -3965,6 +3982,18 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
         log_lines.append(line)
         print(f"Cinemagraph slide-worker: {msg}", flush=True)
 
+    def _flush_log():
+        """Write current log_lines to DB so the log modal shows live progress."""
+        if log_lines:
+            existing = query_one("SELECT carousel_cinemagraph_log FROM articles WHERE id = %s", (article_id,))
+            prev = (existing[0] or "") if existing else ""
+            log_text = prev + f"\n\nRe-run slide {slide_idx + 1} started: {ts_start}\n" + "\n".join(log_lines)
+            try:
+                execute("UPDATE articles SET carousel_cinemagraph_log = %s WHERE id = %s",
+                        (log_text.strip()[:65000], article_id))
+            except Exception:
+                pass
+
     try:
         slide_seed = seed if seed is not None else random.randint(0, 4294967295)
         _log(f"re-running slide {slide_idx + 1} with prompt: {prompt[:80]}")
@@ -3991,6 +4020,7 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
         try:
             task_id = _kling_create_task(image_b64, slide_prompt)
             _log(f"Kling task_id={task_id}")
+            _flush_log()
         except Exception as e:
             if _is_kling_billing_error(e):
                 _log(f"Kling submit FAILED (billing/credits): {e}")
@@ -4001,6 +4031,7 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
         # Poll Kling until ready
         mp4_url = None
         poll_count = 0
+        last_sub_status = None
         while True:
             time.sleep(6)
             poll_count += 1
@@ -4018,6 +4049,9 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
                 break
             else:
                 _log(f"still generating (poll {poll_count}, status={kling_status})")
+                if kling_status != last_sub_status:
+                    _flush_log()
+                    last_sub_status = kling_status
 
         if mp4_url:
             r = http_requests.get(mp4_url, timeout=120)

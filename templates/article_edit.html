@@ -3061,7 +3061,7 @@ function _aiVideoFinish(error) {
             _cineCreatedAt = d.cinemagraph_created_at || [];
             if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running')) {
                 _cinemagraphUnlocked = true;
-                const mc = d.cinemagraph_status.match(/^running:(\d+)\/(\d+)$/);
+                const mc = d.cinemagraph_status.match(/^running:(\d+)\/(\d+)/);
                 const nSlides = mc ? parseInt(mc[2]) : 10;
                 _cinemagraphShowRunning(nSlides);
                 _cinemagraphApplyStatus(d.cinemagraph_status, nSlides);
@@ -3461,13 +3461,26 @@ function _cinemagraphInitClipGrid(n) {
 function _cinemagraphApplyStatus(status, nSlides) {
     const prgEl    = document.getElementById('cinemagraph-progress');
     const statusEl = document.getElementById('cinemagraph-status-text');
-    const m = status && status.match(/^running:(\d+)\/(\d+)$/);
+    const m = status && status.match(/^running:(\d+)\/(\d+)(?::(\w+))?$/);
     if (m) {
-        const done  = parseInt(m[1]);
-        const total = parseInt(m[2]) || nSlides || 10;
-        const pct   = total ? Math.round(done / total * 100) : 0;
-        if (prgEl)    prgEl.style.width = pct + '%';
-        if (statusEl) statusEl.textContent = done + '/' + total + ' clips done';
+        const done     = parseInt(m[1]);
+        const total    = parseInt(m[2]) || nSlides || 10;
+        const subState = m[3] || '';
+        // Fractional offset per sub-status: moves bar within the current clip
+        const offset = subState === 'processing' ? 0.6
+                     : subState === 'submitted'  ? 0.2
+                     : 0;
+        const pct = total ? Math.min(99, Math.round((done + offset) / total * 100)) : 0;
+        if (prgEl) prgEl.style.width = pct + '%';
+        if (statusEl) {
+            if (subState === 'processing') {
+                statusEl.textContent = done + '/' + total + ' clips done — clip ' + (done + 1) + ' generating…';
+            } else if (subState === 'submitted') {
+                statusEl.textContent = done + '/' + total + ' clips done — clip ' + (done + 1) + ' queued…';
+            } else {
+                statusEl.textContent = done + '/' + total + ' clips done';
+            }
+        }
     } else {
         if (prgEl)    prgEl.style.width = '0%';
         if (statusEl) statusEl.textContent = 'Starting…';
@@ -3680,6 +3693,33 @@ function _cinemagraphPoll() {
             .catch(() => _cinemagraphPoll());
     }, 20000);
 }
+
+// When the tab becomes visible again after being backgrounded, immediately
+// re-sync cinemagraph status so the progress bar doesn't appear frozen.
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible' && _cinemagraphGenerating) {
+        fetch('/admin/articles/' + ARTICLE_ID + '/video-data')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                _cinePrompts   = d.cinemagraph_prompts    || _cinePrompts;
+                _cineSeeds     = d.cinemagraph_seeds      || _cineSeeds;
+                _cineCreatedAt = d.cinemagraph_created_at || _cineCreatedAt;
+                if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running:')) {
+                    _cinemagraphApplyStatus(d.cinemagraph_status, null);
+                    _cinemagraphUpdateGrid(d.cinemagraph_urls, _cinePrompts);
+                } else if (!d.cinemagraph_status || !d.cinemagraph_status.startsWith('slide_running')) {
+                    // Generation finished while tab was hidden — force a final poll cycle
+                    _cinemagraphGenerating = false;
+                    document.getElementById('cinemagraph-status').classList.add('d-none');
+                    document.querySelectorAll('.cine-spinner-overlay').forEach(function(el) { el.remove(); });
+                    if (d.cinemagraph_urls && d.cinemagraph_urls.some(function(u) { return u; })) {
+                        _cinemagraphShowPreviews(d.cinemagraph_urls, _cinePrompts);
+                    }
+                    _cinemagraphUpdateLogBtn(d.has_cinemagraph_log);
+                }
+            }).catch(function() {});
+    }
+});
 
 function _showCinemagraphError(msg) {
     var container = document.getElementById('cinemagraph-error');
