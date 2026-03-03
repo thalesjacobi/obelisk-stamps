@@ -143,7 +143,7 @@ def _luma_create_task(image_url, prompt_text):
         model="ray-2",
         keyframes={"frame0": {"type": "image", "url": image_url}},
         aspect_ratio="1:1",
-        duration="5",
+        duration="5s",
     )
     return gen.id
 
