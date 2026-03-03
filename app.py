@@ -503,6 +503,158 @@ def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides):
     return out.getvalue()
 
 
+def _make_cinemagraph_overlay_png(punchline, slide_index, total_slides, width=960, height=960):
+    """
+    Create a transparent RGBA PNG with a dark gradient + punchline text +
+    optional swipe hint — identical visual style to compose_carousel_slide()
+    but on a fully transparent canvas so it can be blended over a video.
+
+    Args:
+        punchline:    Caption text (uppercased automatically).
+        slide_index:  0-based index of this slide.
+        total_slides: Total slides — swipe hint hidden on last slide.
+        width/height: Video frame dimensions (default 960x960).
+
+    Returns PNG bytes.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+    import io as _io
+
+    w, h = width, height
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))  # fully transparent
+
+    # ── Dark gradient (bottom ~55%) ──────────────────────────────────────────
+    gradient_h = int(h * 0.55)
+    gradient   = Image.new("RGBA", (w, gradient_h), (0, 0, 0, 0))
+    draw_g     = ImageDraw.Draw(gradient)
+    for y in range(gradient_h):
+        alpha = int(255 * (y / gradient_h) ** 1.0)
+        draw_g.line([(0, y), (w, y)], fill=(0, 0, 0, alpha))
+    overlay.paste(gradient, (0, h - gradient_h), gradient)
+
+    # ── Font loading ─────────────────────────────────────────────────────────
+    try:
+        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.092))
+        font_hint = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.021))
+    except Exception:
+        font_main = ImageFont.load_default(size=40)
+        font_hint = ImageFont.load_default(size=20)
+
+    draw  = ImageDraw.Draw(overlay)
+    pad_x = int(w * 0.06)
+
+    # ── Punchline text (white, uppercase, left-aligned, word-wrapped) ────────
+    text  = (punchline or "").upper()
+    max_w = w - pad_x * 2
+    words = text.split()
+    lines, line = [], ""
+    for word in words:
+        candidate = (line + " " + word).strip()
+        if draw.textlength(candidate, font=font_main) <= max_w:
+            line = candidate
+        else:
+            if line:
+                lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+
+    line_h       = int(font_main.size * 1.05)
+    hint_h       = int(font_hint.size * 2.4)
+    total_text_h = len(lines) * line_h + hint_h
+    text_y       = h - total_text_h - int(h * 0.04)
+
+    for line_text in lines:
+        draw.text((pad_x, text_y), line_text, font=font_main,
+                  fill=(255, 255, 255, 255))
+        text_y += line_h
+
+    # ── Swipe hint (yellow, all slides except the last) ──────────────────────
+    if slide_index < total_slides - 1:
+        hint_text = "Slide right for more \u00bb\u00bb\u00bb"
+        hint_y    = h - hint_h + int(font_hint.size * 0.4)
+        draw.text((pad_x, hint_y), hint_text, font=font_hint,
+                  fill=(255, 215, 0, 255))
+
+    out = _io.BytesIO()
+    overlay.save(out, format="PNG")
+    return out.getvalue()
+
+
+def _apply_overlay_to_video(video_url_or_path, overlay_png_bytes, output_path):
+    """
+    Blend a transparent overlay PNG onto all frames of a video using FFmpeg.
+    Downloads the video first if a URL is given.
+
+    Args:
+        video_url_or_path: URL string or Path to the raw MP4.
+        overlay_png_bytes: PNG bytes from _make_cinemagraph_overlay_png().
+        output_path:       Path where the composited MP4 is written.
+
+    Returns True on success, False on any error.
+    """
+    import subprocess, tempfile, shutil
+    import requests as _req
+
+    try:
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    except ImportError:
+        print("_apply_overlay_to_video: imageio-ffmpeg not installed", flush=True)
+        return False
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_files = []
+
+    try:
+        # ── Resolve video to a local file ────────────────────────────────────
+        video_url_or_path = str(video_url_or_path)
+        if video_url_or_path.startswith("http"):
+            tmp_vid = output_path.with_suffix(".input.mp4")
+            tmp_files.append(tmp_vid)
+            r = _req.get(video_url_or_path, timeout=60, stream=True)
+            r.raise_for_status()
+            with open(tmp_vid, "wb") as f:
+                shutil.copyfileobj(r.raw, f)
+            video_input = str(tmp_vid)
+        else:
+            video_input = video_url_or_path
+
+        # ── Write overlay PNG to a temp file ─────────────────────────────────
+        tmp_png = output_path.with_suffix(".overlay.png")
+        tmp_files.append(tmp_png)
+        tmp_png.write_bytes(overlay_png_bytes)
+
+        # ── FFmpeg blend ─────────────────────────────────────────────────────
+        cmd = [
+            ffmpeg_exe, "-y",
+            "-i", video_input,
+            "-i", str(tmp_png),
+            "-filter_complex", "[0:v][1:v]overlay=0:0",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:a", "copy",
+            str(output_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        if result.returncode != 0:
+            print(f"_apply_overlay_to_video: FFmpeg error: "
+                  f"{result.stderr.decode(errors='replace')[-500:]}", flush=True)
+            return False
+        return True
+
+    except Exception as e:
+        print(f"_apply_overlay_to_video: {e}", flush=True)
+        return False
+
+    finally:
+        for f in tmp_files:
+            try:
+                f.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
 # ------------------------------------------------------------
 # DATABASE HELPERS
 # ------------------------------------------------------------
@@ -4355,10 +4507,33 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                 _set_status(f"running:containers:{i+1}/{n}")
                 video_url = cinemagraphs[i] if i < len(cinemagraphs) else None
                 if video_url:
+                    # Apply punchline + swipe hint overlay to the video before posting
+                    this_punchline = punchlines[i] if i < len(punchlines) else None
+                    posted_video_url = video_url  # default: raw
+                    if this_punchline:
+                        try:
+                            overlay_png = _make_cinemagraph_overlay_png(this_punchline, i, n)
+                            cine_dir    = BASE_DIR / "static" / "articles" / str(article_id) / "cinemagraph"
+                            cine_dir.mkdir(parents=True, exist_ok=True)
+                            tmp_mp4 = cine_dir / f"ig_composed_{i}_{int(_time.time())}.mp4"
+                            try:
+                                if _apply_overlay_to_video(video_url, overlay_png, tmp_mp4):
+                                    gcs_obj = (f"articles/{article_id}/cinemagraph/"
+                                               f"ig_composed_{i}_{int(_time.time())}.mp4")
+                                    gcs_url = upload_bytes_to_gcs(
+                                        tmp_mp4.read_bytes(), gcs_obj,
+                                        content_type="video/mp4"
+                                    )
+                                    if gcs_url:
+                                        posted_video_url = gcs_url
+                            finally:
+                                tmp_mp4.unlink(missing_ok=True)
+                        except Exception as _ov_err:
+                            print(f"IG overlay error slide {i+1}: {_ov_err}", flush=True)
                     # Post as video carousel item
                     resp = _req.post(
                         f"{_IG_GRAPH_URL}/{ig_user_id}/media",
-                        data={"video_url": video_url, "media_type": "VIDEO",
+                        data={"video_url": posted_video_url, "media_type": "VIDEO",
                               "is_carousel_item": "true", "access_token": access_token},
                         timeout=30,
                     )
