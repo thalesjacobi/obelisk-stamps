@@ -2727,7 +2727,7 @@ function loadNarratedRuns(runs) {
     let rendered = 0;
     runs.forEach((run, i) => {
         try {
-            accordion.appendChild(buildRunItem(run, rendered === 0));
+            accordion.appendChild(buildRunItem(run, false));
             rendered++;
         } catch(e) {
             console.warn('Could not render narrated run', i, e);

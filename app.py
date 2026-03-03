@@ -89,7 +89,7 @@ CAROUSEL_STYLE_SUFFIX = (
     "Square 1:1 format for Instagram. No text, lettering, numbers, or watermarks in the image."
 )
 
-# Default Runway prompt for Cinemagraph generation (stored in site_settings, editable by admins)
+# Default prompt for Cinemagraph generation (stored in site_settings, editable by admins)
 _CINE_DEFAULT_PROMPT = (
     "Subtle gentle atmospheric motion, cinematic still life, "
     "minimal movement, soft breathing effect, loop-friendly"
@@ -105,35 +105,85 @@ _IG_CAPTION_DEFAULT_PROMPT = (
     "Return ONLY the caption text, no extra commentary."
 )
 
-# --- Runway ML client ---
+# --- Kling AI client (image-to-video) ---
 try:
-    import runwayml as _runwayml_module
+    import jwt as _jwt_module
 except ImportError:
-    _runwayml_module = None
+    _jwt_module = None
 
-_runway_client = None
-RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY")
-if RUNWAY_API_KEY and _runwayml_module:
-    try:
-        _runway_client = _runwayml_module.RunwayML(api_key=RUNWAY_API_KEY)
-        print("Runway ML client initialised")
-    except Exception as _e:
-        print(f"WARNING: Runway client failed: {_e}")
+KLING_ACCESS_KEY = os.getenv("KLING_ACCESS_KEY", "")
+KLING_SECRET_KEY = os.getenv("KLING_SECRET_KEY", "")
+_kling_enabled = bool(KLING_ACCESS_KEY and KLING_SECRET_KEY and _jwt_module)
+
+if _kling_enabled:
+    print("Kling AI enabled")
 else:
-    if not RUNWAY_API_KEY:
-        print("INFO: RUNWAY_API_KEY not set — AI video generation disabled")
+    if not KLING_ACCESS_KEY or not KLING_SECRET_KEY:
+        print("INFO: KLING_ACCESS_KEY/KLING_SECRET_KEY not set — AI video generation disabled")
+
+_KLING_BASE_URL = "https://api.klingai.com"
 
 
-def _is_runway_billing_error(msg):
-    """Non-transient Runway errors — stop immediately instead of retrying."""
+def _kling_auth_header():
+    """Generate a fresh JWT auth header for Kling API calls."""
+    now = int(time.time())
+    payload = {"iss": KLING_ACCESS_KEY, "exp": now + 1800, "nbf": now - 5}
+    token = _jwt_module.encode(payload, KLING_SECRET_KEY, algorithm="HS256",
+                               headers={"alg": "HS256", "typ": "JWT"})
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def _is_kling_billing_error(msg):
+    """Non-transient Kling errors — stop immediately instead of retrying."""
     msg_lower = str(msg).lower()
     return any(phrase in msg_lower for phrase in [
-        "enough credits",
-        "insufficient credits",
-        "billing",
-        "payment required",
-        "quota exceeded",
+        "insufficient", "credits", "billing", "quota", "balance",
     ])
+
+
+def _resolve_image_to_base64(img_url):
+    """Download image URL → raw base64 string (no data: prefix). Kling requires this format."""
+    if img_url.startswith("data:"):
+        return img_url.split(",", 1)[1]
+    r = http_requests.get(img_url, timeout=60)
+    r.raise_for_status()
+    return base64.b64encode(r.content).decode()
+
+
+def _kling_create_task(image_b64, prompt_text):
+    """Submit an image-to-video task to Kling. Returns task_id."""
+    resp = http_requests.post(
+        f"{_KLING_BASE_URL}/v1/videos/image2video",
+        headers=_kling_auth_header(),
+        json={
+            "model_name": "kling-v2-master",
+            "image": image_b64,
+            "prompt": prompt_text or "",
+            "duration": "5",
+            "mode": "std",
+            "aspect_ratio": "1:1",
+            "cfg_scale": 0.5,
+        },
+        timeout=30,
+    )
+    data = resp.json()
+    if data.get("code") != 0:
+        raise RuntimeError(data.get("message", f"Kling API error code {data.get('code')}"))
+    return data["data"]["task_id"]
+
+
+def _kling_poll_task(task_id):
+    """Poll a Kling task. Returns (status, mp4_url_or_None, status_msg)."""
+    resp = http_requests.get(
+        f"{_KLING_BASE_URL}/v1/videos/image2video/{task_id}",
+        headers=_kling_auth_header(),
+        timeout=30,
+    )
+    data = resp.json().get("data", {})
+    status = data.get("task_status", "unknown")
+    videos = (data.get("task_result") or {}).get("videos") or []
+    mp4_url = videos[0]["url"] if videos and status == "succeed" else None
+    return status, mp4_url, data.get("task_status_msg", "")
 
 
 # --- Google Cloud Storage (optional — for persistent file hosting) ---
@@ -3488,65 +3538,57 @@ def admin_article_generate_narrated_video(article_id):
 
 
 def _ai_video_worker(article_id, images, prompts, ts):
-    """Background thread: Runway Gen-4 per slide → FFmpeg concat → save URL to DB."""
+    """Background thread: Kling AI per slide → FFmpeg concat → save URL to DB."""
     n_slides = len(images)
     video_dir = Path(f"static/articles/{article_id}/video")
     video_dir.mkdir(parents=True, exist_ok=True)
     temp_clips = []
 
     try:
-        # ── Per-slide: submit to Runway + poll ────────────────────────────────
+        # ── Per-slide: submit to Kling + poll ─────────────────────────────────
         clip_paths = []
         for i, img_url in enumerate(images):
             prompt_text = prompts[i] if i < len(prompts) else ""
 
-            # Resolve image — GCS URLs can be passed directly to Runway
-            if img_url.startswith("https://"):
-                prompt_image = img_url
-            else:
-                img_path = resolve_image_to_local_path(img_url)
-                if img_path and img_path.exists():
-                    if SITE_URL:
-                        prompt_image = SITE_URL.rstrip("/") + "/" + str(img_path).replace("\\", "/")
-                    else:
-                        img_b64 = base64.b64encode(img_path.read_bytes()).decode()
-                        prompt_image = f"data:image/png;base64,{img_b64}"
-                else:
-                    continue  # skip missing image
-
+            # Resolve image to base64 for Kling
             try:
-                task = _runway_client.image_to_video.create(
-                    model="gen4.5",
-                    prompt_image=prompt_image,
-                    prompt_text=prompt_text,
-                    ratio="960:960",
-                    duration=5,
-                )
-                task_id = task.id
+                if img_url.startswith("https://"):
+                    image_b64 = _resolve_image_to_base64(img_url)
+                else:
+                    img_path = resolve_image_to_local_path(img_url)
+                    if img_path and img_path.exists():
+                        image_b64 = base64.b64encode(img_path.read_bytes()).decode()
+                    else:
+                        continue  # skip missing image
             except Exception:
                 continue
 
-            # Poll Runway until the clip is ready
+            try:
+                task_id = _kling_create_task(image_b64, prompt_text)
+            except Exception:
+                continue
+
+            # Poll Kling until the clip is ready
+            mp4_url = None
             while True:
                 time.sleep(6)
                 try:
-                    status_obj = _runway_client.tasks.retrieve(task_id)
-                    status = status_obj.status
+                    kling_status, mp4_url, _msg = _kling_poll_task(task_id)
                 except Exception:
                     break
 
-                if status == "SUCCEEDED":
-                    output_url = status_obj.output[0] if status_obj.output else None
-                    if output_url:
-                        clip_path = video_dir / f"clip_{i+1}.mp4"
-                        r = http_requests.get(output_url, timeout=120)
-                        clip_path.write_bytes(r.content)
-                        clip_paths.append(clip_path)
-                        temp_clips.append(clip_path)
+                if kling_status == "succeed":
                     break
-                elif status == "FAILED":
+                elif kling_status == "failed":
                     break
                 # else: still generating — keep polling
+
+            if mp4_url:
+                clip_path = video_dir / f"clip_{i+1}.mp4"
+                r = http_requests.get(mp4_url, timeout=120)
+                clip_path.write_bytes(r.content)
+                clip_paths.append(clip_path)
+                temp_clips.append(clip_path)
 
             # Update progress counter in DB so the frontend can show N/M
             done_so_far = len(clip_paths)
@@ -3619,7 +3661,7 @@ def _ai_video_worker(article_id, images, prompts, ts):
 
 def _cinemagraph_worker(article_id, images, prompts=None,
                         slot_indices=None, existing_urls=None, existing_seeds=None):
-    """Background thread: Runway Gen-4 per carousel slide → store MP4 GCS URLs in DB.
+    """Background thread: Kling AI per carousel slide → store MP4 GCS URLs in DB.
 
     Args:
         images:         list of source image URLs to generate clips for
@@ -3685,52 +3727,42 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                 _log("Cancelled by user")
                 break
             _set_status(f"running:{i}/{n}")
-            _log(f"slide {slide_num} ({i+1}/{n}) submitting to Runway")
+            _log(f"slide {slide_num} ({i+1}/{n}) submitting to Kling")
 
-            # Resolve image to something Runway can access (HTTPS URL or base64)
-            if img_url.startswith("https://"):
-                prompt_image = img_url
-                _log(f"slide {slide_num} using GCS URL")
-            else:
-                img_path = resolve_image_to_local_path(img_url)
-                if img_path and img_path.exists():
-                    # Always base64-encode local files — SITE_URL may point to production
-                    # where local images don't exist, causing Runway to get a 404
-                    img_bytes = img_path.read_bytes()
-                    img_b64 = base64.b64encode(img_bytes).decode()
-                    ext = img_path.suffix.lower()
-                    mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
-                    prompt_image = f"data:{mime};base64,{img_b64}"
-                    _log(f"slide {slide_num} using base64 ({mime}, {len(img_bytes)//1024}KB)")
+            # Resolve image to base64 for Kling
+            try:
+                if img_url.startswith("https://"):
+                    image_b64 = _resolve_image_to_base64(img_url)
+                    _log(f"slide {slide_num} using GCS URL → base64")
                 else:
-                    _log(f"slide {slide_num} image not found: {img_url}")
-                    continue
+                    img_path = resolve_image_to_local_path(img_url)
+                    if img_path and img_path.exists():
+                        image_b64 = base64.b64encode(img_path.read_bytes()).decode()
+                        _log(f"slide {slide_num} using local file → base64 ({len(img_path.read_bytes())//1024}KB)")
+                    else:
+                        _log(f"slide {slide_num} image not found: {img_url}")
+                        continue
+            except Exception as e:
+                _log(f"slide {slide_num} image resolve FAILED: {e}")
+                continue
 
             slide_prompt = (prompts[i] if prompts and i < len(prompts) and prompts[i] else None) or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
             slide_seed = random.randint(0, 4294967295)
             _log(f"slide {slide_num} prompt: {slide_prompt[:80]}")
             _log(f"slide {slide_num} seed: {slide_seed}")
             try:
-                task = _runway_client.image_to_video.create(
-                    model="gen4.5",
-                    prompt_image=prompt_image,
-                    prompt_text=slide_prompt,
-                    ratio="960:960",
-                    duration=5,
-                    seed=slide_seed,
-                )
-                task_id = task.id
-                _log(f"slide {slide_num} Runway task_id={task_id}")
+                task_id = _kling_create_task(image_b64, slide_prompt)
+                _log(f"slide {slide_num} Kling task_id={task_id}")
             except Exception as e:
-                _log(f"slide {slide_num} Runway submit FAILED: {e}")
-                if _is_runway_billing_error(e):
+                _log(f"slide {slide_num} Kling submit FAILED: {e}")
+                if _is_kling_billing_error(e):
                     _log("Non-transient billing error — skipping remaining slides")
                     billing_abort = True
                     billing_abort_msg = str(e)
                     break
                 continue
 
-            # Poll Runway until the clip is ready
+            # Poll Kling until the clip is ready
             mp4_url = None
             poll_count = 0
             while True:
@@ -3740,21 +3772,19 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                     break
                 poll_count += 1
                 try:
-                    status_obj = _runway_client.tasks.retrieve(task_id)
-                    runway_status = status_obj.status
+                    kling_status, mp4_url, status_msg = _kling_poll_task(task_id)
                 except Exception as e:
                     _log(f"slide {slide_num} poll error: {e}")
                     break
-                if runway_status == "SUCCEEDED":
-                    mp4_url = status_obj.output[0] if status_obj.output else None
-                    _log(f"slide {slide_num} ({i+1}/{n}) Runway SUCCEEDED after {poll_count} polls")
+                if kling_status == "succeed":
+                    _log(f"slide {slide_num} ({i+1}/{n}) Kling SUCCEEDED after {poll_count} polls")
                     break
-                elif runway_status == "FAILED":
-                    failure_reason = getattr(status_obj, "failure", "") or getattr(status_obj, "failureCode", "")
-                    _log(f"slide {slide_num} ({i+1}/{n}) Runway FAILED (reason: {failure_reason})")
+                elif kling_status == "failed":
+                    _log(f"slide {slide_num} ({i+1}/{n}) Kling FAILED (reason: {status_msg})")
+                    mp4_url = None
                     break
                 else:
-                    _log(f"slide {slide_num} still generating (poll {poll_count}, status={runway_status})")
+                    _log(f"slide {slide_num} still generating (poll {poll_count}, status={kling_status})")
 
             if mp4_url:
                 try:
@@ -3792,7 +3822,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
 
         if billing_abort:
             _log(f"ABORTED — billing error after {new_succeeded}/{n} new clips: {billing_abort_msg}")
-            _set_result(f"error:Runway billing — not enough credits to complete generation")
+            _set_result(f"error:Kling billing — not enough credits to complete generation")
         elif new_succeeded == 0:
             _set_result("error:All slides failed — check logs for details")
         else:
@@ -3824,16 +3854,16 @@ def _cinemagraph_worker(article_id, images, prompts=None,
         # ──────────────────────────────────────────────────────────────────────
         summary = "\n".join(log_lines) if log_lines else "No log output"
         _add_activity_log(article_id, "Cinemagraph generation",
-                          "Model: runway gen4.5 (960×960, 5s)\n" + summary)
+                          "Model: kling-v2-master (1:1, 5s)\n" + summary)
 
 
 @app.route("/admin/articles/<int:article_id>/generate-cinemagraphs", methods=["POST"])
 @login_required
 @admin_required
 def admin_article_generate_cinemagraphs(article_id):
-    """Start a background thread for per-slide cinemagraph generation via Runway Gen-4."""
-    if not _runway_client:
-        return jsonify({"error": "Runway ML not configured. Set RUNWAY_API_KEY."}), 400
+    """Start a background thread for per-slide cinemagraph generation via Kling AI."""
+    if not _kling_enabled:
+        return jsonify({"error": "Kling AI not configured. Set KLING_ACCESS_KEY and KLING_SECRET_KEY."}), 400
 
     status_key = f"cinemagraph_status_{article_id}"
     current_status = get_setting(status_key)
@@ -3940,63 +3970,54 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
         _log(f"re-running slide {slide_idx + 1} with prompt: {prompt[:80]}")
         _log(f"seed: {slide_seed}")
 
-        # Resolve image
-        if img_url.startswith("https://"):
-            prompt_image = img_url
-            _log("using GCS URL")
-        else:
-            img_path = resolve_image_to_local_path(img_url)
-            if img_path and img_path.exists():
-                img_bytes = img_path.read_bytes()
-                img_b64 = base64.b64encode(img_bytes).decode()
-                ext = img_path.suffix.lower()
-                mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
-                prompt_image = f"data:{mime};base64,{img_b64}"
-                _log(f"using base64 ({mime}, {len(img_bytes)//1024}KB)")
-            else:
-                _log(f"image not found: {img_url}")
-                return
-
+        # Resolve image to base64 for Kling
         try:
-            task = _runway_client.image_to_video.create(
-                model="gen4.5",
-                prompt_image=prompt_image,
-                prompt_text=prompt or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
-                ratio="960:960",
-                duration=5,
-                seed=slide_seed,
-            )
-            task_id = task.id
-            _log(f"Runway task_id={task_id}")
-        except Exception as e:
-            if _is_runway_billing_error(e):
-                _log(f"Runway submit FAILED (billing/credits): {e}")
+            if img_url.startswith("https://"):
+                image_b64 = _resolve_image_to_base64(img_url)
+                _log("using GCS URL → base64")
             else:
-                _log(f"Runway submit FAILED: {e}")
+                img_path = resolve_image_to_local_path(img_url)
+                if img_path and img_path.exists():
+                    image_b64 = base64.b64encode(img_path.read_bytes()).decode()
+                    _log(f"using local file → base64 ({len(img_path.read_bytes())//1024}KB)")
+                else:
+                    _log(f"image not found: {img_url}")
+                    return
+        except Exception as e:
+            _log(f"image resolve FAILED: {e}")
             return
 
-        # Poll until ready
+        slide_prompt = prompt or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
+        try:
+            task_id = _kling_create_task(image_b64, slide_prompt)
+            _log(f"Kling task_id={task_id}")
+        except Exception as e:
+            if _is_kling_billing_error(e):
+                _log(f"Kling submit FAILED (billing/credits): {e}")
+            else:
+                _log(f"Kling submit FAILED: {e}")
+            return
+
+        # Poll Kling until ready
         mp4_url = None
         poll_count = 0
         while True:
             time.sleep(6)
             poll_count += 1
             try:
-                status_obj = _runway_client.tasks.retrieve(task_id)
-                runway_status = status_obj.status
+                kling_status, mp4_url, status_msg = _kling_poll_task(task_id)
             except Exception as e:
                 _log(f"poll error: {e}")
                 break
-            if runway_status == "SUCCEEDED":
-                mp4_url = status_obj.output[0] if status_obj.output else None
+            if kling_status == "succeed":
                 _log(f"SUCCEEDED after {poll_count} polls")
                 break
-            elif runway_status == "FAILED":
-                reason = getattr(status_obj, "failure", "") or getattr(status_obj, "failureCode", "")
-                _log(f"FAILED (reason: {reason})")
+            elif kling_status == "failed":
+                _log(f"FAILED (reason: {status_msg})")
+                mp4_url = None
                 break
             else:
-                _log(f"still generating (poll {poll_count}, status={runway_status})")
+                _log(f"still generating (poll {poll_count}, status={kling_status})")
 
         if mp4_url:
             r = http_requests.get(mp4_url, timeout=120)
@@ -4053,16 +4074,16 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
         # Activity log entry
         summary = "\n".join(log_lines) if log_lines else "No log output"
         _add_activity_log(article_id, f"Cinemagraph re-run slide {slide_idx + 1}",
-                          "Model: runway gen4.5 (960×960, 5s)\n" + summary)
+                          "Model: kling-v2-master (1:1, 5s)\n" + summary)
 
 
 @app.route("/admin/articles/<int:article_id>/regenerate-cinemagraph-slide", methods=["POST"])
 @login_required
 @admin_required
 def admin_article_regenerate_cinemagraph_slide(article_id):
-    """Re-run Runway Gen-4 for a single cinemagraph slide."""
-    if not _runway_client:
-        return jsonify({"error": "Runway ML not configured."}), 400
+    """Re-run Kling AI for a single cinemagraph slide."""
+    if not _kling_enabled:
+        return jsonify({"error": "Kling AI not configured."}), 400
 
     status_key = f"cinemagraph_status_{article_id}"
     current_status = get_setting(status_key)
@@ -4327,9 +4348,9 @@ def admin_article_archive_all_cinemagraphs(article_id):
 @login_required
 @admin_required
 def admin_article_generate_ai_video(article_id):
-    """Start a background thread for Runway Gen-4 generation; return immediately."""
-    if not _runway_client:
-        return jsonify({"error": "Runway ML not configured. Set RUNWAY_API_KEY."}), 400
+    """Start a background thread for Kling AI generation; return immediately."""
+    if not _kling_enabled:
+        return jsonify({"error": "Kling AI not configured. Set KLING_ACCESS_KEY and KLING_SECRET_KEY."}), 400
 
     # Prevent double-start
     row = query_one("SELECT video_ai_status FROM articles WHERE id = %s", (article_id,))
