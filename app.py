@@ -3516,7 +3516,7 @@ def _ai_video_worker(article_id, images, prompts, ts):
 
             try:
                 task = _runway_client.image_to_video.create(
-                    model="gen4_turbo",
+                    model="gen4.5",
                     prompt_image=prompt_image,
                     prompt_text=prompt_text,
                     ratio="960:960",
@@ -3712,7 +3712,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
             _log(f"slide {slide_num} seed: {slide_seed}")
             try:
                 task = _runway_client.image_to_video.create(
-                    model="gen4_turbo",
+                    model="gen4.5",
                     prompt_image=prompt_image,
                     prompt_text=slide_prompt,
                     ratio="960:960",
@@ -3958,7 +3958,7 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
 
         try:
             task = _runway_client.image_to_video.create(
-                model="gen4_turbo",
+                model="gen4.5",
                 prompt_image=prompt_image,
                 prompt_text=prompt or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
                 ratio="960:960",
