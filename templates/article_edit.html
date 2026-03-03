@@ -469,13 +469,13 @@
     </div>
 
     <!-- ══════════════════════════════════════════════════════════
-         Component D — Cinemagraph (Runway Gen-4 per slide)
+         Component D — Cinemagraph (Luma Ray-2 per slide)
          ══════════════════════════════════════════════════════════ -->
     <div class="card mt-3 mb-4" id="cinemagraph-card">
         <div class="card-header position-relative pe-5">
             <h5 class="mb-0">Cinemagraph</h5>
             <p class="text-muted small mb-2 mt-1">
-                Each slide animated via Runway Gen-4 Turbo (5 s loop). ~$2.50/run, ~5–15 min.
+                Each slide animated via Luma Ray-2 (5 s loop). ~5–15 min.
             </p>
             <!-- Locked placeholder: visible until carousel images exist -->
             <button type="button" id="cinemagraph-locked-btn" class="btn btn-sm btn-secondary"
@@ -956,14 +956,14 @@
     </div>
 
     <!-- ══════════════════════════════════════════════════════════
-         Component C — AI Explainer Video (Runway ML)
+         Component C — AI Explainer Video (Luma AI)
          ══════════════════════════════════════════════════════════ -->
     <div class="card mt-3 mb-4" id="ai-video-card">
         <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
             <div>
                 <h5 class="mb-0">AI Explainer Video</h5>
                 <p class="text-muted small mb-0 mt-1">
-                    Each carousel image animated via Runway Gen-4 Turbo (5 s per clip) then merged.
+                    Each carousel image animated via Luma Ray-2 (5 s per clip) then merged.
                     ~10–20 min, ~$0.50–1.00.
                 </p>
             </div>
@@ -1078,7 +1078,7 @@
             <div class="modal-body">
                 <video id="cine-edit-preview" autoplay loop muted playsinline
                        class="w-100 mb-3" style="border-radius:6px; aspect-ratio:1/1; object-fit:cover; display:none;"></video>
-                <label class="form-label small fw-semibold">Runway Prompt</label>
+                <label class="form-label small fw-semibold">Luma Prompt</label>
                 <textarea id="cine-edit-prompt" class="form-control font-monospace small" rows="4"
                           placeholder="Describe the motion for this slide…"></textarea>
                 <p class="text-muted small mt-1 mb-0">Leave blank to use the default atmospheric motion prompt.</p>
@@ -1174,7 +1174,7 @@
             </div>
             <div class="modal-body">
                 <p class="text-muted small mb-2">
-                    This prompt is sent to Runway Gen-4 Turbo for every slide in this article that doesn't have a custom prompt set.
+                    This prompt is sent to Luma Ray-2 for every slide in this article that doesn't have a custom prompt set.
                     Changes here affect future generations only — existing clips are not re-run.
                 </p>
                 <textarea id="cine-default-prompt-text" class="form-control font-monospace small" rows="5"
@@ -2873,7 +2873,7 @@ function narratedFinish(error) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// COMPONENT C — AI Explainer Video (Runway ML)
+// COMPONENT C — AI Explainer Video (Luma AI)
 // ════════════════════════════════════════════════════════════════
 let aiVideoAbortCtrl = null;
 
@@ -2909,7 +2909,7 @@ function _aiVideoApplyStatus(aiStatus, nSlides) {
         const pct   = Math.round((done / total) * 85);
         prgEl.style.width = pct + '%';
         statusEl.textContent = done === 0
-            ? `Submitting clips to Runway… (0 / ${total} done)`
+            ? `Submitting clips to Luma… (0 / ${total} done)`
             : `${done} / ${total} clips done — merging when all complete…`;
         // Colour the first `done` tiles green
         for (let i = 1; i <= total; i++) {
@@ -2997,7 +2997,7 @@ function _aiVideoPoll() {
 }
 
 function aiVideoStop() {
-    /* There is no server-side cancel (Runway tasks are already submitted).
+    /* There is no server-side cancel (Luma tasks are already submitted).
        We just reset the UI; the background thread will finish and save the result. */
     _aiVideoFinish(null);
     document.getElementById('ai-video-status-text').textContent =
@@ -3094,7 +3094,7 @@ function _aiVideoFinish(error) {
 })();
 
 // ════════════════════════════════════════════════════════════════
-// COMPONENT D — Cinemagraph (Runway Gen-4 per slide)
+// COMPONENT D — Cinemagraph (Luma Ray-2 per slide)
 // ════════════════════════════════════════════════════════════════
 
 let _CINE_DEFAULT_PROMPT = CINEMAGRAPH_PROMPT; // global default from site_settings
@@ -3467,15 +3467,15 @@ function _cinemagraphApplyStatus(status, nSlides) {
         const total    = parseInt(m[2]) || nSlides || 10;
         const subState = m[3] || '';
         // Fractional offset per sub-status: moves bar within the current clip
-        const offset = subState === 'processing' ? 0.6
-                     : subState === 'submitted'  ? 0.2
+        const offset = subState === 'dreaming' ? 0.6
+                     : subState === 'queued'   ? 0.2
                      : 0;
         const pct = total ? Math.min(99, Math.round((done + offset) / total * 100)) : 0;
         if (prgEl) prgEl.style.width = pct + '%';
         if (statusEl) {
-            if (subState === 'processing') {
+            if (subState === 'dreaming') {
                 statusEl.textContent = done + '/' + total + ' clips done — clip ' + (done + 1) + ' generating…';
-            } else if (subState === 'submitted') {
+            } else if (subState === 'queued') {
                 statusEl.textContent = done + '/' + total + ' clips done — clip ' + (done + 1) + ' queued…';
             } else {
                 statusEl.textContent = done + '/' + total + ' clips done';

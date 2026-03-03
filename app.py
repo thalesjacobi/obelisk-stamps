@@ -105,85 +105,56 @@ _IG_CAPTION_DEFAULT_PROMPT = (
     "Return ONLY the caption text, no extra commentary."
 )
 
-# --- Kling AI client (image-to-video) ---
+# --- Luma AI client (image-to-video) ---
 try:
-    import jwt as _jwt_module
+    from lumaai import LumaAI as _LumaAI
 except ImportError:
-    _jwt_module = None
+    _LumaAI = None
 
-KLING_ACCESS_KEY = os.getenv("KLING_ACCESS_KEY", "")
-KLING_SECRET_KEY = os.getenv("KLING_SECRET_KEY", "")
-_kling_enabled = bool(KLING_ACCESS_KEY and KLING_SECRET_KEY and _jwt_module)
+LUMAAI_API_KEY = os.getenv("LUMAAI_API_KEY", "")
+_luma_client = None
+_luma_enabled = False
 
-if _kling_enabled:
-    print("Kling AI enabled")
+if LUMAAI_API_KEY and _LumaAI:
+    try:
+        _luma_client = _LumaAI(auth_token=LUMAAI_API_KEY)
+        _luma_enabled = True
+        print("Luma AI enabled")
+    except Exception as e:
+        print(f"WARNING: Luma AI init failed: {e}")
 else:
-    if not KLING_ACCESS_KEY or not KLING_SECRET_KEY:
-        print("INFO: KLING_ACCESS_KEY/KLING_SECRET_KEY not set — AI video generation disabled")
-
-_KLING_BASE_URL = "https://api.klingai.com"
+    if not LUMAAI_API_KEY:
+        print("INFO: LUMAAI_API_KEY not set — AI video generation disabled")
 
 
-def _kling_auth_header():
-    """Generate a fresh JWT auth header for Kling API calls."""
-    now = int(time.time())
-    payload = {"iss": KLING_ACCESS_KEY, "exp": now + 1800, "nbf": now - 5}
-    token = _jwt_module.encode(payload, KLING_SECRET_KEY, algorithm="HS256",
-                               headers={"alg": "HS256", "typ": "JWT"})
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-
-
-def _is_kling_billing_error(msg):
-    """Non-transient Kling errors — stop immediately instead of retrying."""
-    msg_lower = str(msg).lower()
+def _is_luma_billing_error(exc):
+    """Non-transient Luma errors — stop immediately instead of retrying."""
+    msg_lower = str(exc).lower()
     return any(phrase in msg_lower for phrase in [
         "insufficient", "credits", "billing", "quota", "balance",
+        "permissiondenied", "403",
     ])
 
 
-def _resolve_image_to_base64(img_url):
-    """Download image URL → raw base64 string (no data: prefix). Kling requires this format."""
-    if img_url.startswith("data:"):
-        return img_url.split(",", 1)[1]
-    r = http_requests.get(img_url, timeout=60)
-    r.raise_for_status()
-    return base64.b64encode(r.content).decode()
-
-
-def _kling_create_task(image_b64, prompt_text):
-    """Submit an image-to-video task to Kling. Returns task_id."""
-    resp = http_requests.post(
-        f"{_KLING_BASE_URL}/v1/videos/image2video",
-        headers=_kling_auth_header(),
-        json={
-            "model_name": "kling-v2-master",
-            "image": image_b64,
-            "prompt": prompt_text or "",
-            "duration": "5",
-            "mode": "std",
-            "aspect_ratio": "1:1",
-            "cfg_scale": 0.5,
-        },
-        timeout=30,
+def _luma_create_task(image_url, prompt_text):
+    """Submit an image-to-video task to Luma. Returns generation ID."""
+    gen = _luma_client.generations.create(
+        prompt=prompt_text or "gentle subtle motion",
+        model="ray-2",
+        keyframes={"frame0": {"type": "image", "url": image_url}},
+        aspect_ratio="1:1",
+        duration="5",
     )
-    data = resp.json()
-    if data.get("code") != 0:
-        raise RuntimeError(data.get("message", f"Kling API error code {data.get('code')}"))
-    return data["data"]["task_id"]
+    return gen.id
 
 
-def _kling_poll_task(task_id):
-    """Poll a Kling task. Returns (status, mp4_url_or_None, status_msg)."""
-    resp = http_requests.get(
-        f"{_KLING_BASE_URL}/v1/videos/image2video/{task_id}",
-        headers=_kling_auth_header(),
-        timeout=30,
-    )
-    data = resp.json().get("data", {})
-    status = data.get("task_status", "unknown")
-    videos = (data.get("task_result") or {}).get("videos") or []
-    mp4_url = videos[0]["url"] if videos and status == "succeed" else None
-    return status, mp4_url, data.get("task_status_msg", "")
+def _luma_poll_task(gen_id):
+    """Poll a Luma generation. Returns (state, mp4_url_or_None, failure_reason)."""
+    gen = _luma_client.generations.retrieve(gen_id)
+    state = gen.state  # "queued", "dreaming", "completed", "failed"
+    mp4_url = gen.assets.video if state == "completed" and gen.assets else None
+    reason = gen.failure_reason if state == "failed" else ""
+    return state, mp4_url, reason or ""
 
 
 # --- Google Cloud Storage (optional — for persistent file hosting) ---
@@ -3538,48 +3509,48 @@ def admin_article_generate_narrated_video(article_id):
 
 
 def _ai_video_worker(article_id, images, prompts, ts):
-    """Background thread: Kling AI per slide → FFmpeg concat → save URL to DB."""
+    """Background thread: Luma AI per slide → FFmpeg concat → save URL to DB."""
     n_slides = len(images)
     video_dir = Path(f"static/articles/{article_id}/video")
     video_dir.mkdir(parents=True, exist_ok=True)
     temp_clips = []
 
     try:
-        # ── Per-slide: submit to Kling + poll ─────────────────────────────────
+        # ── Per-slide: submit to Luma + poll ──────────────────────────────────
         clip_paths = []
         for i, img_url in enumerate(images):
             prompt_text = prompts[i] if i < len(prompts) else ""
 
-            # Resolve image to base64 for Kling
-            try:
-                if img_url.startswith("https://"):
-                    image_b64 = _resolve_image_to_base64(img_url)
+            # Resolve image URL for Luma (needs public URL)
+            if img_url.startswith("https://"):
+                luma_img_url = img_url
+            else:
+                img_path = resolve_image_to_local_path(img_url)
+                if img_path and img_path.exists():
+                    gcs_obj = f"articles/{article_id}/temp/slide_{i}_{ts}.jpg"
+                    luma_img_url = upload_to_gcs(img_path, gcs_obj, content_type="image/jpeg")
+                    if not luma_img_url:
+                        continue
                 else:
-                    img_path = resolve_image_to_local_path(img_url)
-                    if img_path and img_path.exists():
-                        image_b64 = base64.b64encode(img_path.read_bytes()).decode()
-                    else:
-                        continue  # skip missing image
-            except Exception:
-                continue
+                    continue  # skip missing image
 
             try:
-                task_id = _kling_create_task(image_b64, prompt_text)
+                gen_id = _luma_create_task(luma_img_url, prompt_text)
             except Exception:
                 continue
 
-            # Poll Kling until the clip is ready
+            # Poll Luma until the clip is ready
             mp4_url = None
             while True:
                 time.sleep(6)
                 try:
-                    kling_status, mp4_url, _msg = _kling_poll_task(task_id)
+                    luma_status, mp4_url, _msg = _luma_poll_task(gen_id)
                 except Exception:
                     break
 
-                if kling_status == "succeed":
+                if luma_status == "completed":
                     break
-                elif kling_status == "failed":
+                elif luma_status == "failed":
                     break
                 # else: still generating — keep polling
 
@@ -3661,7 +3632,7 @@ def _ai_video_worker(article_id, images, prompts, ts):
 
 def _cinemagraph_worker(article_id, images, prompts=None,
                         slot_indices=None, existing_urls=None, existing_seeds=None):
-    """Background thread: Kling AI per carousel slide → store MP4 GCS URLs in DB.
+    """Background thread: Luma AI per carousel slide → store MP4 GCS URLs in DB.
 
     Args:
         images:         list of source image URLs to generate clips for
@@ -3738,42 +3709,42 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                 break
             _set_status(f"running:{i}/{n}")
             _flush_log()
-            _log(f"slide {slide_num} ({i+1}/{n}) submitting to Kling")
+            _log(f"slide {slide_num} ({i+1}/{n}) submitting to Luma")
 
-            # Resolve image to base64 for Kling
-            try:
-                if img_url.startswith("https://"):
-                    image_b64 = _resolve_image_to_base64(img_url)
-                    _log(f"slide {slide_num} using GCS URL → base64")
-                else:
-                    img_path = resolve_image_to_local_path(img_url)
-                    if img_path and img_path.exists():
-                        image_b64 = base64.b64encode(img_path.read_bytes()).decode()
-                        _log(f"slide {slide_num} using local file → base64 ({len(img_path.read_bytes())//1024}KB)")
-                    else:
-                        _log(f"slide {slide_num} image not found: {img_url}")
+            # Resolve image URL for Luma (needs public URL)
+            if img_url.startswith("https://"):
+                luma_img_url = img_url
+                _log(f"slide {slide_num} using GCS URL")
+            else:
+                img_path = resolve_image_to_local_path(img_url)
+                if img_path and img_path.exists():
+                    gcs_obj = f"articles/{article_id}/temp/slide_{slide_num}_{ts}.jpg"
+                    luma_img_url = upload_to_gcs(img_path, gcs_obj, content_type="image/jpeg")
+                    if not luma_img_url:
+                        _log(f"slide {slide_num} local image upload to GCS failed")
                         continue
-            except Exception as e:
-                _log(f"slide {slide_num} image resolve FAILED: {e}")
-                continue
+                    _log(f"slide {slide_num} using local file → uploaded to GCS")
+                else:
+                    _log(f"slide {slide_num} image not found: {img_url}")
+                    continue
 
             slide_prompt = (prompts[i] if prompts and i < len(prompts) and prompts[i] else None) or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
             slide_seed = random.randint(0, 4294967295)
             _log(f"slide {slide_num} prompt: {slide_prompt[:80]}")
             _log(f"slide {slide_num} seed: {slide_seed}")
             try:
-                task_id = _kling_create_task(image_b64, slide_prompt)
-                _log(f"slide {slide_num} Kling task_id={task_id}")
+                gen_id = _luma_create_task(luma_img_url, slide_prompt)
+                _log(f"slide {slide_num} Luma gen_id={gen_id}")
             except Exception as e:
-                _log(f"slide {slide_num} Kling submit FAILED: {e}")
-                if _is_kling_billing_error(e):
+                _log(f"slide {slide_num} Luma submit FAILED: {e}")
+                if _is_luma_billing_error(e):
                     _log("Non-transient billing error — skipping remaining slides")
                     billing_abort = True
                     billing_abort_msg = str(e)
                     break
                 continue
 
-            # Poll Kling until the clip is ready
+            # Poll Luma until the clip is ready
             mp4_url = None
             poll_count = 0
             last_sub_status = None
@@ -3784,23 +3755,23 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                     break
                 poll_count += 1
                 try:
-                    kling_status, mp4_url, status_msg = _kling_poll_task(task_id)
+                    luma_status, mp4_url, status_msg = _luma_poll_task(gen_id)
                 except Exception as e:
                     _log(f"slide {slide_num} poll error: {e}")
                     break
-                if kling_status == "succeed":
-                    _log(f"slide {slide_num} ({i+1}/{n}) Kling SUCCEEDED after {poll_count} polls")
+                if luma_status == "completed":
+                    _log(f"slide {slide_num} ({i+1}/{n}) Luma SUCCEEDED after {poll_count} polls")
                     break
-                elif kling_status == "failed":
-                    _log(f"slide {slide_num} ({i+1}/{n}) Kling FAILED (reason: {status_msg})")
+                elif luma_status == "failed":
+                    _log(f"slide {slide_num} ({i+1}/{n}) Luma FAILED (reason: {status_msg})")
                     mp4_url = None
                     break
                 else:
-                    _log(f"slide {slide_num} still generating (poll {poll_count}, status={kling_status})")
-                    if kling_status != last_sub_status:
-                        _set_status(f"running:{i}/{n}:{kling_status}")
+                    _log(f"slide {slide_num} still generating (poll {poll_count}, status={luma_status})")
+                    if luma_status != last_sub_status:
+                        _set_status(f"running:{i}/{n}:{luma_status}")
                         _flush_log()
-                        last_sub_status = kling_status
+                        last_sub_status = luma_status
 
             if mp4_url:
                 try:
@@ -3839,7 +3810,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
 
         if billing_abort:
             _log(f"ABORTED — billing error after {new_succeeded}/{n} new clips: {billing_abort_msg}")
-            _set_result(f"error:Kling billing — not enough credits to complete generation")
+            _set_result(f"error:Luma billing — not enough credits to complete generation")
         elif new_succeeded == 0:
             _set_result("error:All slides failed — check logs for details")
         else:
@@ -3871,16 +3842,16 @@ def _cinemagraph_worker(article_id, images, prompts=None,
         # ──────────────────────────────────────────────────────────────────────
         summary = "\n".join(log_lines) if log_lines else "No log output"
         _add_activity_log(article_id, "Cinemagraph generation",
-                          "Model: kling-v2-master (1:1, 5s)\n" + summary)
+                          "Model: luma ray-2 (1:1, 5s)\n" + summary)
 
 
 @app.route("/admin/articles/<int:article_id>/generate-cinemagraphs", methods=["POST"])
 @login_required
 @admin_required
 def admin_article_generate_cinemagraphs(article_id):
-    """Start a background thread for per-slide cinemagraph generation via Kling AI."""
-    if not _kling_enabled:
-        return jsonify({"error": "Kling AI not configured. Set KLING_ACCESS_KEY and KLING_SECRET_KEY."}), 400
+    """Start a background thread for per-slide cinemagraph generation via Luma AI."""
+    if not _luma_enabled:
+        return jsonify({"error": "Luma AI not configured. Set LUMAAI_API_KEY."}), 400
 
     status_key = f"cinemagraph_status_{article_id}"
     current_status = get_setting(status_key)
@@ -3999,36 +3970,36 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
         _log(f"re-running slide {slide_idx + 1} with prompt: {prompt[:80]}")
         _log(f"seed: {slide_seed}")
 
-        # Resolve image to base64 for Kling
-        try:
-            if img_url.startswith("https://"):
-                image_b64 = _resolve_image_to_base64(img_url)
-                _log("using GCS URL → base64")
-            else:
-                img_path = resolve_image_to_local_path(img_url)
-                if img_path and img_path.exists():
-                    image_b64 = base64.b64encode(img_path.read_bytes()).decode()
-                    _log(f"using local file → base64 ({len(img_path.read_bytes())//1024}KB)")
-                else:
-                    _log(f"image not found: {img_url}")
+        # Resolve image URL for Luma (needs public URL)
+        if img_url.startswith("https://"):
+            luma_img_url = img_url
+            _log("using GCS URL")
+        else:
+            img_path = resolve_image_to_local_path(img_url)
+            if img_path and img_path.exists():
+                gcs_obj = f"articles/{article_id}/temp/slide_{slide_idx + 1}_{ts}.jpg"
+                luma_img_url = upload_to_gcs(img_path, gcs_obj, content_type="image/jpeg")
+                if not luma_img_url:
+                    _log("local image upload to GCS failed")
                     return
-        except Exception as e:
-            _log(f"image resolve FAILED: {e}")
-            return
+                _log("using local file → uploaded to GCS")
+            else:
+                _log(f"image not found: {img_url}")
+                return
 
         slide_prompt = prompt or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
         try:
-            task_id = _kling_create_task(image_b64, slide_prompt)
-            _log(f"Kling task_id={task_id}")
+            gen_id = _luma_create_task(luma_img_url, slide_prompt)
+            _log(f"Luma gen_id={gen_id}")
             _flush_log()
         except Exception as e:
-            if _is_kling_billing_error(e):
-                _log(f"Kling submit FAILED (billing/credits): {e}")
+            if _is_luma_billing_error(e):
+                _log(f"Luma submit FAILED (billing/credits): {e}")
             else:
-                _log(f"Kling submit FAILED: {e}")
+                _log(f"Luma submit FAILED: {e}")
             return
 
-        # Poll Kling until ready
+        # Poll Luma until ready
         mp4_url = None
         poll_count = 0
         last_sub_status = None
@@ -4036,22 +4007,22 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
             time.sleep(6)
             poll_count += 1
             try:
-                kling_status, mp4_url, status_msg = _kling_poll_task(task_id)
+                luma_status, mp4_url, status_msg = _luma_poll_task(gen_id)
             except Exception as e:
                 _log(f"poll error: {e}")
                 break
-            if kling_status == "succeed":
+            if luma_status == "completed":
                 _log(f"SUCCEEDED after {poll_count} polls")
                 break
-            elif kling_status == "failed":
+            elif luma_status == "failed":
                 _log(f"FAILED (reason: {status_msg})")
                 mp4_url = None
                 break
             else:
-                _log(f"still generating (poll {poll_count}, status={kling_status})")
-                if kling_status != last_sub_status:
+                _log(f"still generating (poll {poll_count}, status={luma_status})")
+                if luma_status != last_sub_status:
                     _flush_log()
-                    last_sub_status = kling_status
+                    last_sub_status = luma_status
 
         if mp4_url:
             r = http_requests.get(mp4_url, timeout=120)
@@ -4108,16 +4079,16 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
         # Activity log entry
         summary = "\n".join(log_lines) if log_lines else "No log output"
         _add_activity_log(article_id, f"Cinemagraph re-run slide {slide_idx + 1}",
-                          "Model: kling-v2-master (1:1, 5s)\n" + summary)
+                          "Model: luma ray-2 (1:1, 5s)\n" + summary)
 
 
 @app.route("/admin/articles/<int:article_id>/regenerate-cinemagraph-slide", methods=["POST"])
 @login_required
 @admin_required
 def admin_article_regenerate_cinemagraph_slide(article_id):
-    """Re-run Kling AI for a single cinemagraph slide."""
-    if not _kling_enabled:
-        return jsonify({"error": "Kling AI not configured."}), 400
+    """Re-run Luma AI for a single cinemagraph slide."""
+    if not _luma_enabled:
+        return jsonify({"error": "Luma AI not configured. Set LUMAAI_API_KEY."}), 400
 
     status_key = f"cinemagraph_status_{article_id}"
     current_status = get_setting(status_key)
@@ -4382,9 +4353,9 @@ def admin_article_archive_all_cinemagraphs(article_id):
 @login_required
 @admin_required
 def admin_article_generate_ai_video(article_id):
-    """Start a background thread for Kling AI generation; return immediately."""
-    if not _kling_enabled:
-        return jsonify({"error": "Kling AI not configured. Set KLING_ACCESS_KEY and KLING_SECRET_KEY."}), 400
+    """Start a background thread for Luma AI generation; return immediately."""
+    if not _luma_enabled:
+        return jsonify({"error": "Luma AI not configured. Set LUMAAI_API_KEY."}), 400
 
     # Prevent double-start
     row = query_one("SELECT video_ai_status FROM articles WHERE id = %s", (article_id,))
