@@ -549,16 +549,16 @@ def _make_cinemagraph_overlay_png(punchline, slide_index, total_slides, width=96
     gradient   = Image.new("RGBA", (w, gradient_h), (0, 0, 0, 0))
     draw_g     = ImageDraw.Draw(gradient)
     for y in range(gradient_h):
-        alpha = int(255 * (y / gradient_h) ** 1.0)
+        alpha = int(40 + 215 * (y / gradient_h) ** 0.7)
         draw_g.line([(0, y), (w, y)], fill=(0, 0, 0, alpha))
     overlay.paste(gradient, (0, h - gradient_h), gradient)
 
     # ── Font loading ─────────────────────────────────────────────────────────
     try:
-        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.092))
+        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.083))
         font_hint = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.021))
     except Exception:
-        font_main = ImageFont.load_default(size=40)
+        font_main = ImageFont.load_default(size=36)
         font_hint = ImageFont.load_default(size=20)
 
     draw  = ImageDraw.Draw(overlay)
@@ -580,10 +580,10 @@ def _make_cinemagraph_overlay_png(punchline, slide_index, total_slides, width=96
     if line:
         lines.append(line)
 
-    line_h       = int(font_main.size * 1.05)
+    line_h       = int(font_main.size * 0.95)
     hint_h       = int(font_hint.size * 2.4)
     total_text_h = len(lines) * line_h + hint_h
-    text_y       = h - total_text_h - int(h * 0.04)
+    text_y       = h - total_text_h - int(h * 0.015)
 
     for line_text in lines:
         draw.text((pad_x, text_y), line_text, font=font_main,
