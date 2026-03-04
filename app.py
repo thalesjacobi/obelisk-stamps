@@ -785,10 +785,20 @@ def init_site_settings():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS site_settings (
             `key` VARCHAR(100) PRIMARY KEY,
-            value TEXT,
+            value MEDIUMTEXT,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
     """)
+    # Migrate existing TEXT column to MEDIUMTEXT if not already upgraded
+    cur.execute("""
+        SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'site_settings'
+          AND COLUMN_NAME = 'value'
+    """)
+    col_type = cur.fetchone()
+    if col_type and col_type[0].lower() == 'text':
+        cur.execute("ALTER TABLE site_settings MODIFY COLUMN value MEDIUMTEXT")
     # Seed carousel_style default only on first run (INSERT IGNORE skips if key exists)
     cur.execute(
         "INSERT IGNORE INTO site_settings (`key`, value) VALUES ('carousel_style', %s)",
@@ -4451,6 +4461,9 @@ def _add_activity_log(article_id, title, content):
     key = f"ig_activity_log_{article_id}"
     raw = get_setting(key)
     entries = json.loads(raw) if raw else []
+    # Cap each entry's content to avoid hitting column size limits
+    if len(content) > 4000:
+        content = content[:4000] + "\n… (truncated)"
     entries.append({
         "title":     title,
         "timestamp": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
