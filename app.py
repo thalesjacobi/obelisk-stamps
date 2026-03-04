@@ -4728,6 +4728,39 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
         carousel_id = data["id"]
         print(f"IG worker: carousel container id={carousel_id}", flush=True)
 
+        # ── 5b. Wait for carousel container to be FINISHED ────────────────
+        _set_status("running:carousel_poll")
+        print(f"IG worker: waiting for carousel container {carousel_id} to be FINISHED", flush=True)
+        deadline_c = _time.time() + 300
+        while _time.time() < deadline_c:
+            rc = _req.get(
+                f"{_IG_GRAPH_URL}/{carousel_id}",
+                params={"fields": "status_code,status", "access_token": access_token},
+                timeout=15,
+            )
+            cpoll   = rc.json()
+            cstatus = cpoll.get("status_code", "")
+            cdetail = cpoll.get("status", "")
+            if cstatus == "FINISHED":
+                print(f"IG worker: carousel container FINISHED", flush=True)
+                break
+            if cstatus == "ERROR":
+                err_msg = f"Carousel container ERROR: {cdetail}" if cdetail else "Carousel container ERROR"
+                print(f"IG worker: {err_msg}", flush=True)
+                _set_result(f"error:{err_msg}")
+                _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                                  f"Carousel container (id={carousel_id}) returned ERROR.\n"
+                                  f"Status detail: {cdetail or 'none'}")
+                _clear_status()
+                return
+            _time.sleep(5)
+        else:
+            _set_result("error:Carousel container timed out waiting for FINISHED")
+            _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                              f"Carousel container (id={carousel_id}) timed out after 5 minutes.")
+            _clear_status()
+            return
+
         # ── 6. Publish ────────────────────────────────────────────────────
         _set_status("running:publish")
         print(f"IG worker: publishing carousel {carousel_id}", flush=True)
