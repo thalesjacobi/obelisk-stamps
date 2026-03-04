@@ -150,7 +150,7 @@ def _luma_create_task(image_url, prompt_text):
 
 def _luma_poll_task(gen_id):
     """Poll a Luma generation. Returns (state, mp4_url_or_None, failure_reason)."""
-    gen = _luma_client.generations.retrieve(gen_id)
+    gen = _luma_client.generations.get(id=gen_id)
     state = gen.state  # "queued", "dreaming", "completed", "failed"
     mp4_url = gen.assets.video if state == "completed" and gen.assets else None
     reason = gen.failure_reason if state == "failed" else ""
@@ -3518,6 +3518,7 @@ def _ai_video_worker(article_id, images, prompts, ts):
     try:
         # ── Per-slide: submit to Luma + poll ──────────────────────────────────
         clip_paths = []
+        consecutive_failures = 0
         for i, img_url in enumerate(images):
             prompt_text = prompts[i] if i < len(prompts) else ""
 
@@ -3530,13 +3531,22 @@ def _ai_video_worker(article_id, images, prompts, ts):
                     gcs_obj = f"articles/{article_id}/temp/slide_{i}_{ts}.jpg"
                     luma_img_url = upload_to_gcs(img_path, gcs_obj, content_type="image/jpeg")
                     if not luma_img_url:
+                        consecutive_failures += 1
+                        if consecutive_failures >= 3:
+                            break
                         continue
                 else:
+                    consecutive_failures += 1
+                    if consecutive_failures >= 3:
+                        break
                     continue  # skip missing image
 
             try:
                 gen_id = _luma_create_task(luma_img_url, prompt_text)
             except Exception:
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    break
                 continue
 
             # Poll Luma until the clip is ready
@@ -3560,6 +3570,11 @@ def _ai_video_worker(article_id, images, prompts, ts):
                 clip_path.write_bytes(r.content)
                 clip_paths.append(clip_path)
                 temp_clips.append(clip_path)
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    break
 
             # Update progress counter in DB so the frontend can show N/M
             done_so_far = len(clip_paths)
@@ -3696,6 +3711,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
     cinemagraph_created_at = json.loads(_ca_row[0]) if _ca_row and _ca_row[0] else []
     while len(cinemagraph_created_at) < 10: cinemagraph_created_at.append(None)
     new_succeeded = 0
+    consecutive_failures = 0
     billing_abort = False
     billing_abort_msg = ""
 
@@ -3794,6 +3810,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                     cinemagraph_seeds[real_idx] = slide_seed
                     cinemagraph_created_at[real_idx] = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
                     new_succeeded += 1
+                    consecutive_failures = 0
                     _log(f"slide {slide_num} ({i+1}/{n}) saved → {saved_url}")
                     # Persist immediately so the frontend picks it up on the next poll
                     execute(
@@ -3804,6 +3821,14 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                     )
                 except Exception as e:
                     _log(f"slide {slide_num} save FAILED: {e}")
+                    consecutive_failures += 1
+            else:
+                if not _is_cancelled():
+                    consecutive_failures += 1
+
+            if consecutive_failures >= 3:
+                _log(f"ABORTING — {consecutive_failures} consecutive failures, stopping to prevent further cost")
+                break
 
             _set_status(f"running:{i+1}/{n}")
             _flush_log()
@@ -3811,6 +3836,9 @@ def _cinemagraph_worker(article_id, images, prompts=None,
         if billing_abort:
             _log(f"ABORTED — billing error after {new_succeeded}/{n} new clips: {billing_abort_msg}")
             _set_result(f"error:Luma billing — not enough credits to complete generation")
+        elif consecutive_failures >= 3:
+            _log(f"ABORTED — {consecutive_failures} consecutive failures after {new_succeeded}/{n} new clips")
+            _set_result(f"error:Aborted after {consecutive_failures} consecutive failures — check logs for details")
         elif new_succeeded == 0:
             _set_result("error:All slides failed — check logs for details")
         else:
