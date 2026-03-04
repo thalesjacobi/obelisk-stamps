@@ -5049,33 +5049,33 @@ def admin_article_generate_ig_caption(article_id):
     if not _openai_client:
         return jsonify({"error": "OpenAI is not configured on this server."}), 400
 
-    row = query_one(
-        "SELECT title, content, slug FROM articles WHERE id = %s",
-        (article_id,),
-    )
-    if not row:
-        return jsonify({"error": "Article not found."}), 404
-
-    title   = row[0] or ""
-    content = row[1] or ""
-    slug    = row[2] or ""
-
-    # Strip HTML tags to get plain text excerpt for context
-    import re as _re
-    plain = _re.sub(r"<[^>]+>", " ", content)
-    plain = _re.sub(r"\s+", " ", plain).strip()[:500]
-
-    site_url = os.getenv("SITE_URL", "").rstrip("/")
-    article_link = f"{site_url}/articles/{slug}" if site_url and slug else ""
-
-    # Per-article prompt takes priority, then global, then hardcoded default
-    system_msg = (
-        get_setting(f'ig_caption_prompt_{article_id}')
-        or get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT)
-    )
-    user_msg = f"Article title: {title}\n\nArticle summary: {plain}"
-
     try:
+        row = query_one(
+            "SELECT title, content, slug FROM articles WHERE id = %s",
+            (article_id,),
+        )
+        if not row:
+            return jsonify({"error": "Article not found."}), 404
+
+        title   = row[0] or ""
+        content = row[1] or ""
+        slug    = row[2] or ""
+
+        # Strip HTML tags to get plain text excerpt for context
+        import re as _re
+        plain = _re.sub(r"<[^>]+>", " ", content)
+        plain = _re.sub(r"\s+", " ", plain).strip()[:500]
+
+        site_url = os.getenv("SITE_URL", "").rstrip("/")
+        article_link = f"{site_url}/articles/{slug}" if site_url and slug else ""
+
+        # Per-article prompt takes priority, then global, then hardcoded default
+        system_msg = (
+            get_setting(f'ig_caption_prompt_{article_id}')
+            or get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT)
+        )
+        user_msg = f"Article title: {title}\n\nArticle summary: {plain}"
+
         response = _openai_client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -5085,19 +5085,22 @@ def admin_article_generate_ig_caption(article_id):
             max_tokens=600,
         )
         caption = response.choices[0].message.content.strip()
+
+        # Append call-to-action with article link
+        if article_link:
+            caption += f"\n\nWant to read the full article? Access the following link:\n{article_link}"
+
+        _add_activity_log(article_id, "Caption Generated (OpenAI)",
+                          f"Prompt: {system_msg[:120]}…\n\nGenerated caption:\n{caption[:300]}…")
+        return jsonify({"caption": caption})
+
     except Exception as e:
         print(f"IG caption generation error: {e}", flush=True)
-        _add_activity_log(article_id, "Caption Generation Failed",
-                          f"OpenAI error: {e}")
+        try:
+            _add_activity_log(article_id, "Caption Generation Failed", f"Error: {e}")
+        except Exception:
+            pass
         return jsonify({"error": f"Caption generation failed: {e}"}), 500
-
-    # Append call-to-action with article link
-    if article_link:
-        caption += f"\n\nWant to read the full article? Access the following link:\n{article_link}"
-
-    _add_activity_log(article_id, "Caption Generated (OpenAI)",
-                      f"Prompt: {system_msg[:120]}…\n\nGenerated caption:\n{caption[:300]}…")
-    return jsonify({"caption": caption})
 
 
 # ------------------------------------------------------------

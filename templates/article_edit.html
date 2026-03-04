@@ -1584,11 +1584,17 @@ function generateIgCaption(mode) {
     link.textContent = 'Generating…';
     link.style.pointerEvents = 'none';
     fetch('/admin/articles/' + ARTICLE_ID + '/generate-ig-caption', {method: 'POST'})
-        .then(function(r) { return r.json(); })
+        .then(function(r) {
+            var ct = r.headers.get('content-type') || '';
+            if (!r.ok && ct.indexOf('json') === -1) {
+                throw new Error('Server error ' + r.status);
+            }
+            return r.json();
+        })
         .then(function(d) {
             link.textContent = origText;
             link.style.pointerEvents = '';
-            if (d.error) { alert(d.error); return; }
+            if (d.error) { alert('Failed to generate caption: ' + d.error); return; }
             captionEl.value = d.caption;
             // Append article link if not already present in the generated caption
             if (ARTICLE_URL && d.caption.indexOf(ARTICLE_URL) === -1) {
