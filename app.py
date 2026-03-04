@@ -761,7 +761,6 @@ def init_articles_table():
                 "carousel_cinemagraph_log TEXT",
                 "carousel_cinemagraph_prompts TEXT",
                 "carousel_cinemagraph_archived TEXT",
-                "carousel_cinemagraph_seeds TEXT",
                 "carousel_created_at TEXT",
                 "carousel_archived_meta TEXT",
                 "carousel_cinemagraph_created_at TEXT"):
@@ -3178,7 +3177,7 @@ def admin_article_video_data(article_id):
     row = query_one(
         "SELECT video_narrated_url, video_narrated_script, video_ai_url, video_narrated_runs, "
         "video_ai_status, video_narrated_status, carousel_cinemagraphs, carousel_cinemagraph_log, "
-        "carousel_cinemagraph_prompts, carousel_cinemagraph_archived, carousel_cinemagraph_seeds, "
+        "carousel_cinemagraph_prompts, carousel_cinemagraph_archived, "
         "carousel_cinemagraph_created_at "
         "FROM articles WHERE id = %s",
         (article_id,),
@@ -3187,13 +3186,12 @@ def admin_article_video_data(article_id):
         return jsonify({"error": "Article not found"}), 404
     (narrated_url, narrated_script_raw, ai_url, narrated_runs_raw, ai_status, narrated_status,
      cinemagraphs_raw, cinemagraph_log_raw, cinemagraph_prompts_raw, cinemagraph_archived_raw,
-     cinemagraph_seeds_raw, cinemagraph_created_at_raw) = row
+     cinemagraph_created_at_raw) = row
     narrated_script          = json.loads(narrated_script_raw)          if narrated_script_raw          else []
     narrated_runs            = json.loads(narrated_runs_raw)            if narrated_runs_raw            else []
     cinemagraph_urls         = json.loads(cinemagraphs_raw)             if cinemagraphs_raw             else []
     cinemagraph_prompts      = json.loads(cinemagraph_prompts_raw)      if cinemagraph_prompts_raw      else []
     cinemagraph_archived     = json.loads(cinemagraph_archived_raw)     if cinemagraph_archived_raw     else []
-    cinemagraph_seeds        = json.loads(cinemagraph_seeds_raw)        if cinemagraph_seeds_raw        else []
     cinemagraph_created_at   = json.loads(cinemagraph_created_at_raw)   if cinemagraph_created_at_raw   else []
     cinemagraph_status   = get_setting(f"cinemagraph_status_{article_id}")
     cinemagraph_result   = get_setting(f"cinemagraph_result_{article_id}")
@@ -3206,7 +3204,6 @@ def admin_article_video_data(article_id):
         "ai_status":              ai_status or None,
         "cinemagraph_urls":       cinemagraph_urls,
         "cinemagraph_prompts":    cinemagraph_prompts,
-        "cinemagraph_seeds":      cinemagraph_seeds,
         "cinemagraph_archived":   cinemagraph_archived,
         "cinemagraph_created_at": cinemagraph_created_at,
         "cinemagraph_status":     cinemagraph_status or None,
@@ -3646,7 +3643,7 @@ def _ai_video_worker(article_id, images, prompts, ts):
 
 
 def _cinemagraph_worker(article_id, images, prompts=None,
-                        slot_indices=None, existing_urls=None, existing_seeds=None):
+                        slot_indices=None, existing_urls=None):
     """Background thread: Luma AI per carousel slide → store MP4 GCS URLs in DB.
 
     Args:
@@ -3656,7 +3653,6 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                         in the 10-slot cinemagraph array (e.g. [0, 3] means we
                         are generating clips for slots 1 and 4 only)
         existing_urls:  full 10-slot cinemagraph URL array (to merge new results into)
-        existing_seeds: full 10-slot seed array (to merge new seeds into)
     """
     n = len(images)
     ts = int(time.time())
@@ -3703,9 +3699,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
 
     # Start from existing arrays so we preserve clips that aren't being regenerated
     cinemagraph_urls  = list(existing_urls  or [])[:10]
-    cinemagraph_seeds = list(existing_seeds or [])[:10]
     while len(cinemagraph_urls)  < 10: cinemagraph_urls.append(None)
-    while len(cinemagraph_seeds) < 10: cinemagraph_seeds.append(None)
     # Load created_at timestamps for active slots
     _ca_row = query_one("SELECT carousel_cinemagraph_created_at FROM articles WHERE id = %s", (article_id,))
     cinemagraph_created_at = json.loads(_ca_row[0]) if _ca_row and _ca_row[0] else []
@@ -3745,9 +3739,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                     continue
 
             slide_prompt = (prompts[i] if prompts and i < len(prompts) and prompts[i] else None) or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
-            slide_seed = random.randint(0, 4294967295)
             _log(f"slide {slide_num} prompt: {slide_prompt[:80]}")
-            _log(f"slide {slide_num} seed: {slide_seed}")
             try:
                 gen_id = _luma_create_task(luma_img_url, slide_prompt)
                 _log(f"slide {slide_num} Luma gen_id={gen_id}")
@@ -3807,16 +3799,15 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                         saved_url = "/" + str(local_path).replace("\\", "/")
                     import datetime as _dt
                     cinemagraph_urls[real_idx] = saved_url
-                    cinemagraph_seeds[real_idx] = slide_seed
                     cinemagraph_created_at[real_idx] = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
                     new_succeeded += 1
                     consecutive_failures = 0
                     _log(f"slide {slide_num} ({i+1}/{n}) saved → {saved_url}")
                     # Persist immediately so the frontend picks it up on the next poll
                     execute(
-                        "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_seeds = %s, "
+                        "UPDATE articles SET carousel_cinemagraphs = %s, "
                         "carousel_cinemagraph_created_at = %s WHERE id = %s",
-                        (json.dumps(cinemagraph_urls), json.dumps(cinemagraph_seeds),
+                        (json.dumps(cinemagraph_urls),
                          json.dumps(cinemagraph_created_at), article_id),
                     )
                 except Exception as e:
@@ -3888,7 +3879,7 @@ def admin_article_generate_cinemagraphs(article_id):
 
     row = query_one(
         "SELECT carousel_images, carousel_cinemagraph_prompts, "
-        "carousel_cinemagraphs, carousel_cinemagraph_seeds "
+        "carousel_cinemagraphs "
         "FROM articles WHERE id = %s", (article_id,))
     if not row or not row[0]:
         return jsonify({"error": "No carousel images found."}), 400
@@ -3920,9 +3911,7 @@ def admin_article_generate_cinemagraphs(article_id):
 
     # Identify which slots are empty (no existing cinemagraph clip)
     existing_cine  = (json.loads(row[2]) if row[2] else [])[:10]
-    existing_seeds = (json.loads(row[3]) if row[3] else [])[:10]
     existing_cine_padded  = (existing_cine  + [None] * 10)[:10]
-    existing_seeds_padded = (existing_seeds + [None] * 10)[:10]
 
     empty_indices = [i for i in range(10) if all_images[i] and not existing_cine_padded[i]]
     if not empty_indices:
@@ -3943,8 +3932,7 @@ def admin_article_generate_cinemagraphs(article_id):
         target=_cinemagraph_worker,
         args=(article_id, empty_images, empty_prompts),
         kwargs=dict(slot_indices=empty_indices,
-                    existing_urls=existing_cine_padded,
-                    existing_seeds=existing_seeds_padded),
+                    existing_urls=existing_cine_padded),
         daemon=True,
     )
     t.start()
@@ -3965,7 +3953,7 @@ def admin_article_cancel_cinemagraphs(article_id):
     return jsonify({"cancelled": True})
 
 
-def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None):
+def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
     """Background thread: regenerate a single cinemagraph slide."""
     ts = int(time.time())
     status_key = f"cinemagraph_status_{article_id}"
@@ -3994,9 +3982,7 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
                 pass
 
     try:
-        slide_seed = seed if seed is not None else random.randint(0, 4294967295)
         _log(f"re-running slide {slide_idx + 1} with prompt: {prompt[:80]}")
-        _log(f"seed: {slide_seed}")
 
         # Resolve image URL for Luma (needs public URL)
         if img_url.startswith("https://"):
@@ -4068,23 +4054,20 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, seed=None)
 
             # Patch just this slot in the DB array
             import datetime as _dt
-            row = query_one("SELECT carousel_cinemagraphs, carousel_cinemagraph_prompts, carousel_cinemagraph_seeds, carousel_cinemagraph_created_at FROM articles WHERE id = %s", (article_id,))
+            row = query_one("SELECT carousel_cinemagraphs, carousel_cinemagraph_prompts, carousel_cinemagraph_created_at FROM articles WHERE id = %s", (article_id,))
             urls       = json.loads(row[0]) if row and row[0] else []
             prompts    = json.loads(row[1]) if row and row[1] else []
-            seeds      = json.loads(row[2]) if row and row[2] else []
-            created_at = json.loads(row[3]) if row and row[3] else []
+            created_at = json.loads(row[2]) if row and row[2] else []
             while len(urls)       <= slide_idx: urls.append(None)
             while len(prompts)    <= slide_idx: prompts.append(None)
-            while len(seeds)      <= slide_idx: seeds.append(None)
             while len(created_at) <= slide_idx: created_at.append(None)
             urls[slide_idx]       = saved_url
             prompts[slide_idx]    = prompt or _CINE_DEFAULT_PROMPT
-            seeds[slide_idx]      = slide_seed
             created_at[slide_idx] = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
             execute(
                 "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_prompts = %s, "
-                "carousel_cinemagraph_seeds = %s, carousel_cinemagraph_created_at = %s WHERE id = %s",
-                (json.dumps(urls), json.dumps(prompts), json.dumps(seeds), json.dumps(created_at), article_id),
+                "carousel_cinemagraph_created_at = %s WHERE id = %s",
+                (json.dumps(urls), json.dumps(prompts), json.dumps(created_at), article_id),
             )
             _log(f"saved → {saved_url}")
         else:
@@ -4126,14 +4109,13 @@ def admin_article_regenerate_cinemagraph_slide(article_id):
     body = request.get_json(silent=True) or {}
     slide_idx = body.get("slide_idx")
     prompt    = (body.get("prompt") or "").strip() or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
-    seed      = body.get("seed")  # None = random, int = use that seed
 
     if slide_idx is None:
         return jsonify({"error": "slide_idx required"}), 400
 
     row = query_one(
         "SELECT carousel_images, carousel_cinemagraphs, carousel_cinemagraph_archived, "
-        "carousel_cinemagraph_prompts, carousel_cinemagraph_seeds, carousel_cinemagraph_created_at "
+        "carousel_cinemagraph_prompts, carousel_cinemagraph_created_at "
         "FROM articles WHERE id = %s", (article_id,)
     )
     if not row or not row[0]:
@@ -4143,8 +4125,7 @@ def admin_article_regenerate_cinemagraph_slide(article_id):
     cine_urls    = json.loads(row[1]) if row[1] else []
     archived     = json.loads(row[2]) if row[2] else []
     cine_prompts = json.loads(row[3]) if row[3] else []
-    cine_seeds   = json.loads(row[4]) if row[4] else []
-    cine_created = json.loads(row[5]) if row[5] else []
+    cine_created = json.loads(row[4]) if row[4] else []
 
     if slide_idx >= len(images) or not images[slide_idx]:
         return jsonify({"error": "Slide image not found."}), 400
@@ -4158,7 +4139,6 @@ def admin_article_regenerate_cinemagraph_slide(article_id):
         archived.append({
             "url": existing_url,
             "prompt": cine_prompts[slide_idx] if slide_idx < len(cine_prompts) else None,
-            "seed": cine_seeds[slide_idx] if slide_idx < len(cine_seeds) else None,
             "created_at": cine_created[slide_idx] if slide_idx < len(cine_created) else None,
             "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "slot_source": slide_idx + 1,
@@ -4180,7 +4160,7 @@ def admin_article_regenerate_cinemagraph_slide(article_id):
 
     t = threading.Thread(
         target=_cinemagraph_slide_worker,
-        args=(article_id, slide_idx, images[slide_idx], prompt, seed),
+        args=(article_id, slide_idx, images[slide_idx], prompt),
         daemon=True,
     )
     t.start()
@@ -4199,7 +4179,7 @@ def admin_article_archive_cinemagraph_slide(article_id):
 
     row = query_one(
         "SELECT carousel_cinemagraphs, carousel_cinemagraph_prompts, carousel_cinemagraph_archived, "
-        "carousel_cinemagraph_seeds, carousel_cinemagraph_created_at "
+        "carousel_cinemagraph_created_at "
         "FROM articles WHERE id = %s", (article_id,)
     )
     if not row:
@@ -4208,12 +4188,10 @@ def admin_article_archive_cinemagraph_slide(article_id):
     urls       = json.loads(row[0]) if row[0] else []
     prompts    = json.loads(row[1]) if row[1] else []
     archived   = json.loads(row[2]) if row[2] else []
-    seeds      = json.loads(row[3]) if row[3] else []
-    created_at = json.loads(row[4]) if row[4] else []
+    created_at = json.loads(row[3]) if row[3] else []
 
     while len(urls)       <= slide_idx: urls.append(None)
     while len(prompts)    <= slide_idx: prompts.append(None)
-    while len(seeds)      <= slide_idx: seeds.append(None)
     while len(created_at) <= slide_idx: created_at.append(None)
 
     archived_idx = len(archived)
@@ -4222,21 +4200,19 @@ def admin_article_archive_cinemagraph_slide(article_id):
         archived.append({
             "url": urls[slide_idx],
             "prompt": prompts[slide_idx] if slide_idx < len(prompts) else None,
-            "seed": seeds[slide_idx] if slide_idx < len(seeds) else None,
             "created_at": created_at[slide_idx],
             "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "slot_source": slide_idx + 1,
         })
     urls[slide_idx]       = None
     prompts[slide_idx]    = None
-    seeds[slide_idx]      = None
     created_at[slide_idx] = None
 
     execute(
         "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_prompts = %s, "
-        "carousel_cinemagraph_archived = %s, carousel_cinemagraph_seeds = %s, "
+        "carousel_cinemagraph_archived = %s, "
         "carousel_cinemagraph_created_at = %s WHERE id = %s",
-        (json.dumps(urls), json.dumps(prompts), json.dumps(archived), json.dumps(seeds),
+        (json.dumps(urls), json.dumps(prompts), json.dumps(archived),
          json.dumps(created_at), article_id),
     )
     return jsonify({"ok": True, "archived_idx": archived_idx})
@@ -4257,7 +4233,7 @@ def admin_article_restore_cinemagraph_clip(article_id):
 
     row = query_one(
         "SELECT carousel_cinemagraphs, carousel_cinemagraph_archived, "
-        "carousel_cinemagraph_prompts, carousel_cinemagraph_seeds, carousel_cinemagraph_created_at "
+        "carousel_cinemagraph_prompts, carousel_cinemagraph_created_at "
         "FROM articles WHERE id = %s",
         (article_id,)
     )
@@ -4267,8 +4243,7 @@ def admin_article_restore_cinemagraph_clip(article_id):
     urls       = json.loads(row[0]) if row[0] else []
     archived   = json.loads(row[1]) if row[1] else []
     prompts    = json.loads(row[2]) if row[2] else []
-    seeds      = json.loads(row[3]) if row[3] else []
-    created_at = json.loads(row[4]) if row[4] else []
+    created_at = json.loads(row[3]) if row[3] else []
 
     if archived_idx >= len(archived) or not archived[archived_idx]:
         return jsonify({"error": "Archived clip not found"}), 404
@@ -4278,12 +4253,10 @@ def admin_article_restore_cinemagraph_clip(article_id):
     if isinstance(entry, dict):
         clip_url        = entry.get("url")
         clip_prompt     = entry.get("prompt")
-        clip_seed       = entry.get("seed")
         clip_created_at = entry.get("created_at")
     else:
         clip_url        = entry
         clip_prompt     = None
-        clip_seed       = None
         clip_created_at = None
 
     archived[archived_idx] = None  # clear from archived (keep index stable)
@@ -4291,7 +4264,6 @@ def admin_article_restore_cinemagraph_clip(article_id):
     # Pad arrays to reach target_slot
     while len(urls)       <= target_slot: urls.append(None)
     while len(prompts)    <= target_slot: prompts.append(None)
-    while len(seeds)      <= target_slot: seeds.append(None)
     while len(created_at) <= target_slot: created_at.append(None)
 
     # Auto-archive displaced clip if target slot is occupied
@@ -4301,7 +4273,6 @@ def admin_article_restore_cinemagraph_clip(article_id):
         displaced_entry = {
             "url": urls[target_slot],
             "prompt": prompts[target_slot] if target_slot < len(prompts) else None,
-            "seed": seeds[target_slot] if target_slot < len(seeds) else None,
             "created_at": created_at[target_slot] if target_slot < len(created_at) else None,
             "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "slot_source": target_slot + 1,
@@ -4313,19 +4284,18 @@ def admin_article_restore_cinemagraph_clip(article_id):
     # Place restored clip into target slot
     urls[target_slot]       = clip_url
     prompts[target_slot]    = clip_prompt
-    seeds[target_slot]      = clip_seed
     created_at[target_slot] = clip_created_at
 
     execute(
         "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_archived = %s, "
-        "carousel_cinemagraph_prompts = %s, carousel_cinemagraph_seeds = %s, "
+        "carousel_cinemagraph_prompts = %s, "
         "carousel_cinemagraph_created_at = %s WHERE id = %s",
-        (json.dumps(urls), json.dumps(archived), json.dumps(prompts), json.dumps(seeds),
+        (json.dumps(urls), json.dumps(archived), json.dumps(prompts),
          json.dumps(created_at), article_id),
     )
     return jsonify({
         "ok": True, "url": clip_url, "slot_idx": target_slot,
-        "archived_idx": archived_idx, "prompt": clip_prompt, "seed": clip_seed,
+        "archived_idx": archived_idx, "prompt": clip_prompt,
         "created_at": clip_created_at,
         "displaced": displaced,
     })
@@ -4338,7 +4308,7 @@ def admin_article_archive_all_cinemagraphs(article_id):
     """Move all current cinemagraph clips into the archived array."""
     row = query_one(
         "SELECT carousel_cinemagraphs, carousel_cinemagraph_prompts, carousel_cinemagraph_archived, "
-        "carousel_cinemagraph_seeds, carousel_cinemagraph_created_at "
+        "carousel_cinemagraph_created_at "
         "FROM articles WHERE id = %s", (article_id,)
     )
     if not row:
@@ -4347,8 +4317,7 @@ def admin_article_archive_all_cinemagraphs(article_id):
     urls       = json.loads(row[0]) if row[0] else []
     prompts    = json.loads(row[1]) if row[1] else []
     archived   = json.loads(row[2]) if row[2] else []
-    seeds      = json.loads(row[3]) if row[3] else []
-    created_at = json.loads(row[4]) if row[4] else []
+    created_at = json.loads(row[3]) if row[3] else []
 
     import datetime as _dt
     archived_start_idx = len(archived)
@@ -4357,21 +4326,19 @@ def admin_article_archive_all_cinemagraphs(article_id):
             archived.append({
                 "url": urls[i],
                 "prompt": prompts[i] if i < len(prompts) else None,
-                "seed": seeds[i] if i < len(seeds) else None,
                 "created_at": created_at[i] if i < len(created_at) else None,
                 "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "slot_source": i + 1,
             })
             urls[i] = None
             if i < len(prompts): prompts[i] = None
-            if i < len(seeds): seeds[i] = None
             if i < len(created_at): created_at[i] = None
 
     execute(
         "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_prompts = %s, "
-        "carousel_cinemagraph_archived = %s, carousel_cinemagraph_seeds = %s, "
+        "carousel_cinemagraph_archived = %s, "
         "carousel_cinemagraph_created_at = %s WHERE id = %s",
-        (json.dumps(urls), json.dumps(prompts), json.dumps(archived), json.dumps(seeds),
+        (json.dumps(urls), json.dumps(prompts), json.dumps(archived),
          json.dumps(created_at), article_id),
     )
     return jsonify({"ok": True, "archived_start_idx": archived_start_idx})

@@ -1082,24 +1082,6 @@
                 <textarea id="cine-edit-prompt" class="form-control font-monospace small" rows="4"
                           placeholder="Describe the motion for this slide…"></textarea>
                 <p class="text-muted small mt-1 mb-0">Leave blank to use the default atmospheric motion prompt.</p>
-                <div class="d-flex align-items-center gap-2 mt-3">
-                    <label class="form-label small fw-semibold mb-0" for="cine-edit-seed">Seed</label>
-                    <input type="number" id="cine-edit-seed" class="form-control form-control-sm font-monospace"
-                           style="max-width:160px;" min="0" max="4294967295" placeholder="Random">
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1"
-                            onclick="document.getElementById('cine-edit-seed').value=''" title="Clear seed (use random)">
-                        <small>&times;</small>
-                    </button>
-                </div>
-                <p class="text-muted mt-1 mb-0" style="font-size:0.72rem; line-height:1.4;">
-                    The seed is a number between 0 and 4,294,967,295 that initialises the randomness
-                    of the generation. It is not a scale — seed 1000 is not "less" or "more" than seed
-                    2,000,000; they simply produce different random variations. Two runs with the same
-                    seed, prompt, and source image will produce very similar (not identical) motion.
-                    Change the seed to explore a completely different interpretation of the same prompt,
-                    or keep it to iterate on small prompt tweaks while preserving the overall motion style.
-                    Leave blank for a fresh random seed each time.
-                </p>
             </div>
             <div class="modal-footer justify-content-between">
                 <button type="button" class="btn btn-outline-danger btn-sm"
@@ -1136,10 +1118,6 @@
                 <div id="archived-info-punchline-group" class="mt-2" style="display:none;">
                     <label class="form-label small fw-semibold">Punchline</label>
                     <textarea id="archived-info-punchline" class="form-control font-monospace small" rows="2" readonly></textarea>
-                </div>
-                <div id="archived-info-seed-group" class="mt-2" style="display:none;">
-                    <label class="form-label small fw-semibold mb-0">Seed</label>
-                    <input type="text" id="archived-info-seed" class="form-control form-control-sm font-monospace" readonly style="max-width:200px;">
                 </div>
                 <div id="archived-info-created-group" class="mt-2" style="display:none;">
                     <small class="text-muted" id="archived-info-created"></small>
@@ -3057,7 +3035,6 @@ function _aiVideoFinish(error) {
             }
             // Cinemagraph — resume or show existing
             _cinePrompts   = d.cinemagraph_prompts    || [];
-            _cineSeeds     = d.cinemagraph_seeds      || [];
             _cineCreatedAt = d.cinemagraph_created_at || [];
             if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running')) {
                 _cinemagraphUnlocked = true;
@@ -3102,7 +3079,6 @@ let _cineArticlePrompt   = CINEMAGRAPH_ARTICLE_PROMPT; // per-article override (
 let _IG_CAPTION_PROMPT   = IG_CAPTION_PROMPT;  // global default from site_settings
 let _igArticleCaptionPrompt = IG_ARTICLE_CAPTION_PROMPT; // per-article override (empty = use global)
 let _cinePrompts         = [];    // per-slide prompts, synced from /video-data
-let _cineSeeds           = [];    // per-slide seeds, synced from /video-data
 let _cineCreatedAt       = [];    // per-slide created_at timestamps, synced from /video-data
 let _cineEditIdx         = null;  // slide index open in edit modal
 let _cinemagraphUnlocked = false; // true once carousel images exist
@@ -3236,16 +3212,6 @@ function openArchivedInfoModal(type, idx, url, prompt, options) {
         document.getElementById('archived-info-punchline').value = options.punchline || '(not recorded)';
     } else {
         plGroup.style.display = 'none';
-    }
-
-    // Seed (cinemagraph only)
-    var seedGroup = document.getElementById('archived-info-seed-group');
-    if (type === 'cinemagraph') {
-        seedGroup.style.display = '';
-        document.getElementById('archived-info-seed').value =
-            (options.seed !== null && options.seed !== undefined) ? options.seed : '(not recorded)';
-    } else {
-        seedGroup.style.display = 'none';
     }
 
     // Created date
@@ -3408,11 +3374,11 @@ function _addCarouselArchivedTile(url, archivedIdx, prompt, punchline, options) 
 function addCinemagraphArchived(entry, archivedIdx) {
     var removedGrid = document.getElementById('cinemagraph-removed-grid');
     // entry can be a string (legacy) or object { url, prompt, seed, archived_at, created_at, slot_source }
-    var url, prompt, seed, archived_at, created_at, slot_source;
+    var url, prompt, archived_at, created_at, slot_source;
     if (typeof entry === 'string') {
-        url = entry; prompt = null; seed = null; archived_at = null; created_at = null; slot_source = null;
+        url = entry; prompt = null; archived_at = null; created_at = null; slot_source = null;
     } else if (entry && typeof entry === 'object') {
-        url = entry.url; prompt = entry.prompt; seed = entry.seed;
+        url = entry.url; prompt = entry.prompt;
         archived_at = entry.archived_at; created_at = entry.created_at; slot_source = entry.slot_source;
     } else {
         return;
@@ -3430,14 +3396,14 @@ function addCinemagraphArchived(entry, archivedIdx) {
     iBtn.className = 'cine-info-btn';
     iBtn.title = 'View info & restore';
     iBtn.textContent = 'i';
-    (function(_idx, _url, _prompt, _seed, _archived_at, _created_at, _slot_source) {
+    (function(_idx, _url, _prompt, _archived_at, _created_at, _slot_source) {
         iBtn.onclick = function(e) {
             e.stopPropagation();
             openArchivedInfoModal('cinemagraph', _idx, _url, _prompt, {
-                seed: _seed, archived_at: _archived_at, created_at: _created_at, slot_source: _slot_source
+                archived_at: _archived_at, created_at: _created_at, slot_source: _slot_source
             });
         };
-    })(archivedIdx, url, prompt, seed, archived_at, created_at, slot_source);
+    })(archivedIdx, url, prompt, archived_at, created_at, slot_source);
     col.appendChild(v);
     col.appendChild(iBtn);
     removedGrid.appendChild(col);
@@ -3645,7 +3611,6 @@ function _cinemagraphPoll() {
             .then(r => r.json())
             .then(d => {
                 _cinePrompts   = d.cinemagraph_prompts    || _cinePrompts;
-                _cineSeeds     = d.cinemagraph_seeds      || _cineSeeds;
                 _cineCreatedAt = d.cinemagraph_created_at || _cineCreatedAt;
                 if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running:')) {
                     _cinemagraphApplyStatus(d.cinemagraph_status, null);
@@ -3702,7 +3667,6 @@ document.addEventListener('visibilitychange', function() {
             .then(function(r) { return r.json(); })
             .then(function(d) {
                 _cinePrompts   = d.cinemagraph_prompts    || _cinePrompts;
-                _cineSeeds     = d.cinemagraph_seeds      || _cineSeeds;
                 _cineCreatedAt = d.cinemagraph_created_at || _cineCreatedAt;
                 if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running:')) {
                     _cinemagraphApplyStatus(d.cinemagraph_status, null);
@@ -3742,8 +3706,6 @@ function openCinemagraphEditModal(slideIdx, url, prompt) {
     if (url) { preview.src = url; preview.style.display = ''; }
     else      { preview.src = ''; preview.style.display = 'none'; }
     document.getElementById('cine-edit-prompt').value = prompt || _CINE_DEFAULT_PROMPT;
-    var savedSeed = (_cineSeeds[slideIdx] !== undefined && _cineSeeds[slideIdx] !== null) ? _cineSeeds[slideIdx] : '';
-    document.getElementById('cine-edit-seed').value = savedSeed;
     document.getElementById('cine-edit-rerun-spinner').classList.add('d-none');
     document.getElementById('cine-edit-rerun-btn').disabled = false;
     new bootstrap.Modal(document.getElementById('cinemagraph-edit-modal')).show();
@@ -3767,13 +3729,11 @@ function cinemagraphArchiveSlide() {
         var archivedEntry = {
             url: clipUrl,
             prompt: _cinePrompts[idx] || null,
-            seed: (_cineSeeds && _cineSeeds[idx]) || null,
             created_at: (_cineCreatedAt && _cineCreatedAt[idx]) || null,
             archived_at: new Date().toISOString(),
             slot_source: idx + 1,
         };
         _cinePrompts[idx] = null;
-        if (_cineSeeds) _cineSeeds[idx] = null;
         if (_cineCreatedAt) _cineCreatedAt[idx] = null;
         if (col) col.innerHTML = '<div class="carousel-placeholder">' + (idx + 1) + '</div>';
         if (clipUrl) addCinemagraphArchived(archivedEntry, d.archived_idx);
@@ -3785,8 +3745,6 @@ function cinemagraphRerunSlide() {
     if (_cineEditIdx === null || !ARTICLE_ID) return;
     const idx    = _cineEditIdx;
     const prompt = document.getElementById('cine-edit-prompt').value.trim() || _CINE_DEFAULT_PROMPT;
-    var seedVal  = document.getElementById('cine-edit-seed').value.trim();
-    var seed     = seedVal !== '' ? parseInt(seedVal) : null;
     const spinner = document.getElementById('cine-edit-rerun-spinner');
     const btn     = document.getElementById('cine-edit-rerun-btn');
     spinner.classList.remove('d-none');
@@ -3797,24 +3755,22 @@ function cinemagraphRerunSlide() {
     const existingVideo = col ? col.querySelector('video') : null;
     const oldClipUrl    = existingVideo ? existingVideo.src : null;
     const oldPrompt     = (_cinePrompts && _cinePrompts[idx]) || null;
-    const oldSeed       = (_cineSeeds && _cineSeeds[idx]) || null;
     const oldCreatedAt  = (_cineCreatedAt && _cineCreatedAt[idx]) || null;
 
     fetch('/admin/articles/' + ARTICLE_ID + '/regenerate-cinemagraph-slide', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slide_idx: idx, prompt: prompt, seed: seed }),
+        body: JSON.stringify({ slide_idx: idx, prompt: prompt }),
     })
     .then(r => r.json())
     .then(d => {
         if (d.error) { alert('Error: ' + d.error); spinner.classList.add('d-none'); btn.disabled = false; return; }
         bootstrap.Modal.getInstance(document.getElementById('cinemagraph-edit-modal')).hide();
         _cinePrompts[idx] = prompt;
-        _cineSeeds[idx] = seed;
         // Move old clip to archive tab (backend already archived it)
         if (oldClipUrl && d.archived_idx !== null && d.archived_idx !== undefined) {
             addCinemagraphArchived({
-                url: oldClipUrl, prompt: oldPrompt, seed: oldSeed,
+                url: oldClipUrl, prompt: oldPrompt,
                 created_at: oldCreatedAt,
                 archived_at: new Date().toISOString(),
                 slot_source: idx + 1,
@@ -3952,7 +3908,6 @@ function archiveAllCinemagraphs() {
                 addCinemagraphArchived({
                     url: clipUrl,
                     prompt: (_cinePrompts && _cinePrompts[slotIdx]) || null,
-                    seed: (_cineSeeds && _cineSeeds[slotIdx]) || null,
                     created_at: (_cineCreatedAt && _cineCreatedAt[slotIdx]) || null,
                     archived_at: new Date().toISOString(),
                     slot_source: slotIdx + 1,
@@ -3960,7 +3915,6 @@ function archiveAllCinemagraphs() {
             }
         });
         _cinePrompts = [];
-        _cineSeeds = [];
         _cineCreatedAt = [];
         showCinemagraphTab('current');
         updateCinemagraphTabCounts();
@@ -3987,12 +3941,10 @@ function cinemagraphRestoreClip(archivedIdx, targetSlot) {
         if (d.displaced) {
             addCinemagraphArchived(d.displaced.entry, d.displaced.archived_idx);
         }
-        // Restore prompt, seed, and created_at into local arrays
+        // Restore prompt and created_at into local arrays
         while (_cinePrompts.length <= d.slot_idx) _cinePrompts.push(null);
-        while (_cineSeeds.length <= d.slot_idx) _cineSeeds.push(null);
         while (_cineCreatedAt.length <= d.slot_idx) _cineCreatedAt.push(null);
         _cinePrompts[d.slot_idx]   = d.prompt || null;
-        _cineSeeds[d.slot_idx]     = d.seed || null;
         _cineCreatedAt[d.slot_idx] = d.created_at || null;
         // Place the restored clip in the target slot
         const col = document.getElementById('cine-col-' + d.slot_idx);
