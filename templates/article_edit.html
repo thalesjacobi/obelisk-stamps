@@ -2037,14 +2037,19 @@ function showIgArchiveModal(entry) {
 
 // Pre-populate captions and start status checks for both modes
 document.addEventListener('DOMContentLoaded', function() {
+    // Last-used captions from previous posts (empty string if never posted)
+    var savedCaptions = {
+        cine: {{ ig_cine_caption | tojson }},
+        car:  {{ ig_car_caption | tojson }}
+    };
     var defaultLines = [];
     if (typeof ARTICLE_TITLE !== 'undefined' && ARTICLE_TITLE) defaultLines.push(ARTICLE_TITLE);
     if (typeof ARTICLE_URL !== 'undefined' && ARTICLE_URL) defaultLines.push('\n' + ARTICLE_URL);
     var defaultCaption = defaultLines.join('\n');
     ['cine', 'car'].forEach(function(mode) {
         var captionEl = document.getElementById(_igId(mode, 'caption'));
-        if (captionEl && !captionEl.value.trim() && defaultCaption) {
-            captionEl.value = defaultCaption;
+        if (captionEl && !captionEl.value.trim()) {
+            captionEl.value = savedCaptions[mode] || defaultCaption;
         }
         updateIgCharCount(mode);
         updateIgImagesHint(mode);

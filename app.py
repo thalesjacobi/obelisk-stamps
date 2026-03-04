@@ -2481,13 +2481,21 @@ def admin_article_edit(article_id):
     }
     # Show this article's saved style; fall back to current site setting if never generated
     article_carousel_style = row[12] or get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
+    # Load last-used Instagram captions from post snapshots
+    cine_snap_raw = get_setting(f"ig_post_snapshot_{article_id}")
+    car_snap_raw  = get_setting(f"ig_car_post_snapshot_{article_id}")
+    cine_caption  = json.loads(cine_snap_raw).get("caption", "") if cine_snap_raw else ""
+    car_caption   = json.loads(car_snap_raw).get("caption", "") if car_snap_raw else ""
+
     return render_template("article_edit.html", article=article,
                            carousel_style=article_carousel_style,
                            cinemagraph_prompt=get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
                            cinemagraph_article_prompt=get_setting(f'cinemagraph_prompt_{article_id}', ''),
                            ig_caption_prompt=get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT),
                            ig_article_caption_prompt=get_setting(f'ig_caption_prompt_{article_id}', ''),
-                           ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN))
+                           ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN),
+                           ig_cine_caption=cine_caption,
+                           ig_car_caption=car_caption)
 
 
 @app.route("/admin/articles/<int:article_id>/save", methods=["POST"])
