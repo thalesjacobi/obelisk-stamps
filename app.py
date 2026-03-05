@@ -544,27 +544,18 @@ def _make_cinemagraph_overlay_png(punchline, slide_index, total_slides, width=96
     w, h = width, height
     overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))  # fully transparent
 
-    # ── Dark gradient (bottom ~55%) ──────────────────────────────────────────
-    gradient_h = int(h * 0.55)
-    gradient   = Image.new("RGBA", (w, gradient_h), (0, 0, 0, 0))
-    draw_g     = ImageDraw.Draw(gradient)
-    for y in range(gradient_h):
-        alpha = int(40 + 215 * (y / gradient_h) ** 0.7)
-        draw_g.line([(0, y), (w, y)], fill=(0, 0, 0, alpha))
-    overlay.paste(gradient, (0, h - gradient_h), gradient)
-
     # ── Font loading ─────────────────────────────────────────────────────────
     try:
-        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.083))
+        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.065))
         font_hint = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.021))
     except Exception:
-        font_main = ImageFont.load_default(size=36)
+        font_main = ImageFont.load_default(size=32)
         font_hint = ImageFont.load_default(size=20)
 
     draw  = ImageDraw.Draw(overlay)
     pad_x = int(w * 0.06)
 
-    # ── Punchline text (white, uppercase, left-aligned, word-wrapped) ────────
+    # ── Word-wrap punchline text ─────────────────────────────────────────────
     text  = (punchline or "").upper()
     max_w = w - pad_x * 2
     words = text.split()
@@ -580,15 +571,32 @@ def _make_cinemagraph_overlay_png(punchline, slide_index, total_slides, width=96
     if line:
         lines.append(line)
 
-    line_h       = int(font_main.size * 0.95)
+    line_h       = int(font_main.size * 0.90)
     hint_h       = int(font_hint.size * 2.4)
     total_text_h = len(lines) * line_h + hint_h
     text_y       = h - total_text_h - int(h * 0.015)
 
+    # ── Dark band: solid from text top to bottom, fade above ─────────────────
+    band_top   = text_y - int(h * 0.03)      # slight padding above text
+    band_alpha = 215                           # ~85% opacity
+    fade_h     = int(h * 0.06)                 # smooth transition zone
+
+    # Short gradient fade above the solid band
+    for y in range(fade_h):
+        fy    = band_top - fade_h + y
+        if 0 <= fy < h:
+            alpha = int(band_alpha * (y / fade_h))
+            draw.line([(0, fy), (w, fy)], fill=(0, 0, 0, alpha))
+
+    # Solid dark rectangle from band_top to very bottom
+    draw.rectangle([(0, max(0, band_top)), (w, h)], fill=(0, 0, 0, band_alpha))
+
+    # ── Draw punchline text (white, uppercase, left-aligned) ─────────────────
+    ty = text_y
     for line_text in lines:
-        draw.text((pad_x, text_y), line_text, font=font_main,
+        draw.text((pad_x, ty), line_text, font=font_main,
                   fill=(255, 255, 255, 255))
-        text_y += line_h
+        ty += line_h
 
     # ── Swipe hint (yellow, all slides except the last) ──────────────────────
     if slide_index < total_slides - 1:
