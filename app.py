@@ -3124,7 +3124,8 @@ def admin_article_carousel_composed(article_id, slide_index):
     except Exception as e:
         return jsonify({"error": f"Failed to fetch image: {e}"}), 500
 
-    jpeg_bytes = compose_carousel_slide(img_bytes, punchline, slide_index, total)
+    carousel_band_top = _compute_max_overlay_band_top(active_punchlines)
+    jpeg_bytes = compose_carousel_slide(img_bytes, punchline, slide_index, total, band_top=carousel_band_top)
 
     from flask import Response
     return Response(jpeg_bytes, mimetype="image/jpeg",
