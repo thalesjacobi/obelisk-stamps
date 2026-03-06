@@ -447,7 +447,7 @@ def resolve_image_to_local_path(img_url):
 _FONT_PATH = Path("static/fonts/Roboto-Bold.ttf")
 
 
-def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides):
+def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides, band_top=None):
     """
     Composite a dark gradient + punchline text + optional swipe hint onto a
     carousel image.  Returns JPEG bytes.  The original img_bytes are never
@@ -458,6 +458,9 @@ def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides):
         punchline:    Caption text (uppercased automatically).
         slide_index:  0-based index of this slide in the carousel.
         total_slides: Total number of slides — swipe hint hidden on last slide.
+        band_top:     If set, use a solid dark band (same style as cinemagraph
+                      overlay) starting at this Y. Used in cinemagraph carousels
+                      for visual consistency with video slides.
     """
     from PIL import Image, ImageDraw, ImageFont
     import io
@@ -465,22 +468,47 @@ def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides):
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
     w, h = img.size
 
-    # ── Dark gradient overlay (bottom ~55 % of image) ──────────────────────
-    gradient_h = int(h * 0.55)
-    gradient   = Image.new("RGBA", (w, gradient_h), (0, 0, 0, 0))
-    draw_g     = ImageDraw.Draw(gradient)
-    for y in range(gradient_h):
-        alpha = int(255 * (y / gradient_h) ** 1.0)   # linear curve, max 255
-        draw_g.line([(0, y), (w, y)], fill=(0, 0, 0, alpha))
-    img.paste(gradient, (0, h - gradient_h), gradient)
+    if band_top is not None:
+        # ── Solid-band mode (matches cinemagraph overlay style) ────────────
+        band_alpha = 235
+        fade_h     = int(h * 0.06)
+        band_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw_b     = ImageDraw.Draw(band_layer)
+        for y in range(fade_h):
+            fy = band_top - fade_h + y
+            if 0 <= fy < h:
+                alpha = int(band_alpha * (y / fade_h))
+                draw_b.line([(0, fy), (w, fy)], fill=(0, 0, 0, alpha))
+        draw_b.rectangle([(0, max(0, band_top)), (w, h)], fill=(0, 0, 0, band_alpha))
+        img = Image.alpha_composite(img, band_layer)
 
-    # ── Font loading ────────────────────────────────────────────────────────
-    try:
-        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.092))
-        font_hint = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.021))
-    except Exception:
-        font_main = ImageFont.load_default(size=40)
-        font_hint = ImageFont.load_default(size=20)
+        # Use same font sizing as cinemagraph overlay for consistency
+        try:
+            font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.048))
+            font_hint = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.021))
+        except Exception:
+            font_main = ImageFont.load_default(size=32)
+            font_hint = ImageFont.load_default(size=20)
+        line_h_mult   = 0.88
+        bottom_pad    = 0.015
+    else:
+        # ── Gradient mode (original static carousel style) ─────────────────
+        gradient_h = int(h * 0.55)
+        gradient   = Image.new("RGBA", (w, gradient_h), (0, 0, 0, 0))
+        draw_g     = ImageDraw.Draw(gradient)
+        for y in range(gradient_h):
+            alpha = int(255 * (y / gradient_h) ** 1.0)
+            draw_g.line([(0, y), (w, y)], fill=(0, 0, 0, alpha))
+        img.paste(gradient, (0, h - gradient_h), gradient)
+
+        try:
+            font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.092))
+            font_hint = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.021))
+        except Exception:
+            font_main = ImageFont.load_default(size=40)
+            font_hint = ImageFont.load_default(size=20)
+        line_h_mult   = 1.05
+        bottom_pad    = 0.04
 
     draw  = ImageDraw.Draw(img)
     pad_x = int(w * 0.06)
@@ -501,10 +529,10 @@ def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides):
     if line:
         lines.append(line)
 
-    line_h       = int(font_main.size * 1.05)
+    line_h       = int(font_main.size * line_h_mult)
     hint_h       = int(font_hint.size * 2.4)
     total_text_h = len(lines) * line_h + hint_h
-    text_y       = h - total_text_h - int(h * 0.04)
+    text_y       = h - total_text_h - int(h * bottom_pad)
 
     for line_text in lines:
         draw.text((pad_x, text_y), line_text, font=font_main,
@@ -524,7 +552,56 @@ def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides):
     return out.getvalue()
 
 
-def _make_cinemagraph_overlay_png(punchline, slide_index, total_slides, width=960, height=960):
+def _compute_max_overlay_band_top(punchlines, width=960, height=960):
+    """Pre-compute the band_top Y that fits the tallest punchline in the set.
+
+    Call this BEFORE the per-slide loop and pass the result as band_top=
+    to _make_cinemagraph_overlay_png / compose_carousel_slide so every
+    slide in the carousel has the same dark-band height.
+    """
+    from PIL import ImageFont, ImageDraw, Image
+
+    w, h = width, height
+    try:
+        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.048))
+        font_hint = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.021))
+    except Exception:
+        font_main = ImageFont.load_default(size=32)
+        font_hint = ImageFont.load_default(size=20)
+
+    pad_x = int(w * 0.06)
+    max_w = w - pad_x * 2
+    line_h = int(font_main.size * 0.88)
+    hint_h = int(font_hint.size * 2.4)
+
+    tmp  = Image.new("RGBA", (1, 1))
+    draw = ImageDraw.Draw(tmp)
+
+    max_text_h = 0
+    for p in (punchlines or []):
+        text  = (p or "").upper()
+        words = text.split()
+        lines, line = [], ""
+        for word in words:
+            candidate = (line + " " + word).strip()
+            if draw.textlength(candidate, font=font_main) <= max_w:
+                line = candidate
+            else:
+                if line:
+                    lines.append(line)
+                line = word
+        if line:
+            lines.append(line)
+        text_h = len(lines) * line_h + hint_h
+        if text_h > max_text_h:
+            max_text_h = text_h
+
+    text_y   = h - max_text_h - int(h * 0.015)
+    band_top = text_y - int(h * 0.03)
+    return band_top
+
+
+def _make_cinemagraph_overlay_png(punchline, slide_index, total_slides, width=960, height=960, band_top=None):
     """
     Create a transparent RGBA PNG with a dark gradient + punchline text +
     optional swipe hint — identical visual style to compose_carousel_slide()
@@ -577,7 +654,8 @@ def _make_cinemagraph_overlay_png(punchline, slide_index, total_slides, width=96
     text_y       = h - total_text_h - int(h * 0.015)
 
     # ── Dark band: solid from text top to bottom, fade above ─────────────────
-    band_top   = text_y - int(h * 0.03)      # slight padding above text
+    if band_top is None:
+        band_top = text_y - int(h * 0.03)     # auto: fit this slide's text
     band_alpha = 235                           # ~92% opacity
     fade_h     = int(h * 0.06)                 # smooth transition zone
 
@@ -4543,6 +4621,9 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
         # For carousel posts use only static images; for cine posts use videos if available
         use_video     = (post_type != "car") and bool(cinemagraphs and any(u for u in cinemagraphs if u))
 
+        # Pre-compute consistent dark-band position for all slides
+        carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+
         if n < 2:
             _set_result("error:Need at least 2 images to post a carousel")
             _clear_status()
@@ -4564,7 +4645,7 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                     posted_video_url = video_url  # default: raw
                     if this_punchline:
                         try:
-                            overlay_png = _make_cinemagraph_overlay_png(this_punchline, i, n)
+                            overlay_png = _make_cinemagraph_overlay_png(this_punchline, i, n, band_top=carousel_band_top)
                             cine_dir    = BASE_DIR / "static" / "articles" / str(article_id) / "cinemagraph"
                             cine_dir.mkdir(parents=True, exist_ok=True)
                             tmp_mp4 = cine_dir / f"ig_composed_{i}_{int(_time.time())}.mp4"
@@ -4602,7 +4683,7 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                     except Exception:
                         img_bytes = b""
                     punchline  = punchlines[i] if i < len(punchlines) else ""
-                    jpeg_bytes = compose_carousel_slide(img_bytes, punchline, i, n)
+                    jpeg_bytes = compose_carousel_slide(img_bytes, punchline, i, n, band_top=carousel_band_top)
                     gcs_obj    = f"articles/{article_id}/instagram/composed_{i+1}_{ts_fb}.jpg"
                     public_url = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
                     resp = _req.post(
@@ -4652,7 +4733,7 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                     return
 
                 punchline   = punchlines[i] if i < len(punchlines) else ""
-                jpeg_bytes  = compose_carousel_slide(img_bytes, punchline, i, n)
+                jpeg_bytes  = compose_carousel_slide(img_bytes, punchline, i, n, band_top=carousel_band_top)
                 gcs_obj     = f"articles/{article_id}/instagram/composed_{i+1}_{ts}.jpg"
                 public_url  = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
                 if not public_url:
