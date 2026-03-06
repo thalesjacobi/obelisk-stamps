@@ -546,7 +546,7 @@ def _make_cinemagraph_overlay_png(punchline, slide_index, total_slides, width=96
 
     # ── Font loading ─────────────────────────────────────────────────────────
     try:
-        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.065))
+        font_main = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.048))
         font_hint = ImageFont.truetype(str(_FONT_PATH), size=int(w * 0.021))
     except Exception:
         font_main = ImageFont.load_default(size=32)
@@ -571,14 +571,14 @@ def _make_cinemagraph_overlay_png(punchline, slide_index, total_slides, width=96
     if line:
         lines.append(line)
 
-    line_h       = int(font_main.size * 0.90)
+    line_h       = int(font_main.size * 0.88)
     hint_h       = int(font_hint.size * 2.4)
     total_text_h = len(lines) * line_h + hint_h
     text_y       = h - total_text_h - int(h * 0.015)
 
     # ── Dark band: solid from text top to bottom, fade above ─────────────────
     band_top   = text_y - int(h * 0.03)      # slight padding above text
-    band_alpha = 215                           # ~85% opacity
+    band_alpha = 235                           # ~92% opacity
     fade_h     = int(h * 0.06)                 # smooth transition zone
 
     # Short gradient fade above the solid band
