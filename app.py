@@ -738,11 +738,10 @@ def _apply_overlay_to_video(video_url_or_path, overlay_png_bytes, output_path):
             ffmpeg_exe, "-y",
             "-i", video_input,
             "-i", str(tmp_png),
-            "-filter_complex",
-            "[1:v]format=rgba[ovr_rgba];[ovr_rgba][0:v]scale2ref[ovr][vid];[vid][ovr]overlay=0:0:format=auto",
+            "-filter_complex", "[0:v]scale=960:960[vid];[vid][1:v]overlay=0:0",
             "-pix_fmt", "yuv420p",
             "-c:v", "libx264", "-preset", "fast", "-crf", "20",
-            "-c:a", "copy",
+            "-an",
             str(output_path),
         ]
         result = subprocess.run(cmd, capture_output=True, timeout=120)
