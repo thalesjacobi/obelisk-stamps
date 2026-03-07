@@ -4872,56 +4872,32 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
         if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
             print(f"IG worker: publish FAILED: {err}", flush=True)
-            # Instagram sometimes returns a rate-limit error but still publishes.
-            # Verify by querying the carousel container for a permalink.
-            if "request limit" in err.lower() or "rate" in err.lower():
-                print("IG worker: rate-limit on publish — verifying if post went live…", flush=True)
-                _time.sleep(5)
-                try:
-                    verify_resp = _req.get(
-                        f"{_IG_GRAPH_URL}/{carousel_id}",
-                        params={"fields": "id,permalink", "access_token": access_token},
-                        timeout=15,
-                    )
-                    vdata = verify_resp.json()
-                    if "permalink" in vdata:
-                        # Post actually went live despite the rate-limit error
-                        print(f"IG worker: post confirmed live via verify: {vdata['permalink']}", flush=True)
-                        data = vdata  # fall through to success block below
-                    else:
-                        _set_result(f"error:Publish failed: {err}")
-                        _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                                          f"Publish failed for carousel {carousel_id}.\nAPI error: {err}")
-                        _clear_status()
-                        return
-                except Exception as _ve:
-                    print(f"IG worker: verify request failed: {_ve}", flush=True)
-                    _set_result(f"error:Publish failed: {err}")
-                    _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                                      f"Publish failed for carousel {carousel_id}.\nAPI error: {err}")
-                    _clear_status()
-                    return
-            else:
-                _set_result(f"error:Publish failed: {err}")
-                _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                                  f"Publish failed for carousel {carousel_id}.\nAPI error: {err}")
+            # Rate-limit: Instagram may have published anyway — show warning not error
+            if "request limit" in err.lower():
+                _set_result("warn:Rate limit reached. Your post was likely published — please check Instagram.")
+                _add_activity_log(article_id, f"Instagram Rate Limit ({post_type})",
+                                  f"Publish returned rate limit for carousel {carousel_id}.\n"
+                                  f"Post may have been published — check Instagram.")
                 _clear_status()
                 return
+            _set_result(f"error:Publish failed: {err}")
+            _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
+                              f"Publish failed for carousel {carousel_id}.\nAPI error: {err}")
+            _clear_status()
+            return
 
-        post_id = data.get("id") or data.get("id")
+        post_id = data["id"]
         # Fetch the real shortcode permalink (numeric ID ≠ shortcode in URL)
-        permalink = data.get("permalink")
-        if not permalink:
-            try:
-                plink_resp = _req.get(
-                    f"{_IG_GRAPH_URL}/{post_id}",
-                    params={"fields": "permalink", "access_token": access_token},
-                    timeout=15,
-                )
-                plink_data = plink_resp.json()
-                permalink  = plink_data.get("permalink") or f"https://www.instagram.com/p/{post_id}/"
-            except Exception:
-                permalink = f"https://www.instagram.com/p/{post_id}/"
+        try:
+            plink_resp = _req.get(
+                f"{_IG_GRAPH_URL}/{post_id}",
+                params={"fields": "permalink", "access_token": access_token},
+                timeout=15,
+            )
+            plink_data = plink_resp.json()
+            permalink  = plink_data.get("permalink") or f"https://www.instagram.com/p/{post_id}/"
+        except Exception:
+            permalink = f"https://www.instagram.com/p/{post_id}/"
         print(f"IG worker: SUCCESS post_id={post_id} permalink={permalink}", flush=True)
         _set_result(f"done:{permalink}")
         # Store media_id for later caption editing / archive

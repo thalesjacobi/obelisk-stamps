@@ -1674,6 +1674,9 @@ function pollIgStatus(mode) {
                 clearInterval(_ig[mode].pollTimer); _ig[mode].pollTimer = null;
                 if (result && result.startsWith('done:')) {
                     showIgDone(mode, result.slice(5));
+                } else if (result && result.startsWith('warn:')) {
+                    showIgWarning(mode, result.slice(5));
+                    document.getElementById(_igId(mode, 'post-btn')).disabled = false;
                 } else if (result && result.startsWith('error:')) {
                     showIgError(mode, result.slice(6));
                     document.getElementById(_igId(mode, 'post-btn')).disabled = false;
@@ -1878,6 +1881,24 @@ function showIgError(mode, msg) {
 
     html += '</div>';
     resultEl.innerHTML = html;
+}
+
+function showIgWarning(mode, msg) {
+    const area     = document.getElementById(_igId(mode, 'status-area'));
+    const running  = document.getElementById(_igId(mode, 'status-running'));
+    const progress = document.getElementById(_igId(mode, 'progress-wrap'));
+    const resultEl = document.getElementById(_igId(mode, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running)  running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    resultEl.classList.remove('d-none');
+
+    resultEl.innerHTML = '<div class="alert alert-warning alert-dismissible py-2 px-3 mb-2 small" role="alert">'
+        + '<button type="button" class="btn-close" style="padding:0.4rem 0.5rem;font-size:0.65rem;" data-bs-dismiss="alert" aria-label="Close"></button>'
+        + '<div class="fw-semibold mb-1">&#9888; Instagram Rate Limit</div>'
+        + '<div>' + msg + '</div>'
+        + '</div>';
 }
 
 function igCheckPostLive(mode) {
