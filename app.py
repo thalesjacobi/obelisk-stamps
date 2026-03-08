@@ -3378,7 +3378,7 @@ def _narrated_video_worker(article_id, cfg):
     word_range = {"short": "20-40", "medium": "40-70", "long": "70-100"}.get(script_len, "40-70")
 
     row = query_one(
-        "SELECT carousel_images, carousel_prompts, carousel_punchlines FROM articles WHERE id = %s",
+        "SELECT carousel_images, carousel_prompts, carousel_punchlines, title FROM articles WHERE id = %s",
         (article_id,),
     )
     if not row or not row[0]:
@@ -3389,6 +3389,7 @@ def _narrated_video_worker(article_id, cfg):
     images    = (json.loads(row[0]) if row[0] else [])[:10]
     prompts   = (json.loads(row[1]) if row[1] else [])[:10]
     punchlines= (json.loads(row[2]) if row[2] else [])[:10]
+    article_title = row[3] if row[3] else "Unknown"
     n_slides  = len(images)
 
     ts        = int(time.time())
@@ -3409,8 +3410,10 @@ def _narrated_video_worker(article_id, cfg):
         )
         script_prompt = (
             f"You are writing a voiceover script for a {n_slides}-slide Instagram carousel "
-            f"about the article below. For each slide, write a short narration segment of "
-            f"{word_range} words that matches the scene and punchline. "
+            f'about the article: "{article_title}".\n\n'
+            f"For each slide, write a narration segment of {word_range} words that matches "
+            f"the scene description and punchline. The narration should sound natural when "
+            f"read aloud as a voiceover.\n\n"
             f'Return ONLY a JSON object in this exact format: {{"segments": ["text for slide 1", "text for slide 2", ...]}}\n\n'
             f"Slide descriptions:\n{scenes_desc}"
         )
@@ -3420,6 +3423,7 @@ def _narrated_video_worker(article_id, cfg):
             response_format={"type": "json_object"},
         )
         raw_json = gpt_resp.choices[0].message.content
+        print(f"[NarratedVideo] GPT raw response: {raw_json}", flush=True)
         parsed   = json.loads(raw_json)
         if isinstance(parsed, dict):
             segments = parsed.get("segments")
@@ -3436,6 +3440,14 @@ def _narrated_video_worker(article_id, cfg):
         while len(segments) < n_slides:
             segments.append(punchlines[len(segments)] if len(segments) < len(punchlines) else "")
 
+        # Validate: if any segment has fewer than 3 words, replace with punchline
+        for i, seg in enumerate(segments):
+            if len(seg.split()) < 3:
+                segments[i] = punchlines[i] if i < len(punchlines) else f"Slide {i+1}."
+                print(f"[NarratedVideo] Segment {i+1} too short, replaced with fallback: {segments[i]}", flush=True)
+
+        print(f"[NarratedVideo] Final segments ({len(segments)}): {segments}", flush=True)
+
         # ── 2. TTS per segment ─────────────────────────────────────────────────
         audio_paths = []
         for i, seg in enumerate(segments):
@@ -3446,6 +3458,8 @@ def _narrated_video_worker(article_id, cfg):
                 model=tts_model, voice=voice, input=seg, response_format="mp3"
             )
             audio_path.write_bytes(tts_resp.content)
+            print(f"[NarratedVideo] TTS segment {i+1}: {len(seg.split())} words, "
+                  f"audio {len(tts_resp.content)} bytes → {audio_path}", flush=True)
             audio_paths.append(audio_path)
             temp_files.append(audio_path)
 
@@ -3573,6 +3587,9 @@ def _narrated_video_worker(article_id, cfg):
         )
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[NarratedVideo] Error for article {article_id}: {e}", flush=True)
         execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                 (f"error:{str(e)[:200]}", article_id))
     finally:
