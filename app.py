@@ -4575,6 +4575,22 @@ def _add_activity_log(article_id, title, content):
     )
 
 
+def _ig_api_call(method, url, **kwargs):
+    """Instagram Graph API call with one automatic retry on rate-limit."""
+    import requests as _req
+    resp = _req.post(url, **kwargs) if method == "POST" else _req.get(url, **kwargs)
+    try:
+        data = resp.json()
+    except Exception:
+        return resp
+    err_msg = data.get("error", {}).get("message", "")
+    if "request limit" in err_msg.lower():
+        print(f"IG API rate-limited, waiting 30s before retry…", flush=True)
+        _time.sleep(30)
+        resp = _req.post(url, **kwargs) if method == "POST" else _req.get(url, **kwargs)
+    return resp
+
+
 def _post_to_instagram_worker(article_id, caption, post_type="cine"):
     """
     Background thread: compose each carousel slide → upload to GCS →
@@ -4666,7 +4682,7 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                         except Exception as _ov_err:
                             print(f"IG overlay error slide {i+1}: {_ov_err}", flush=True)
                     # Post as video carousel item
-                    resp = _req.post(
+                    resp = _ig_api_call("POST",
                         f"{_IG_GRAPH_URL}/{ig_user_id}/media",
                         data={"video_url": posted_video_url, "media_type": "VIDEO",
                               "is_carousel_item": "true", "access_token": access_token},
@@ -4688,7 +4704,7 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                     jpeg_bytes = compose_carousel_slide(img_bytes, punchline, i, n, band_top=carousel_band_top)
                     gcs_obj    = f"articles/{article_id}/instagram/composed_{i+1}_{ts_fb}.jpg"
                     public_url = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
-                    resp = _req.post(
+                    resp = _ig_api_call("POST",
                         f"{_IG_GRAPH_URL}/{ig_user_id}/media",
                         data={"image_url": public_url or img_url,
                               "is_carousel_item": "true", "access_token": access_token},
@@ -4752,7 +4768,7 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
             container_ids = []
             for i, url in enumerate(composed_urls):
                 _set_status(f"running:containers:{i+1}/{n}")
-                resp = _req.post(
+                resp = _ig_api_call("POST",
                     f"{_IG_GRAPH_URL}/{ig_user_id}/media",
                     data={"image_url": url, "is_carousel_item": "true",
                           "access_token": access_token},
@@ -4775,8 +4791,9 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
         for i, cid in enumerate(container_ids):
             _set_status(f"running:poll:{i+1}/{n}")
             deadline = _time.time() + 300  # 5-minute timeout
+            _poll_n = 0
             while _time.time() < deadline:
-                r = _req.get(
+                r = _ig_api_call("GET",
                     f"{_IG_GRAPH_URL}/{cid}",
                     params={"fields": "status_code,status", "access_token": access_token},
                     timeout=15,
@@ -4795,7 +4812,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                                       f"Container {i+1}/{n} (id={cid}) returned ERROR.\nStatus detail: {status_detail or 'none'}")
                     _clear_status()
                     return
-                _time.sleep(5)
+                _time.sleep(min(5 + _poll_n * 5, 30))
+                _poll_n += 1
             else:
                 err_msg = f"Container {i+1} timed out waiting for FINISHED"
                 _set_result(f"error:{err_msg}")
@@ -4807,7 +4825,7 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
         # ── 5. Create carousel container ──────────────────────────────────
         _set_status("running:carousel")
         print(f"IG worker: creating carousel container with {n} children", flush=True)
-        resp = _req.post(
+        resp = _ig_api_call("POST",
             f"{_IG_GRAPH_URL}/{ig_user_id}/media",
             data={"media_type": "CAROUSEL",
                   "children": ",".join(container_ids),
@@ -4831,8 +4849,9 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
         _set_status("running:carousel_poll")
         print(f"IG worker: waiting for carousel container {carousel_id} to be FINISHED", flush=True)
         deadline_c = _time.time() + 300
+        _cpoll_n = 0
         while _time.time() < deadline_c:
-            rc = _req.get(
+            rc = _ig_api_call("GET",
                 f"{_IG_GRAPH_URL}/{carousel_id}",
                 params={"fields": "status_code,status", "access_token": access_token},
                 timeout=15,
@@ -4852,7 +4871,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                                   f"Status detail: {cdetail or 'none'}")
                 _clear_status()
                 return
-            _time.sleep(5)
+            _time.sleep(min(5 + _cpoll_n * 5, 30))
+            _cpoll_n += 1
         else:
             _set_result("error:Carousel container timed out waiting for FINISHED")
             _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
@@ -4869,14 +4889,46 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
             timeout=30,
         )
         data = resp.json()
+
+        # If rate-limited on publish, retry once after 60 s
+        if "id" not in data:
+            err = data.get("error", {}).get("message", str(data))
+            if "request limit" in err.lower():
+                print(f"IG worker: publish rate-limited, retrying in 60 s…", flush=True)
+                _set_status("running:publish_retry")
+                _time.sleep(60)
+                resp = _req.post(
+                    f"{_IG_GRAPH_URL}/{ig_user_id}/media_publish",
+                    data={"creation_id": carousel_id, "access_token": access_token},
+                    timeout=30,
+                )
+                data = resp.json()
+
         if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
             print(f"IG worker: publish FAILED: {err}", flush=True)
-            # Rate-limit: Instagram may have published anyway — show warning not error
             if "request limit" in err.lower():
+                # Rate-limited even after retry — save carousel_id + snapshot
+                # so the user can still archive the post later
+                import datetime as _dt
+                media_id_key = keys["media_id"]
+                execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE value = %s",
+                        (media_id_key, str(carousel_id), str(carousel_id)))
+                snapshot = json.dumps({
+                    "caption":    caption,
+                    "image_urls": images[:10] if not use_video else [],
+                    "video_urls": [u for u in cinemagraphs[:10] if u] if use_video else [],
+                    "post_type":  post_type,
+                    "posted_at":  _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
+                execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE value = %s",
+                        (keys["snapshot"], snapshot, snapshot))
                 _set_result("warn:Rate limit reached. Your post was likely published — please check Instagram.")
                 _add_activity_log(article_id, f"Instagram Rate Limit ({post_type})",
-                                  f"Publish returned rate limit for carousel {carousel_id}.\n"
+                                  f"Publish returned rate limit for carousel {carousel_id} "
+                                  f"(after retry). Carousel ID saved for archive.\n"
                                   f"Post may have been published — check Instagram.")
                 _clear_status()
                 return
@@ -4889,7 +4941,7 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
         post_id = data["id"]
         # Fetch the real shortcode permalink (numeric ID ≠ shortcode in URL)
         try:
-            plink_resp = _req.get(
+            plink_resp = _ig_api_call("GET",
                 f"{_IG_GRAPH_URL}/{post_id}",
                 params={"fields": "permalink", "access_token": access_token},
                 timeout=15,

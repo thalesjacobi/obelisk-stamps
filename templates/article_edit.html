@@ -1710,6 +1710,9 @@ function showIgRunning(mode, statusStr) {
     } else if (statusStr.includes('carousel')) {
         textEl.textContent = 'Creating carousel container…';
         progress.style.width = '90%';
+    } else if (statusStr.includes('publish_retry')) {
+        textEl.textContent = 'Rate-limited — retrying publish in 60 s…';
+        progress.style.width = '98%';
     } else if (statusStr.includes('publish')) {
         textEl.textContent = 'Publishing to Instagram…';
         progress.style.width = '97%';
