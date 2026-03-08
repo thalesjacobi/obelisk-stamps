@@ -73,12 +73,6 @@
         opacity: 0; transition: opacity 0.5s ease;
         pointer-events: none;
     }
-    #asl-swipe-hint {
-        position: absolute; bottom: 0.55rem; left: 0; right: 0; z-index: 4;
-        color: #FFD700; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em;
-        padding: 0 1.25rem; pointer-events: none; transition: opacity 0.3s ease;
-        opacity: 0;
-    }
     #asl-counter {
         position: absolute; top: 6px; right: 8px; z-index: 2;
         color: rgba(255,255,255,0.85); font-size: 0.68rem;
@@ -148,7 +142,6 @@
             <div class="asl-layer" id="asl-layer-a"><img id="asl-img-a" src="" alt=""><video id="asl-vid-a" autoplay loop muted playsinline style="display:none;"></video></div>
             <div class="asl-layer" id="asl-layer-b"><img id="asl-img-b" src="" alt=""><video id="asl-vid-b" autoplay loop muted playsinline style="display:none;"></video></div>
             <div id="asl-punchline"></div>
-            <div id="asl-swipe-hint">Slide right for more &raquo;&raquo;&raquo;</div>
             <div id="asl-counter"></div>
         </div>
         <div class="asl-controls">
@@ -274,10 +267,6 @@
         scrubFill.style.width = '0%';
         showPunchline(punchlines[curIdx] || '');
 
-        // Swipe hint: visible on all slides except the last
-        var swipeHint = document.getElementById('asl-swipe-hint');
-        if (swipeHint) swipeHint.style.opacity = (curIdx < valid.length - 1) ? '1' : '0';
-
         /* snap opacity to 0, then crossfade in */
         incomingLayer.style.transition = 'none';
         incomingLayer.style.opacity    = '0';
@@ -341,10 +330,6 @@
     scrubFill.style.width = '0%';
     showPunchline(punchlines[0] || '');
     aFront = true;
-
-    // Swipe hint: visible on slide 0 if there are multiple slides
-    var swipeHint = document.getElementById('asl-swipe-hint');
-    if (swipeHint) swipeHint.style.opacity = (valid.length > 1) ? '1' : '0';
 
     nextTimer = setTimeout(advance, DURATION);
 })();
