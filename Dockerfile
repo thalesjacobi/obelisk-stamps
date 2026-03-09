@@ -8,10 +8,10 @@ WORKDIR /app
 # Copy requirements and install dependencies
 COPY requirements.txt .
 
-# Install required packages
-#RUN apt-get update && \
-#    apt-get install -y gcc libpq-dev python3-dev musl-dev && \
-#    rm -rf /var/lib/apt/lists/* 
+# Install system FFmpeg (needed for narrated video generation)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip and install Python dependencies with detailed logging
 RUN echo "=== Step 1: Upgrading pip ===" && \

@@ -3501,22 +3501,50 @@ def _narrated_video_worker(article_id, cfg):
             temp_files.append(audio_path)
 
         # ── 3. FFmpeg binary ───────────────────────────────────────────────────
-        try:
-            import imageio_ffmpeg
-            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        except ImportError:
-            _log("ERROR: imageio-ffmpeg not installed.")
+        import shutil
+        ffmpeg_exe = shutil.which("ffmpeg")
+        if not ffmpeg_exe:
+            try:
+                import imageio_ffmpeg
+                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            except Exception as ff_err:
+                _log(f"imageio_ffmpeg fallback failed: {ff_err}")
+        if not ffmpeg_exe:
+            _log("ERROR: FFmpeg not found (system or imageio_ffmpeg)")
             execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
-                    ("error:imageio-ffmpeg not installed.", article_id))
+                    ("error:FFmpeg not found.", article_id))
             return
+        _log(f"Using FFmpeg: {ffmpeg_exe}")
+        _flush_log()
+
+        def _run_ffmpeg(cmd, label, timeout=120):
+            """Run an FFmpeg command with timeout and limited output capture."""
+            _log(f"FFmpeg [{label}]: {' '.join(str(c) for c in cmd[:8])}…")
+            try:
+                result = subprocess.run(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                    text=True, timeout=timeout,
+                )
+            except subprocess.TimeoutExpired:
+                _log(f"FFmpeg [{label}] TIMED OUT after {timeout}s")
+                return None, "Timed out"
+            if result.returncode != 0:
+                return None, result.stderr[-300:] if result.stderr else "Unknown error"
+            return result, None
 
         def probe_duration(mp3_path):
-            result = subprocess.run([ffmpeg_exe, "-i", str(mp3_path)],
-                                    capture_output=True, text=True)
-            m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", result.stderr)
-            if m:
-                h, mn, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
-                return h * 3600 + mn * 60 + s
+            try:
+                result = subprocess.run(
+                    [ffmpeg_exe, "-i", str(mp3_path)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                    text=True, timeout=15,
+                )
+                m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", result.stderr)
+                if m:
+                    h, mn, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
+                    return h * 3600 + mn * 60 + s
+            except Exception as e:
+                _log(f"probe_duration failed: {e}")
             return 5.0
 
         # ── 4. FFmpeg per-clip (Ken Burns + audio) ─────────────────────────────
@@ -3530,6 +3558,7 @@ def _narrated_video_worker(article_id, cfg):
                 execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                         (f"error:Image not found: {img_url}", article_id))
                 return
+            _log(f"Clip {i+1}: image resolved → {img_path} ({img_path.stat().st_size} bytes)")
 
             audio_path = audio_paths[i]
             dur        = probe_duration(audio_path)
@@ -3558,11 +3587,11 @@ def _narrated_video_worker(article_id, cfg):
                 "-c:a", "aac", "-shortest",
                 str(clip_path)
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                _log(f"Clip {i+1} FAILED: {result.stderr[-200:]}")
+            result, err = _run_ffmpeg(cmd, f"clip {i+1}/{n_slides}", timeout=120)
+            if err:
+                _log(f"Clip {i+1} FAILED: {err}")
                 execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
-                        (f"error:FFmpeg clip {i+1} failed: {result.stderr[-200:]}", article_id))
+                        (f"error:FFmpeg clip {i+1} failed: {err[:200]}", article_id))
                 return
             _log(f"Clip {i+1}/{n_slides}: dur={dur:.1f}s, rendered OK")
             _flush_log()
@@ -3583,11 +3612,11 @@ def _narrated_video_worker(article_id, cfg):
             "-f", "concat", "-safe", "0", "-i", str(concat_txt),
             "-c", "copy", str(out_path)
         ]
-        result = subprocess.run(cmd_concat, capture_output=True, text=True)
-        if result.returncode != 0:
-            _log(f"Concat FAILED: {result.stderr[-200:]}")
+        result, err = _run_ffmpeg(cmd_concat, "concat", timeout=60)
+        if err:
+            _log(f"Concat FAILED: {err}")
             execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
-                    (f"error:FFmpeg concat failed: {result.stderr[-200:]}", article_id))
+                    (f"error:FFmpeg concat failed: {err[:200]}", article_id))
             return
         _flush_log()
 
