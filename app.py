@@ -3643,17 +3643,28 @@ def _narrated_video_worker(article_id, cfg):
                 (f"error:{str(e)[:200]}", article_id))
     finally:
         # ── Persist run log to DB and GCS ────────────────────────────────────
-        if log_lines:
-            log_text = f"Run started: {ts_start}\n" + "\n".join(log_lines)
-            # GCS (best-effort)
-            gcs_log_obj = f"articles/{article_id}/video/narrated_run_{ts}.log"
-            upload_bytes_to_gcs(log_text.encode(), gcs_log_obj, content_type="text/plain")
-            # Always save to DB (truncated to 64 KB)
-            execute("UPDATE articles SET video_narrated_log = %s WHERE id = %s",
-                    (log_text[:65000], article_id))
-        summary = "\n".join(log_lines) if log_lines else "No log output"
-        _add_activity_log(article_id, "Narrated video generation",
-                          f"Voice: {voice}, Format: {fmt}, Script: {script_len}\n{summary}")
+        try:
+            if log_lines:
+                log_text = f"Run started: {ts_start}\n" + "\n".join(log_lines)
+                # GCS (best-effort)
+                gcs_log_obj = f"articles/{article_id}/video/narrated_run_{ts}.log"
+                upload_bytes_to_gcs(log_text.encode(), gcs_log_obj, content_type="text/plain")
+                try:
+                    execute("UPDATE articles SET video_narrated_log = %s WHERE id = %s",
+                            (log_text[:65000], article_id))
+                except Exception as db_err:
+                    print(f"NarratedVideo: Could not save log to DB: {db_err}", flush=True)
+        except Exception as log_err:
+            print(f"NarratedVideo: Log persistence failed: {log_err}", flush=True)
+
+        # ── Activity log (always, even if log persistence failed) ────────────
+        try:
+            summary = "\n".join(log_lines) if log_lines else "No log output"
+            _add_activity_log(article_id, "Narrated video generation",
+                              f"Voice: {voice}, Format: {fmt}, Script: {script_len}\n{summary}")
+        except Exception as al_err:
+            print(f"NarratedVideo: Activity log failed: {al_err}", flush=True)
+
         # ── Clean up temp files ──────────────────────────────────────────────
         for f in temp_files:
             try:
