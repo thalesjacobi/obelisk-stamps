@@ -819,6 +819,10 @@
                         <button type="button" class="dropdown-item small"
                                 onclick="openNarratedSettings()">⚙ Settings…</button>
                     </li>
+                    <li>
+                        <button type="button" class="dropdown-item small"
+                                onclick="viewActivityLog()">📋 View Logs</button>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -4011,6 +4015,15 @@ function viewActivityLog() {
                     title: 'Cinemagraph Generation Log',
                     timestamp: '',
                     content: d.cinemagraph_log
+                });
+            }
+
+            // Add narrated video run log if it exists
+            if (d.narrated_log) {
+                allEntries.push({
+                    title: 'Narrated Video Generation Log',
+                    timestamp: '',
+                    content: d.narrated_log
                 });
             }
 

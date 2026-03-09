@@ -848,6 +848,7 @@ def init_articles_table():
                 "carousel_cinemagraph_log TEXT",
                 "carousel_cinemagraph_prompts TEXT",
                 "carousel_cinemagraph_archived TEXT",
+                "video_narrated_log TEXT",
                 "carousel_created_at TEXT",
                 "carousel_archived_meta TEXT",
                 "carousel_cinemagraph_created_at TEXT"):
@@ -3289,7 +3290,7 @@ def admin_article_video_data(article_id):
         "SELECT video_narrated_url, video_narrated_script, video_ai_url, video_narrated_runs, "
         "video_ai_status, video_narrated_status, carousel_cinemagraphs, carousel_cinemagraph_log, "
         "carousel_cinemagraph_prompts, carousel_cinemagraph_archived, "
-        "carousel_cinemagraph_created_at "
+        "carousel_cinemagraph_created_at, video_narrated_log "
         "FROM articles WHERE id = %s",
         (article_id,),
     )
@@ -3297,7 +3298,7 @@ def admin_article_video_data(article_id):
         return jsonify({"error": "Article not found"}), 404
     (narrated_url, narrated_script_raw, ai_url, narrated_runs_raw, ai_status, narrated_status,
      cinemagraphs_raw, cinemagraph_log_raw, cinemagraph_prompts_raw, cinemagraph_archived_raw,
-     cinemagraph_created_at_raw) = row
+     cinemagraph_created_at_raw, narrated_log_raw) = row
     narrated_script          = json.loads(narrated_script_raw)          if narrated_script_raw          else []
     narrated_runs            = json.loads(narrated_runs_raw)            if narrated_runs_raw            else []
     cinemagraph_urls         = json.loads(cinemagraphs_raw)             if cinemagraphs_raw             else []
@@ -3320,6 +3321,7 @@ def admin_article_video_data(article_id):
         "cinemagraph_status":     cinemagraph_status or None,
         "cinemagraph_result":     cinemagraph_result or None,
         "has_cinemagraph_log":    bool(cinemagraph_log_raw and cinemagraph_log_raw.strip()),
+        "has_narrated_log":       bool(narrated_log_raw and narrated_log_raw.strip()),
     })
 
 
@@ -3356,15 +3358,18 @@ def admin_article_activity_log(article_id):
     raw = get_setting(key)
     entries = json.loads(raw) if raw else []
 
-    # Include cinemagraph run log as an additional entry if it exists
+    # Include cinemagraph and narrated-video run logs if they exist
     row = query_one(
-        "SELECT carousel_cinemagraph_log FROM articles WHERE id = %s", (article_id,)
+        "SELECT carousel_cinemagraph_log, video_narrated_log FROM articles WHERE id = %s",
+        (article_id,)
     )
     cinemagraph_log = row[0] if row and row[0] else None
+    narrated_log    = row[1] if row and row[1] else None
 
     return jsonify({
         "entries": entries,
         "cinemagraph_log": cinemagraph_log,
+        "narrated_log": narrated_log,
     })
 
 
@@ -3382,11 +3387,33 @@ def _narrated_video_worker(article_id, cfg):
     zoom_step  = {"slow": 0.0010, "medium": 0.0015, "fast": 0.0025}.get(kb_speed, 0.0010)
     word_range = {"short": "20-40", "medium": "40-70", "long": "70-100"}.get(script_len, "40-70")
 
+    # ── Log capture (mirrors cinemagraph pattern) ────────────────────────────
+    log_lines = []
+    ts_start  = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    def _log(msg):
+        line = f"[{time.strftime('%H:%M:%S')}] {msg}"
+        log_lines.append(line)
+        print(f"NarratedVideo: {msg}", flush=True)
+
+    def _flush_log():
+        """Write current log_lines to DB so the activity-log modal shows live progress."""
+        if log_lines:
+            log_text = f"Run started: {ts_start}\n" + "\n".join(log_lines)
+            try:
+                execute("UPDATE articles SET video_narrated_log = %s WHERE id = %s",
+                        (log_text[:65000], article_id))
+            except Exception:
+                pass
+    # ─────────────────────────────────────────────────────────────────────────
+
     row = query_one(
         "SELECT carousel_images, carousel_prompts, carousel_punchlines, title FROM articles WHERE id = %s",
         (article_id,),
     )
     if not row or not row[0]:
+        _log("ERROR: No carousel images found.")
+        _flush_log()
         execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                 ("error:No carousel images found.", article_id))
         return
@@ -3396,6 +3423,9 @@ def _narrated_video_worker(article_id, cfg):
     punchlines= (json.loads(row[2]) if row[2] else [])[:10]
     article_title = row[3] if row[3] else "Unknown"
     n_slides  = len(images)
+
+    _log(f"Article: \"{article_title}\", {n_slides} slides")
+    _log(f"Settings: format={fmt}, voice={voice}, tts={tts_model}, script={script_len}, kb={kb_speed}, crf={crf}, fps={fps}")
 
     ts        = int(time.time())
     video_dir = Path(f"static/articles/{article_id}/video")
@@ -3408,6 +3438,7 @@ def _narrated_video_worker(article_id, cfg):
         # ── 1. GPT narration script ────────────────────────────────────────────
         execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                 ("running:script", article_id))
+        _log("Generating narration script via GPT…")
         scenes_desc = "\n".join(
             f"Slide {i+1}: {prompts[i] if i < len(prompts) else '(no prompt)'} — "
             f"Punchline: {punchlines[i] if i < len(punchlines) else ''}"
@@ -3428,7 +3459,7 @@ def _narrated_video_worker(article_id, cfg):
             response_format={"type": "json_object"},
         )
         raw_json = gpt_resp.choices[0].message.content
-        print(f"[NarratedVideo] GPT raw response: {raw_json}", flush=True)
+        _log(f"GPT raw response: {raw_json[:500]}")
         parsed   = json.loads(raw_json)
         if isinstance(parsed, dict):
             segments = parsed.get("segments")
@@ -3449,9 +3480,10 @@ def _narrated_video_worker(article_id, cfg):
         for i, seg in enumerate(segments):
             if len(seg.split()) < 3:
                 segments[i] = punchlines[i] if i < len(punchlines) else f"Slide {i+1}."
-                print(f"[NarratedVideo] Segment {i+1} too short, replaced with fallback: {segments[i]}", flush=True)
+                _log(f"Segment {i+1} too short, replaced with fallback: {segments[i]}")
 
-        print(f"[NarratedVideo] Final segments ({len(segments)}): {segments}", flush=True)
+        _log(f"Final segments ({len(segments)}): {segments}")
+        _flush_log()
 
         # ── 2. TTS per segment ─────────────────────────────────────────────────
         audio_paths = []
@@ -3463,8 +3495,8 @@ def _narrated_video_worker(article_id, cfg):
                 model=tts_model, voice=voice, input=seg, response_format="mp3"
             )
             audio_path.write_bytes(tts_resp.content)
-            print(f"[NarratedVideo] TTS segment {i+1}: {len(seg.split())} words, "
-                  f"audio {len(tts_resp.content)} bytes → {audio_path}", flush=True)
+            _log(f"TTS {i+1}/{n_slides}: {len(seg.split())} words, {len(tts_resp.content)} bytes")
+            _flush_log()
             audio_paths.append(audio_path)
             temp_files.append(audio_path)
 
@@ -3473,6 +3505,7 @@ def _narrated_video_worker(article_id, cfg):
             import imageio_ffmpeg
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         except ImportError:
+            _log("ERROR: imageio-ffmpeg not installed.")
             execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                     ("error:imageio-ffmpeg not installed.", article_id))
             return
@@ -3493,6 +3526,7 @@ def _narrated_video_worker(article_id, cfg):
                     (f"running:clip:{i+1}/{n_slides}", article_id))
             img_path = resolve_image_to_local_path(img_url)
             if not img_path or not img_path.exists():
+                _log(f"ERROR: Image not found: {img_url}")
                 execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                         (f"error:Image not found: {img_url}", article_id))
                 return
@@ -3526,14 +3560,18 @@ def _narrated_video_worker(article_id, cfg):
             ]
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
+                _log(f"Clip {i+1} FAILED: {result.stderr[-200:]}")
                 execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                         (f"error:FFmpeg clip {i+1} failed: {result.stderr[-200:]}", article_id))
                 return
+            _log(f"Clip {i+1}/{n_slides}: dur={dur:.1f}s, rendered OK")
+            _flush_log()
             clip_paths.append(clip_path)
 
         # ── 5. Concat all clips ────────────────────────────────────────────────
         execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                 ("running:final", article_id))
+        _log("Concatenating clips…")
         concat_txt = video_dir / f"concat_{ts}.txt"
         temp_files.append(concat_txt)
         concat_txt.write_text(
@@ -3547,9 +3585,11 @@ def _narrated_video_worker(article_id, cfg):
         ]
         result = subprocess.run(cmd_concat, capture_output=True, text=True)
         if result.returncode != 0:
+            _log(f"Concat FAILED: {result.stderr[-200:]}")
             execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                     (f"error:FFmpeg concat failed: {result.stderr[-200:]}", article_id))
             return
+        _flush_log()
 
         # ── 6. Upload to GCS + save run to history ──────────────────────────────
         gcs_obj = f"articles/{article_id}/video/narrated_{ts}.mp4"
@@ -3557,6 +3597,9 @@ def _narrated_video_worker(article_id, cfg):
         static_url = gcs_url if gcs_url else ("/" + str(out_path).replace("\\", "/"))
         if gcs_url:
             temp_files.append(out_path)  # clean up local copy; it's in GCS now
+            _log(f"Uploaded to GCS: {gcs_url}")
+        else:
+            _log(f"Saved locally: {static_url}")
         from datetime import datetime
         ts_label = datetime.now().strftime("%d %b %Y, %H:%M").lstrip("0")
         run_obj  = {
@@ -3590,14 +3633,28 @@ def _narrated_video_worker(article_id, cfg):
             "video_narrated_runs = %s, video_narrated_status = NULL WHERE id = %s",
             (static_url, json.dumps(segments), json.dumps(all_runs), article_id),
         )
+        _log(f"DONE — {n_slides} slides, video: {static_url}")
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f"[NarratedVideo] Error for article {article_id}: {e}", flush=True)
+        _log(f"ERROR: {e}")
         execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                 (f"error:{str(e)[:200]}", article_id))
     finally:
+        # ── Persist run log to DB and GCS ────────────────────────────────────
+        if log_lines:
+            log_text = f"Run started: {ts_start}\n" + "\n".join(log_lines)
+            # GCS (best-effort)
+            gcs_log_obj = f"articles/{article_id}/video/narrated_run_{ts}.log"
+            upload_bytes_to_gcs(log_text.encode(), gcs_log_obj, content_type="text/plain")
+            # Always save to DB (truncated to 64 KB)
+            execute("UPDATE articles SET video_narrated_log = %s WHERE id = %s",
+                    (log_text[:65000], article_id))
+        summary = "\n".join(log_lines) if log_lines else "No log output"
+        _add_activity_log(article_id, "Narrated video generation",
+                          f"Voice: {voice}, Format: {fmt}, Script: {script_len}\n{summary}")
+        # ── Clean up temp files ──────────────────────────────────────────────
         for f in temp_files:
             try:
                 if f.exists():
