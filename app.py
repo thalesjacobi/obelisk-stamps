@@ -899,6 +899,11 @@ def init_site_settings():
     # Clear stale cinemagraph status keys left over from a server restart mid-run
     # (the daemon thread is killed but the DB key remains set to "running:N/M")
     cur.execute("DELETE FROM site_settings WHERE `key` LIKE 'cinemagraph_status_%'")
+    # Clear stale narrated-video status left over from a server restart mid-run
+    cur.execute(
+        "UPDATE articles SET video_narrated_status = NULL "
+        "WHERE video_narrated_status LIKE 'running%%'"
+    )
     conn.commit()
     cur.close()
     conn.close()
@@ -3626,6 +3631,18 @@ def admin_article_generate_narrated_video(article_id):
     t = threading.Thread(target=_narrated_video_worker, args=(article_id, cfg), daemon=True)
     t.start()
     return jsonify({"status": "started", "n_slides": len(images)})
+
+
+@app.route("/admin/articles/<int:article_id>/stop-narrated-video", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_stop_narrated_video(article_id):
+    """Reset narrated-video status so the user can re-trigger generation."""
+    execute(
+        "UPDATE articles SET video_narrated_status = NULL WHERE id = %s",
+        (article_id,),
+    )
+    return jsonify({"ok": True})
 
 
 def _ai_video_worker(article_id, images, prompts, ts):

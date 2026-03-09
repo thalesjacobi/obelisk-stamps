@@ -2849,11 +2849,13 @@ function narratedGenerate() {
     .catch(err => { btn.disabled = false; alert('Network error: ' + err.message); });
 }
 
-/* ── Stop watching (job keeps running in background) ─────────── */
+/* ── Stop job and reset DB status ────────────────────────────── */
 function narratedStop() {
+    fetch(`/admin/articles/${ARTICLE_ID}/stop-narrated-video`, { method: 'POST' })
+        .catch(() => {});          // best-effort
     narratedFinish(null);
     document.getElementById('narrated-status-text').textContent =
-        'Stopped watching — the job is still running in the background. Reload the page to check again.';
+        'Stopped — you can re-generate when ready.';
     document.getElementById('narrated-status').classList.remove('d-none');
     document.getElementById('narrated-spinner').classList.add('d-none');
 }
