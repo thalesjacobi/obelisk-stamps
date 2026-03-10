@@ -3392,6 +3392,7 @@ def _narrated_video_worker(article_id, cfg):
     fps        = int(cfg.get("fps",    25))
 
     W, H       = (720, 1280) if fmt == "vertical" else (720, 720)
+    render_fps = 12  # Ken Burns on still images looks identical at 12fps vs 25fps
     zoom_step  = {"slow": 0.0010, "medium": 0.0015, "fast": 0.0025}.get(kb_speed, 0.0010)
     word_range = {"short": "20-40", "medium": "40-70", "long": "70-100"}.get(script_len, "40-70")
 
@@ -3433,7 +3434,7 @@ def _narrated_video_worker(article_id, cfg):
     n_slides  = len(images)
 
     _log(f"Article: \"{article_title}\", {n_slides} slides")
-    _log(f"Settings: format={fmt}, voice={voice}, tts={tts_model}, script={script_len}, kb={kb_speed}, crf={crf}, fps={fps}")
+    _log(f"Settings: format={fmt}, voice={voice}, tts={tts_model}, script={script_len}, kb={kb_speed}, crf={crf}, fps={fps}, render_fps={render_fps}, res={W}x{H}")
 
     ts        = int(time.time())
     video_dir = Path(f"static/articles/{article_id}/video")
@@ -3603,7 +3604,7 @@ def _narrated_video_worker(article_id, cfg):
                 f"[0:v]"
                 f"scale={ZW}:{ZH}:force_original_aspect_ratio=increase:flags=fast_bilinear,"
                 f"crop={ZW}:{ZH},"
-                f"fps={fps},"
+                f"fps={render_fps},"
                 f"crop={W}:{H}:x='{px}':y='{py}',"
                 f"setsar=1[v]"
             )
