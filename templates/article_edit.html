@@ -2923,13 +2923,14 @@ function viewComponentLog(component, title) {
             // Build accordion items (newest first for activity entries)
             allEntries.slice().reverse().forEach(function(entry, idx) {
                 var itemId = 'component-log-item-' + idx;
+                var isFirst = idx === 0;
                 var ts = entry.timestamp
                     ? entry.timestamp.replace('T', ' ').replace('Z', ' UTC')
                     : '';
                 var header = document.createElement('h2');
                 header.className = 'accordion-header';
                 var btn = document.createElement('button');
-                btn.className = 'accordion-button collapsed small py-2';
+                btn.className = 'accordion-button small py-2' + (isFirst ? '' : ' collapsed');
                 btn.type = 'button';
                 btn.setAttribute('data-bs-toggle', 'collapse');
                 btn.setAttribute('data-bs-target', '#' + itemId);
@@ -2939,7 +2940,7 @@ function viewComponentLog(component, title) {
 
                 var collapseDiv = document.createElement('div');
                 collapseDiv.id = itemId;
-                collapseDiv.className = 'accordion-collapse collapse';
+                collapseDiv.className = 'accordion-collapse collapse' + (isFirst ? ' show' : '');
                 var body = document.createElement('div');
                 body.className = 'accordion-body small';
                 body.style.whiteSpace = 'pre-wrap';
@@ -2948,6 +2949,8 @@ function viewComponentLog(component, title) {
                 body.style.background = '#f8f9fa';
                 body.style.borderRadius = '4px';
                 body.style.padding = '0.75rem';
+                body.style.maxHeight = '400px';
+                body.style.overflowY = 'auto';
                 body.textContent = entry.content || 'No details.';
                 collapseDiv.appendChild(body);
 
