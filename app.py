@@ -3391,7 +3391,7 @@ def _narrated_video_worker(article_id, cfg):
     crf        = int(cfg.get("crf",    23))
     fps        = int(cfg.get("fps",    25))
 
-    W, H       = (1080, 1920) if fmt == "vertical" else (1080, 1080)
+    W, H       = (720, 1280) if fmt == "vertical" else (720, 720)
     zoom_step  = {"slow": 0.0010, "medium": 0.0015, "fast": 0.0025}.get(kb_speed, 0.0010)
     word_range = {"short": "20-40", "medium": "40-70", "long": "70-100"}.get(script_len, "40-70")
 
