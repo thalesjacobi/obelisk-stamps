@@ -3347,11 +3347,24 @@ def admin_article_component_log(article_id, component):
         )
         run_log = row[0] if row and row[0] else None
 
-    # Activity entries filtered by component tag
+    # Activity entries filtered by component tag.
+    # Legacy entries (written before the component field was added) are classified
+    # by title so they still appear in the correct component's log.
+    def _infer_component(entry):
+        title = entry.get("title", "")
+        if "Cinemagraph" in title or "(cine)" in title:
+            return "cinemagraph"
+        if "Narrated" in title:
+            return "narrated"
+        return "carousel"
+
     key = f"ig_activity_log_{article_id}"
     raw = get_setting(key)
     all_entries = json.loads(raw) if raw else []
-    entries = [e for e in all_entries if e.get("component") == component]
+    entries = [
+        e for e in all_entries
+        if (e.get("component") or _infer_component(e)) == component
+    ]
 
     return jsonify({"run_log": run_log, "entries": entries})
 
