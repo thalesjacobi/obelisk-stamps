@@ -3586,22 +3586,25 @@ def _narrated_video_worker(article_id, cfg):
             audio_path = audio_paths[i]
             dur        = probe_duration(audio_path)
             dur_video  = dur + 0.3
-            frames     = int(dur_video * fps)
             clip_path  = video_dir / f"clip_{i+1}.mp4"
             temp_files.append(clip_path)
 
-            # Run zoompan at half resolution to cut pixel work by ~4×, then
-            # scale back up to final size.  Quality loss is imperceptible.
-            ZW, ZH    = W // 2, H // 2
-            zoom_expr = f"min(zoom+{zoom_step:.4f},1.5)"
+            # Ken Burns via scale + animated crop.
+            # This is orders of magnitude faster than zoompan, which runs a
+            # per-pixel interpolation on every single frame. Here we scale the
+            # image once to a slightly larger canvas, then use the crop filter's
+            # time-variable x/y to pan smoothly — just pointer arithmetic per frame.
+            zoom_factor = min(1.0 + zoom_step * 200, 1.3)
+            ZW = int(W * zoom_factor)
+            ZH = int(H * zoom_factor)
+            px = f"({ZW}-{W})*(1-t/{dur_video:.4f})"
+            py = f"({ZH}-{H})*(1-t/{dur_video:.4f})"
             zp_filter = (
-                f"[0:v]scale={ZW}:{ZH}:force_original_aspect_ratio=increase:flags=fast_bilinear,"
+                f"[0:v]"
+                f"scale={ZW}:{ZH}:force_original_aspect_ratio=increase:flags=fast_bilinear,"
                 f"crop={ZW}:{ZH},"
                 f"fps={fps},"
-                f"zoompan=z='{zoom_expr}':d={frames}:"
-                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                f"s={ZW}x{ZH},"
-                f"scale={W}:{H}:flags=fast_bilinear,"
+                f"crop={W}:{H}:x='{px}':y='{py}',"
                 f"setsar=1[v]"
             )
             cmd = [
@@ -3614,7 +3617,7 @@ def _narrated_video_worker(article_id, cfg):
                 "-c:a", "aac", "-shortest",
                 str(clip_path)
             ]
-            result, err = _run_ffmpeg(cmd, f"clip {i+1}/{n_slides}", timeout=240)
+            result, err = _run_ffmpeg(cmd, f"clip {i+1}/{n_slides}", timeout=120)
             if err:
                 _log(f"Clip {i+1} FAILED: {err}")
                 execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
