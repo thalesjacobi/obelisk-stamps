@@ -3541,11 +3541,26 @@ def _narrated_video_worker(article_id, cfg):
             return result, None
 
         def probe_duration(mp3_path):
+            # Try ffprobe first — it is lighter and faster than ffmpeg -i
+            ffprobe_exe = ffmpeg_exe.replace("ffmpeg", "ffprobe") if ffmpeg_exe else "ffprobe"
+            try:
+                result = subprocess.run(
+                    [ffprobe_exe, "-v", "quiet",
+                     "-show_entries", "format=duration",
+                     "-of", "default=noprint_wrappers=1:nokey=1",
+                     str(mp3_path)],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    text=True, timeout=10,
+                )
+                return float(result.stdout.strip())
+            except Exception:
+                pass
+            # Fallback: ffmpeg -i (reads duration from header)
             try:
                 result = subprocess.run(
                     [ffmpeg_exe, "-i", str(mp3_path)],
                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                    text=True, timeout=15,
+                    text=True, timeout=30,
                 )
                 m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", result.stderr)
                 if m:
@@ -3575,14 +3590,18 @@ def _narrated_video_worker(article_id, cfg):
             clip_path  = video_dir / f"clip_{i+1}.mp4"
             temp_files.append(clip_path)
 
+            # Run zoompan at half resolution to cut pixel work by ~4×, then
+            # scale back up to final size.  Quality loss is imperceptible.
+            ZW, ZH    = W // 2, H // 2
             zoom_expr = f"min(zoom+{zoom_step:.4f},1.5)"
             zp_filter = (
-                f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
-                f"crop={W}:{H},"
+                f"[0:v]scale={ZW}:{ZH}:force_original_aspect_ratio=increase:flags=fast_bilinear,"
+                f"crop={ZW}:{ZH},"
                 f"fps={fps},"
                 f"zoompan=z='{zoom_expr}':d={frames}:"
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                f"s={W}x{H},"
+                f"s={ZW}x{ZH},"
+                f"scale={W}:{H}:flags=fast_bilinear,"
                 f"setsar=1[v]"
             )
             cmd = [
@@ -3595,7 +3614,7 @@ def _narrated_video_worker(article_id, cfg):
                 "-c:a", "aac", "-shortest",
                 str(clip_path)
             ]
-            result, err = _run_ffmpeg(cmd, f"clip {i+1}/{n_slides}", timeout=120)
+            result, err = _run_ffmpeg(cmd, f"clip {i+1}/{n_slides}", timeout=240)
             if err:
                 _log(f"Clip {i+1} FAILED: {err}")
                 execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
