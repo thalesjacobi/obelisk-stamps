@@ -246,7 +246,7 @@
                     <li><h6 class="dropdown-header">Logs</h6></li>
                     <li>
                         <button type="button" class="dropdown-item small"
-                                onclick="viewActivityLog()">View Logs</button>
+                                onclick="viewComponentLog('carousel', 'Carousel')">View Logs</button>
                     </li>
                 </ul>
             </div>
@@ -510,7 +510,7 @@
                     <li>
                         <button type="button" id="cinemagraph-log-btn"
                                 class="dropdown-item small"
-                                onclick="viewActivityLog()">View Logs</button>
+                                onclick="viewComponentLog('cinemagraph', 'Cinemagraph')">View Logs</button>
                     </li>
                 </ul>
             </div>
@@ -821,7 +821,7 @@
                     </li>
                     <li>
                         <button type="button" class="dropdown-item small"
-                                onclick="viewNarratedLog()">📋 View Logs</button>
+                                onclick="viewComponentLog('narrated', 'Narrated Video')">View Logs</button>
                     </li>
                 </ul>
             </div>
@@ -952,32 +952,12 @@
         </div>
     </div>
 
-    <!-- Narrated MP4 — Log Modal -->
-    <div class="modal fade" id="narrated-log-modal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Narrated Video — Generation Log</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <pre id="narrated-log-content"
-                         style="white-space:pre-wrap;word-break:break-all;font-size:0.78rem;
-                                background:#f8f9fa;border-radius:4px;padding:0.75rem;
-                                max-height:60vh;overflow-y:auto;">Loading…</pre>
-                    <div id="narrated-log-empty" class="text-muted text-center py-3 d-none">
-                        No log available. Generate a narrated video first.
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- ══════════════════════════════════════════════════════════
          Component C — AI Explainer Video (Luma AI)
          ══════════════════════════════════════════════════════════ -->
     <div class="card mt-3 mb-4" id="ai-video-card">
-        <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2 position-relative">
             <div>
                 <h5 class="mb-0">AI Explainer Video</h5>
                 <p class="text-muted small mb-0 mt-1">
@@ -985,10 +965,24 @@
                     ~10–20 min, ~$0.50–1.00.
                 </p>
             </div>
-            <div class="d-flex gap-2 align-items-center">
+            <div class="d-flex gap-2 align-items-center" style="margin-right:1.5rem;">
                 <button type="button" id="ai-video-stop-btn" class="btn btn-sm btn-outline-danger d-none" onclick="aiVideoStop()">Stop</button>
                 <button type="button" id="ai-video-locked-btn" class="btn btn-sm btn-secondary" disabled>Generate carousel images first</button>
                 <button type="button" id="ai-video-btn" class="btn btn-sm btn-primary d-none" onclick="aiVideoGenerate()">Generate AI Video</button>
+            </div>
+            <!-- Kebab menu -->
+            <div class="dropdown position-absolute" style="top:0.6rem;right:0.75rem;">
+                <button type="button" class="btn btn-sm btn-link text-muted p-1 lh-1"
+                        style="font-size:1.25rem; text-decoration:none;"
+                        data-bs-toggle="dropdown" aria-expanded="false"
+                        title="AI Explainer options">&#8942;</button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li><h6 class="dropdown-header">Logs</h6></li>
+                    <li>
+                        <button type="button" class="dropdown-item small"
+                                onclick="viewComponentLog('explainer', 'AI Explainer Video')">View Logs</button>
+                    </li>
+                </ul>
             </div>
         </div>
         <div class="card-body">
@@ -1235,18 +1229,18 @@
     </div>
 </div>
 
-<!-- Activity Log Modal -->
-<div class="modal fade" id="cinemagraph-log-modal" tabindex="-1" aria-hidden="true">
+<!-- Per-Component Log Modal (reused by all components) -->
+<div class="modal fade" id="component-log-modal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Activity Log</h5>
+                <h5 class="modal-title" id="component-log-title">Logs</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div class="accordion accordion-flush" id="activity-log-accordion"></div>
-                <div id="activity-log-empty" class="text-muted small text-center py-3 d-none">
-                    No activity logged yet.
+                <div class="accordion accordion-flush" id="component-log-accordion"></div>
+                <div id="component-log-empty" class="text-muted small text-center py-3 d-none">
+                    No logs available yet.
                 </div>
             </div>
         </div>
@@ -2885,26 +2879,82 @@ function narratedStop() {
     document.getElementById('narrated-spinner').classList.add('d-none');
 }
 
-/* ── Dedicated narrated video log viewer ─────────────────────── */
-function viewNarratedLog() {
+/* ── Per-component log viewer (unified for all components) ──── */
+function viewComponentLog(component, title) {
     if (!ARTICLE_ID) return;
-    var content = document.getElementById('narrated-log-content');
-    var empty   = document.getElementById('narrated-log-empty');
-    content.textContent = 'Loading…';
-    content.classList.remove('d-none');
-    empty.classList.add('d-none');
-    fetch('/admin/articles/' + ARTICLE_ID + '/narrated-log')
+    var titleEl  = document.getElementById('component-log-title');
+    var accordion = document.getElementById('component-log-accordion');
+    var emptyMsg  = document.getElementById('component-log-empty');
+    titleEl.textContent = title + ' — Logs';
+    accordion.innerHTML = '';
+    emptyMsg.classList.add('d-none');
+
+    fetch('/admin/articles/' + ARTICLE_ID + '/component-log/' + component)
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            if (d.log) {
-                content.textContent = d.log;
-            } else {
-                content.classList.add('d-none');
-                empty.classList.remove('d-none');
+            var allEntries = [];
+
+            // Run log (detailed worker output) as the first entry
+            if (d.run_log) {
+                allEntries.push({
+                    title: 'Generation Log',
+                    timestamp: '',
+                    content: d.run_log
+                });
             }
-            new bootstrap.Modal(document.getElementById('narrated-log-modal')).show();
+
+            // Activity entries (brief summaries with timestamps)
+            if (d.entries && d.entries.length) {
+                d.entries.forEach(function(e) { allEntries.push(e); });
+            }
+
+            if (!allEntries.length) {
+                emptyMsg.classList.remove('d-none');
+                new bootstrap.Modal(document.getElementById('component-log-modal')).show();
+                return;
+            }
+
+            // Build accordion items (newest first for activity entries)
+            allEntries.slice().reverse().forEach(function(entry, idx) {
+                var itemId = 'component-log-item-' + idx;
+                var ts = entry.timestamp
+                    ? entry.timestamp.replace('T', ' ').replace('Z', ' UTC')
+                    : '';
+                var header = document.createElement('h2');
+                header.className = 'accordion-header';
+                var btn = document.createElement('button');
+                btn.className = 'accordion-button collapsed small py-2';
+                btn.type = 'button';
+                btn.setAttribute('data-bs-toggle', 'collapse');
+                btn.setAttribute('data-bs-target', '#' + itemId);
+                btn.innerHTML = '<span class="fw-semibold">' + entry.title + '</span>' +
+                    (ts ? '<span class="text-muted ms-2" style="font-size:0.75rem">' + ts + '</span>' : '');
+                header.appendChild(btn);
+
+                var collapseDiv = document.createElement('div');
+                collapseDiv.id = itemId;
+                collapseDiv.className = 'accordion-collapse collapse';
+                var body = document.createElement('div');
+                body.className = 'accordion-body small';
+                body.style.whiteSpace = 'pre-wrap';
+                body.style.wordBreak = 'break-all';
+                body.style.fontSize = '0.78rem';
+                body.style.background = '#f8f9fa';
+                body.style.borderRadius = '4px';
+                body.style.padding = '0.75rem';
+                body.textContent = entry.content || 'No details.';
+                collapseDiv.appendChild(body);
+
+                var item = document.createElement('div');
+                item.className = 'accordion-item';
+                item.appendChild(header);
+                item.appendChild(collapseDiv);
+                accordion.appendChild(item);
+            });
+
+            new bootstrap.Modal(document.getElementById('component-log-modal')).show();
         })
-        .catch(function() { alert('Could not load narrated video log.'); });
+        .catch(function() { alert('Could not load ' + title + ' logs.'); });
 }
 
 function narratedFinish(error) {
@@ -4041,79 +4091,5 @@ function _cinemagraphUpdateLogBtn(hasLog) {
     if (ARTICLE_ID) btn.classList.remove('disabled');
 }
 
-function viewActivityLog() {
-    if (!ARTICLE_ID) return;
-    fetch('/admin/articles/' + ARTICLE_ID + '/activity-log')
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-            var accordion = document.getElementById('activity-log-accordion');
-            var emptyMsg  = document.getElementById('activity-log-empty');
-            accordion.innerHTML = '';
-
-            var allEntries = [];
-
-            // Add cinemagraph run log as the first entry if it exists
-            if (d.cinemagraph_log) {
-                allEntries.push({
-                    title: 'Cinemagraph Generation Log',
-                    timestamp: '',
-                    content: d.cinemagraph_log
-                });
-            }
-
-            // Add activity log entries (already chronological)
-            if (d.entries && d.entries.length) {
-                d.entries.forEach(function(e) { allEntries.push(e); });
-            }
-
-            if (!allEntries.length) {
-                emptyMsg.classList.remove('d-none');
-                new bootstrap.Modal(document.getElementById('cinemagraph-log-modal')).show();
-                return;
-            }
-            emptyMsg.classList.add('d-none');
-
-            // Build accordion items (newest first for activity entries)
-            allEntries.slice().reverse().forEach(function(entry, idx) {
-                var itemId = 'activity-log-item-' + idx;
-                var ts = entry.timestamp
-                    ? entry.timestamp.replace('T', ' ').replace('Z', ' UTC')
-                    : '';
-                var header = document.createElement('h2');
-                header.className = 'accordion-header';
-                var btn = document.createElement('button');
-                btn.className = 'accordion-button collapsed small py-2';
-                btn.type = 'button';
-                btn.setAttribute('data-bs-toggle', 'collapse');
-                btn.setAttribute('data-bs-target', '#' + itemId);
-                btn.innerHTML = '<span class="fw-semibold">' + entry.title + '</span>' +
-                    (ts ? '<span class="text-muted ms-2" style="font-size:0.75rem">' + ts + '</span>' : '');
-                header.appendChild(btn);
-
-                var collapseDiv = document.createElement('div');
-                collapseDiv.id = itemId;
-                collapseDiv.className = 'accordion-collapse collapse';
-                var body = document.createElement('div');
-                body.className = 'accordion-body small';
-                body.style.whiteSpace = 'pre-wrap';
-                body.style.wordBreak = 'break-all';
-                body.style.fontSize = '0.78rem';
-                body.style.background = '#f8f9fa';
-                body.style.borderRadius = '4px';
-                body.style.padding = '0.75rem';
-                body.textContent = entry.content || 'No details.';
-                collapseDiv.appendChild(body);
-
-                var item = document.createElement('div');
-                item.className = 'accordion-item';
-                item.appendChild(header);
-                item.appendChild(collapseDiv);
-                accordion.appendChild(item);
-            });
-
-            new bootstrap.Modal(document.getElementById('cinemagraph-log-modal')).show();
-        })
-        .catch(function() { alert('Could not load activity log.'); });
-}
 </script>
 {% endblock %}

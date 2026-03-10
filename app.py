@@ -849,6 +849,7 @@ def init_articles_table():
                 "carousel_cinemagraph_prompts TEXT",
                 "carousel_cinemagraph_archived TEXT",
                 "video_narrated_log TEXT",
+                "video_ai_log TEXT",
                 "carousel_created_at TEXT",
                 "carousel_archived_meta TEXT",
                 "carousel_cinemagraph_created_at TEXT"):
@@ -2890,7 +2891,8 @@ def admin_article_generate_carousel(article_id):
         # Activity log
         try:
             _add_activity_log(article_id, "Carousel generation",
-                              f"Generated {ok} of {N} images\nModel: dall-e-3 (1024×1024, quality=standard, style=vivid)")
+                              f"Generated {ok} of {N} images\nModel: dall-e-3 (1024×1024, quality=standard, style=vivid)",
+                              component="carousel")
         except Exception:
             pass  # non-fatal
 
@@ -3214,15 +3216,15 @@ def admin_article_regenerate_carousel_image(article_id):
         dl.raise_for_status()
     except _openai_module.BadRequestError as e:
         _add_activity_log(article_id, f"Carousel re-run slide {index + 1} failed",
-                          f"Content policy: {e}")
+                          f"Content policy: {e}", component="carousel")
         return jsonify({"error": f"Content policy: {e}"}), 400
     except _openai_module.RateLimitError:
         _add_activity_log(article_id, f"Carousel re-run slide {index + 1} failed",
-                          "Rate limited")
+                          "Rate limited", component="carousel")
         return jsonify({"error": "Rate limited — please try again later."}), 429
     except Exception as e:
         _add_activity_log(article_id, f"Carousel re-run slide {index + 1} failed",
-                          f"Error: {e}")
+                          f"Error: {e}", component="carousel")
         return jsonify({"error": str(e)}), 500
 
     # Save with timestamp so old file (used by archive) is not overwritten
@@ -3265,7 +3267,8 @@ def admin_article_regenerate_carousel_image(article_id):
         return jsonify({"error": f"DB save failed: {e}"}), 500
 
     _add_activity_log(article_id, f"Carousel re-run slide {index + 1}",
-                      f"Model: dall-e-3\nPrompt: {new_prompt[:120]}...")
+                      f"Model: dall-e-3\nPrompt: {new_prompt[:120]}...",
+                      component="carousel")
     static_url = gcs_url if gcs_url else url_for("static", filename=f"articles/{article_id}/carousel/{filename}")
     return jsonify({
         "url": static_url, "prompt": new_prompt, "punchline": new_punchline,
@@ -3325,30 +3328,32 @@ def admin_article_video_data(article_id):
     })
 
 
-@app.route("/admin/articles/<int:article_id>/cinemagraph-log")
+@app.route("/admin/articles/<int:article_id>/component-log/<component>")
 @login_required
 @admin_required
-def admin_article_cinemagraph_log(article_id):
-    """Return the stored cinemagraph run log for an article."""
-    row = query_one(
-        "SELECT carousel_cinemagraph_log FROM articles WHERE id = %s", (article_id,)
-    )
-    if not row or not row[0]:
-        return jsonify({"log": None, "has_log": False})
-    return jsonify({"log": row[0], "has_log": True})
+def admin_article_component_log(article_id, component):
+    """Return per-component run log + filtered activity entries."""
+    # Run log from dedicated TEXT column (if the component has one)
+    col_map = {
+        "cinemagraph": "carousel_cinemagraph_log",
+        "narrated":    "video_narrated_log",
+        "explainer":   "video_ai_log",
+    }
+    run_log = None
+    col = col_map.get(component)
+    if col:
+        row = query_one(
+            f"SELECT `{col}` FROM articles WHERE id = %s", (article_id,)
+        )
+        run_log = row[0] if row and row[0] else None
 
+    # Activity entries filtered by component tag
+    key = f"ig_activity_log_{article_id}"
+    raw = get_setting(key)
+    all_entries = json.loads(raw) if raw else []
+    entries = [e for e in all_entries if e.get("component") == component]
 
-@app.route("/admin/articles/<int:article_id>/narrated-log")
-@login_required
-@admin_required
-def admin_article_narrated_log(article_id):
-    """Return the stored narrated-video run log for an article."""
-    row = query_one(
-        "SELECT video_narrated_log FROM articles WHERE id = %s", (article_id,)
-    )
-    if not row or not row[0]:
-        return jsonify({"log": None, "has_log": False})
-    return jsonify({"log": row[0], "has_log": True})
+    return jsonify({"run_log": run_log, "entries": entries})
 
 
 @app.route("/admin/articles/<int:article_id>/cinemagraph-result", methods=["DELETE"])
@@ -3361,27 +3366,6 @@ def admin_article_clear_cinemagraph_result(article_id):
     return jsonify({"success": True})
 
 
-@app.route("/admin/articles/<int:article_id>/activity-log")
-@login_required
-@admin_required
-def admin_article_activity_log(article_id):
-    """Return the unified activity log for an article (Instagram + cinemagraph entries)."""
-    # Instagram / API activity log (stored in site_settings)
-    key = f"ig_activity_log_{article_id}"
-    raw = get_setting(key)
-    entries = json.loads(raw) if raw else []
-
-    # Include cinemagraph run log if it exists
-    row = query_one(
-        "SELECT carousel_cinemagraph_log FROM articles WHERE id = %s",
-        (article_id,)
-    )
-    cinemagraph_log = row[0] if row and row[0] else None
-
-    return jsonify({
-        "entries": entries,
-        "cinemagraph_log": cinemagraph_log,
-    })
 
 
 def _narrated_video_worker(article_id, cfg):
@@ -3701,7 +3685,8 @@ def _narrated_video_worker(article_id, cfg):
         try:
             summary = "\n".join(log_lines) if log_lines else "No log output"
             _add_activity_log(article_id, "Narrated video generation",
-                              f"Voice: {voice}, Format: {fmt}, Script: {script_len}\n{summary}")
+                              f"Voice: {voice}, Format: {fmt}, Script: {script_len}\n{summary}",
+                              component="narrated")
         except Exception as al_err:
             print(f"NarratedVideo: Activity log failed: {al_err}", flush=True)
 
@@ -3760,12 +3745,33 @@ def _ai_video_worker(article_id, images, prompts, ts):
     video_dir.mkdir(parents=True, exist_ok=True)
     temp_clips = []
 
+    # ── Logging (same pattern as cinemagraph / narrated workers) ─────────
+    log_lines = []
+    ts_start = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    def _log(msg):
+        line = f"[{time.strftime('%H:%M:%S')}] {msg}"
+        log_lines.append(line)
+        print(f"AIVideo: {msg}", flush=True)
+
+    def _flush_log():
+        if log_lines:
+            log_text = f"Run started: {ts_start}\n" + "\n".join(log_lines)
+            try:
+                execute("UPDATE articles SET video_ai_log = %s WHERE id = %s",
+                        (log_text[:65000], article_id))
+            except Exception:
+                pass
+
+    _log(f"Starting AI explainer video — {n_slides} slides")
+
     try:
         # ── Per-slide: submit to Luma + poll ──────────────────────────────────
         clip_paths = []
         consecutive_failures = 0
         for i, img_url in enumerate(images):
             prompt_text = prompts[i] if i < len(prompts) else ""
+            _log(f"Slide {i+1}/{n_slides}: submitting to Luma")
 
             # Resolve image URL for Luma (needs public URL)
             if img_url.startswith("https://"):
@@ -3776,21 +3782,28 @@ def _ai_video_worker(article_id, images, prompts, ts):
                     gcs_obj = f"articles/{article_id}/temp/slide_{i}_{ts}.jpg"
                     luma_img_url = upload_to_gcs(img_path, gcs_obj, content_type="image/jpeg")
                     if not luma_img_url:
+                        _log(f"Slide {i+1}: GCS upload failed, skipping")
                         consecutive_failures += 1
                         if consecutive_failures >= 3:
+                            _log("3 consecutive failures — aborting")
                             break
                         continue
                 else:
+                    _log(f"Slide {i+1}: image not found locally, skipping")
                     consecutive_failures += 1
                     if consecutive_failures >= 3:
+                        _log("3 consecutive failures — aborting")
                         break
-                    continue  # skip missing image
+                    continue
 
             try:
                 gen_id = _luma_create_task(luma_img_url, prompt_text)
-            except Exception:
+                _log(f"Slide {i+1}: Luma task created (gen_id={gen_id})")
+            except Exception as e:
+                _log(f"Slide {i+1}: Luma task creation failed: {e}")
                 consecutive_failures += 1
                 if consecutive_failures >= 3:
+                    _log("3 consecutive failures — aborting")
                     break
                 continue
 
@@ -3800,14 +3813,16 @@ def _ai_video_worker(article_id, images, prompts, ts):
                 time.sleep(6)
                 try:
                     luma_status, mp4_url, _msg = _luma_poll_task(gen_id)
-                except Exception:
+                except Exception as e:
+                    _log(f"Slide {i+1}: Luma poll error: {e}")
                     break
 
                 if luma_status == "completed":
+                    _log(f"Slide {i+1}: Luma completed")
                     break
                 elif luma_status == "failed":
+                    _log(f"Slide {i+1}: Luma failed — {_msg}")
                     break
-                # else: still generating — keep polling
 
             if mp4_url:
                 clip_path = video_dir / f"clip_{i+1}.mp4"
@@ -3816,9 +3831,12 @@ def _ai_video_worker(article_id, images, prompts, ts):
                 clip_paths.append(clip_path)
                 temp_clips.append(clip_path)
                 consecutive_failures = 0
+                _log(f"Slide {i+1}: clip downloaded ({len(r.content)} bytes)")
             else:
+                _log(f"Slide {i+1}: no clip URL returned")
                 consecutive_failures += 1
                 if consecutive_failures >= 3:
+                    _log("3 consecutive failures — aborting")
                     break
 
             # Update progress counter in DB so the frontend can show N/M
@@ -3827,8 +3845,10 @@ def _ai_video_worker(article_id, images, prompts, ts):
                 "UPDATE articles SET video_ai_status = %s WHERE id = %s",
                 (f"running:{done_so_far}/{n_slides}", article_id),
             )
+            _flush_log()
 
         if not clip_paths:
+            _log("ERROR: No clips were generated successfully")
             execute(
                 "UPDATE articles SET video_ai_status = %s WHERE id = %s",
                 ("error:No clips were generated successfully.", article_id),
@@ -3836,15 +3856,23 @@ def _ai_video_worker(article_id, images, prompts, ts):
             return
 
         # ── FFmpeg concat ─────────────────────────────────────────────────────
-        try:
-            import imageio_ffmpeg
-            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        except ImportError:
+        _log(f"Concatenating {len(clip_paths)} clips with FFmpeg")
+        import shutil as _shutil
+        ffmpeg_exe = _shutil.which("ffmpeg")
+        if not ffmpeg_exe:
+            try:
+                import imageio_ffmpeg
+                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            except Exception as ff_err:
+                _log(f"imageio_ffmpeg fallback failed: {ff_err}")
+        if not ffmpeg_exe:
+            _log("ERROR: FFmpeg not found")
             execute(
                 "UPDATE articles SET video_ai_status = %s WHERE id = %s",
-                ("error:imageio-ffmpeg not installed.", article_id),
+                ("error:FFmpeg not found.", article_id),
             )
             return
+        _log(f"Using FFmpeg: {ffmpeg_exe}")
 
         concat_txt = video_dir / f"concat_ai_{ts}.txt"
         temp_clips.append(concat_txt)
@@ -3856,32 +3884,61 @@ def _ai_video_worker(article_id, images, prompts, ts):
         result = subprocess.run(
             [ffmpeg_exe, "-y", "-f", "concat", "-safe", "0",
              "-i", str(concat_txt), "-c", "copy", str(out_path)],
-            capture_output=True, text=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            text=True, timeout=120,
         )
         if result.returncode != 0:
+            _log(f"ERROR: FFmpeg failed: {result.stderr[-300:] if result.stderr else 'unknown'}")
             execute(
                 "UPDATE articles SET video_ai_status = %s WHERE id = %s",
-                (f"error:FFmpeg failed: {result.stderr[-200:]}", article_id),
+                (f"error:FFmpeg failed: {(result.stderr or '')[-200:]}", article_id),
             )
             return
+        _log("FFmpeg concat succeeded")
 
         # ── Upload to GCS + save URL + clear status ─────────────────────────
         gcs_obj = f"articles/{article_id}/video/ai_explainer_{ts}.mp4"
         gcs_url = upload_to_gcs(out_path, gcs_obj, content_type="video/mp4")
         static_url = gcs_url if gcs_url else ("/" + str(out_path).replace("\\", "/"))
         if gcs_url:
-            temp_clips.append(out_path)  # clean up local copy; it's in GCS now
+            temp_clips.append(out_path)
         execute(
             "UPDATE articles SET video_ai_url = %s, video_ai_status = NULL WHERE id = %s",
             (static_url, article_id),
         )
+        _log(f"DONE — {len(clip_paths)} clips, video: {static_url}")
 
     except Exception as e:
+        _log(f"EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
         execute(
             "UPDATE articles SET video_ai_status = %s WHERE id = %s",
             (f"error:{str(e)[:200]}", article_id),
         )
     finally:
+        # Persist log to DB
+        try:
+            _flush_log()
+        except Exception as db_err:
+            print(f"AIVideo: Could not save log to DB: {db_err}", flush=True)
+        # Persist log to GCS
+        try:
+            if log_lines:
+                log_text = f"Run started: {ts_start}\n" + "\n".join(log_lines)
+                gcs_log_obj = f"articles/{article_id}/video/ai_explainer_run_{ts}.log"
+                upload_bytes_to_gcs(log_text.encode(), gcs_log_obj, content_type="text/plain")
+        except Exception:
+            pass
+        # Activity log
+        try:
+            summary = "\n".join(log_lines) if log_lines else "No log output"
+            _add_activity_log(article_id, "AI Explainer video generation",
+                              f"Slides: {n_slides}\n{summary}",
+                              component="explainer")
+        except Exception as al_err:
+            print(f"AIVideo: Activity log failed: {al_err}", flush=True)
+        # Cleanup temp files
         for f in temp_clips:
             try:
                 if f.exists():
@@ -4109,7 +4166,8 @@ def _cinemagraph_worker(article_id, images, prompts=None,
         # ──────────────────────────────────────────────────────────────────────
         summary = "\n".join(log_lines) if log_lines else "No log output"
         _add_activity_log(article_id, "Cinemagraph generation",
-                          "Model: luma ray-2 (1:1, 5s)\n" + summary)
+                          "Model: luma ray-2 (1:1, 5s)\n" + summary,
+                          component="cinemagraph")
 
 
 @app.route("/admin/articles/<int:article_id>/generate-cinemagraphs", methods=["POST"])
@@ -4338,7 +4396,8 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
         # Activity log entry
         summary = "\n".join(log_lines) if log_lines else "No log output"
         _add_activity_log(article_id, f"Cinemagraph re-run slide {slide_idx + 1}",
-                          "Model: luma ray-2 (1:1, 5s)\n" + summary)
+                          "Model: luma ray-2 (1:1, 5s)\n" + summary,
+                          component="cinemagraph")
 
 
 @app.route("/admin/articles/<int:article_id>/regenerate-cinemagraph-slide", methods=["POST"])
@@ -4693,7 +4752,7 @@ def _ig_keys(post_type, article_id):
     }
 
 
-def _add_activity_log(article_id, title, content):
+def _add_activity_log(article_id, title, content, component=None):
     """Append an entry to the article's activity log (stored in site_settings)."""
     import datetime as _dt
     key = f"ig_activity_log_{article_id}"
@@ -4702,11 +4761,14 @@ def _add_activity_log(article_id, title, content):
     # Cap each entry's content to avoid hitting column size limits
     if len(content) > 4000:
         content = content[:4000] + "\n… (truncated)"
-    entries.append({
+    entry = {
         "title":     title,
         "timestamp": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "content":   content,
-    })
+    }
+    if component:
+        entry["component"] = component
+    entries.append(entry)
     # Keep only the last 50 entries
     entries = entries[-50:]
     val = json.dumps(entries)
@@ -4747,6 +4809,7 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
     keys       = _ig_keys(post_type, article_id)
     status_key = keys["status"]
     result_key = keys["result"]
+    _log_component = "carousel" if post_type == "car" else "cinemagraph"
 
     def _set_status(s):
         execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
@@ -4859,7 +4922,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                     print(f"IG worker: child container {i+1} FAILED: {err}", flush=True)
                     _set_result(f"error:Child container {i+1} failed: {err}")
                     _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                                      f"Child container {i+1}/{n} creation failed.\nAPI error: {err}")
+                                      f"Child container {i+1}/{n} creation failed.\nAPI error: {err}",
+                                      component=_log_component)
                     _clear_status()
                     return
                 print(f"IG worker: child container {i+1}/{n} id={data['id']}", flush=True)
@@ -4881,14 +4945,16 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                         if not local or not local.exists():
                             _set_result(f"error:Image not found: {img_url}")
                             _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                                              f"Image not found: {img_url}")
+                                              f"Image not found: {img_url}",
+                                              component=_log_component)
                             _clear_status()
                             return
                         img_bytes = local.read_bytes()
                 except Exception as e:
                     _set_result(f"error:Could not fetch image {i+1}: {e}")
                     _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                                      f"Could not fetch image {i+1}: {e}")
+                                      f"Could not fetch image {i+1}: {e}",
+                                      component=_log_component)
                     _clear_status()
                     return
 
@@ -4899,7 +4965,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                 if not public_url:
                     _set_result("error:GCS upload failed — GCS_BUCKET_NAME must be set")
                     _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                                      "GCS upload failed — GCS_BUCKET_NAME must be set")
+                                      "GCS upload failed — GCS_BUCKET_NAME must be set",
+                                      component=_log_component)
                     _clear_status()
                     return
                 print(f"IG worker: slide {i+1}/{n} composed → {public_url}", flush=True)
@@ -4922,7 +4989,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                     print(f"IG worker: child container {i+1} FAILED: {err}", flush=True)
                     _set_result(f"error:Child container {i+1} failed: {err}")
                     _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                                      f"Child container {i+1}/{n} creation failed.\nAPI error: {err}")
+                                      f"Child container {i+1}/{n} creation failed.\nAPI error: {err}",
+                                      component=_log_component)
                     _clear_status()
                     return
                 print(f"IG worker: child container {i+1}/{n} id={data['id']}", flush=True)
@@ -4951,7 +5019,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                     print(f"IG worker: {err_msg}", flush=True)
                     _set_result(f"error:{err_msg}")
                     _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                                      f"Container {i+1}/{n} (id={cid}) returned ERROR.\nStatus detail: {status_detail or 'none'}")
+                                      f"Container {i+1}/{n} (id={cid}) returned ERROR.\nStatus detail: {status_detail or 'none'}",
+                                      component=_log_component)
                     _clear_status()
                     return
                 _time.sleep(min(5 + _poll_n * 5, 30))
@@ -4960,7 +5029,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                 err_msg = f"Container {i+1} timed out waiting for FINISHED"
                 _set_result(f"error:{err_msg}")
                 _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                                  f"Container {i+1}/{n} (id={cid}) timed out after 5 minutes.")
+                                  f"Container {i+1}/{n} (id={cid}) timed out after 5 minutes.",
+                                  component=_log_component)
                 _clear_status()
                 return
 
@@ -4981,7 +5051,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
             print(f"IG worker: carousel container FAILED: {err}", flush=True)
             _set_result(f"error:Carousel container failed: {err}")
             _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                              f"Carousel container creation failed.\nChildren: {n}\nAPI error: {err}")
+                              f"Carousel container creation failed.\nChildren: {n}\nAPI error: {err}",
+                              component=_log_component)
             _clear_status()
             return
         carousel_id = data["id"]
@@ -5010,7 +5081,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                 _set_result(f"error:{err_msg}")
                 _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
                                   f"Carousel container (id={carousel_id}) returned ERROR.\n"
-                                  f"Status detail: {cdetail or 'none'}")
+                                  f"Status detail: {cdetail or 'none'}",
+                                  component=_log_component)
                 _clear_status()
                 return
             _time.sleep(min(5 + _cpoll_n * 5, 30))
@@ -5018,7 +5090,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
         else:
             _set_result("error:Carousel container timed out waiting for FINISHED")
             _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                              f"Carousel container (id={carousel_id}) timed out after 5 minutes.")
+                              f"Carousel container (id={carousel_id}) timed out after 5 minutes.",
+                              component=_log_component)
             _clear_status()
             return
 
@@ -5071,12 +5144,14 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                 _add_activity_log(article_id, f"Instagram Rate Limit ({post_type})",
                                   f"Publish returned rate limit for carousel {carousel_id} "
                                   f"(after retry). Carousel ID saved for archive.\n"
-                                  f"Post may have been published — check Instagram.")
+                                  f"Post may have been published — check Instagram.",
+                                  component=_log_component)
                 _clear_status()
                 return
             _set_result(f"error:Publish failed: {err}")
             _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                              f"Publish failed for carousel {carousel_id}.\nAPI error: {err}")
+                              f"Publish failed for carousel {carousel_id}.\nAPI error: {err}",
+                              component=_log_component)
             _clear_status()
             return
 
@@ -5112,7 +5187,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (keys["snapshot"], snapshot, snapshot))
         _add_activity_log(article_id, f"Posted to Instagram ({post_type})",
-                          f"post_id={post_id}\npermalink={permalink}\nSlides: {len(images)}")
+                          f"post_id={post_id}\npermalink={permalink}\nSlides: {len(images)}",
+                          component=_log_component)
         _clear_status()
 
     except Exception as e:
@@ -5121,7 +5197,8 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
         print(f"IG worker EXCEPTION: {e}", flush=True)
         _set_result(f"error:Unexpected error: {e}")
         _add_activity_log(article_id, f"Instagram Post Failed ({post_type})",
-                          f"Error: {e}")
+                          f"Error: {e}",
+                          component=_log_component)
         _clear_status()
 
 
@@ -5245,11 +5322,13 @@ def admin_article_edit_instagram_caption(article_id):
     result = resp.json()
     if result.get("success") or result.get("id"):
         _add_activity_log(article_id, f"Caption Edited on Instagram ({post_type})",
-                          f"media_id={media_id}\nNew caption: {caption[:200]}…")
+                          f"media_id={media_id}\nNew caption: {caption[:200]}…",
+                          component=("carousel" if post_type == "car" else "cinemagraph"))
         return jsonify({"ok": True})
     err = result.get("error", {}).get("message", str(result))
     _add_activity_log(article_id, f"Caption Edit Failed ({post_type})",
-                      f"media_id={media_id}, error: {err}")
+                      f"media_id={media_id}, error: {err}",
+                      component=("carousel" if post_type == "car" else "cinemagraph"))
     return jsonify({"error": err}), 400
 
 
@@ -5295,7 +5374,8 @@ def admin_article_check_instagram_post(article_id):
         print(f"IG check-post-live response: {data}", flush=True)
         if "id" in data:
             _add_activity_log(article_id, f"Check Post Live ({post_type})",
-                              f"Post is live. media_id={media_id}, permalink={data.get('permalink', '')}")
+                              f"Post is live. media_id={media_id}, permalink={data.get('permalink', '')}",
+                              component=("carousel" if post_type == "car" else "cinemagraph"))
             return jsonify({"live": True, "permalink": data.get("permalink", "")})
         api_err = data.get("error", {}).get("message", "Post not found on Instagram.")
         # Strip the boilerplate "Please read the Graph API documentation at …" suffix
@@ -5304,12 +5384,14 @@ def admin_article_check_instagram_post(article_id):
                 api_err = api_err[:api_err.index(_suffix)]
                 break
         _add_activity_log(article_id, f"Check Post Live ({post_type})",
-                          f"Post not found. media_id={media_id}, API response: {api_err}")
+                          f"Post not found. media_id={media_id}, API response: {api_err}",
+                          component=("carousel" if post_type == "car" else "cinemagraph"))
         return jsonify({"live": False, "api_error": api_err})
     except Exception as exc:
         print(f"IG check-post-live exception: {exc}", flush=True)
         _add_activity_log(article_id, f"Check Post Live Failed ({post_type})",
-                          f"Exception: {exc}")
+                          f"Exception: {exc}",
+                          component=("carousel" if post_type == "car" else "cinemagraph"))
         return jsonify({"error": f"Failed to reach Instagram API: {exc}"}), 500
 
 
@@ -5384,7 +5466,8 @@ def admin_article_archive_instagram_post(article_id):
         (keys["snapshot"], "", ""),
     )
     _add_activity_log(article_id, f"Post Archived ({post_type})",
-                      f"media_id={media_id}, permalink={permalink or 'N/A'}")
+                      f"media_id={media_id}, permalink={permalink or 'N/A'}",
+                      component=("carousel" if post_type == "car" else "cinemagraph"))
     return jsonify({"ok": True, "history": history})
 
 
@@ -5438,13 +5521,15 @@ def admin_article_generate_ig_caption(article_id):
             caption += f"\n\nWant to read the full article? Access the following link:\n{article_link}"
 
         _add_activity_log(article_id, "Caption Generated (OpenAI)",
-                          f"Prompt: {system_msg[:120]}…\n\nGenerated caption:\n{caption[:300]}…")
+                          f"Prompt: {system_msg[:120]}…\n\nGenerated caption:\n{caption[:300]}…",
+                          component="carousel")
         return jsonify({"caption": caption})
 
     except Exception as e:
         print(f"IG caption generation error: {e}", flush=True)
         try:
-            _add_activity_log(article_id, "Caption Generation Failed", f"Error: {e}")
+            _add_activity_log(article_id, "Caption Generation Failed", f"Error: {e}",
+                              component="carousel")
         except Exception:
             pass
         return jsonify({"error": f"Caption generation failed: {e}"}), 500
