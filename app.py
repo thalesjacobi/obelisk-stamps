@@ -3713,11 +3713,11 @@ def _narrated_video_worker(article_id, cfg):
         except Exception as log_err:
             print(f"NarratedVideo: Log persistence failed: {log_err}", flush=True)
 
-        # ── Activity log (always, even if log persistence failed) ────────────
+        # ── Activity log (brief summary — full log lives in video_narrated_log) ─
         try:
-            summary = "\n".join(log_lines) if log_lines else "No log output"
+            last_line = log_lines[-1] if log_lines else "No log output"
             _add_activity_log(article_id, "Narrated video generation",
-                              f"Voice: {voice}, Format: {fmt}, Script: {script_len}\n{summary}",
+                              f"Voice: {voice}, Format: {fmt}, Script: {script_len}\n{last_line}",
                               component="narrated")
         except Exception as al_err:
             print(f"NarratedVideo: Activity log failed: {al_err}", flush=True)
