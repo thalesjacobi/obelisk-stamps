@@ -3338,6 +3338,19 @@ def admin_article_cinemagraph_log(article_id):
     return jsonify({"log": row[0], "has_log": True})
 
 
+@app.route("/admin/articles/<int:article_id>/narrated-log")
+@login_required
+@admin_required
+def admin_article_narrated_log(article_id):
+    """Return the stored narrated-video run log for an article."""
+    row = query_one(
+        "SELECT video_narrated_log FROM articles WHERE id = %s", (article_id,)
+    )
+    if not row or not row[0]:
+        return jsonify({"log": None, "has_log": False})
+    return jsonify({"log": row[0], "has_log": True})
+
+
 @app.route("/admin/articles/<int:article_id>/cinemagraph-result", methods=["DELETE"])
 @login_required
 @admin_required
@@ -3358,18 +3371,16 @@ def admin_article_activity_log(article_id):
     raw = get_setting(key)
     entries = json.loads(raw) if raw else []
 
-    # Include cinemagraph and narrated-video run logs if they exist
+    # Include cinemagraph run log if it exists
     row = query_one(
-        "SELECT carousel_cinemagraph_log, video_narrated_log FROM articles WHERE id = %s",
+        "SELECT carousel_cinemagraph_log FROM articles WHERE id = %s",
         (article_id,)
     )
     cinemagraph_log = row[0] if row and row[0] else None
-    narrated_log    = row[1] if row and row[1] else None
 
     return jsonify({
         "entries": entries,
         "cinemagraph_log": cinemagraph_log,
-        "narrated_log": narrated_log,
     })
 
 

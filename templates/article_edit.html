@@ -821,7 +821,7 @@
                     </li>
                     <li>
                         <button type="button" class="dropdown-item small"
-                                onclick="viewActivityLog()">📋 View Logs</button>
+                                onclick="viewNarratedLog()">📋 View Logs</button>
                     </li>
                 </ul>
             </div>
@@ -947,6 +947,27 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Narrated MP4 — Log Modal -->
+    <div class="modal fade" id="narrated-log-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Narrated Video — Generation Log</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <pre id="narrated-log-content"
+                         style="white-space:pre-wrap;word-break:break-all;font-size:0.78rem;
+                                background:#f8f9fa;border-radius:4px;padding:0.75rem;
+                                max-height:60vh;overflow-y:auto;">Loading…</pre>
+                    <div id="narrated-log-empty" class="text-muted text-center py-3 d-none">
+                        No log available. Generate a narrated video first.
+                    </div>
                 </div>
             </div>
         </div>
@@ -2864,6 +2885,28 @@ function narratedStop() {
     document.getElementById('narrated-spinner').classList.add('d-none');
 }
 
+/* ── Dedicated narrated video log viewer ─────────────────────── */
+function viewNarratedLog() {
+    if (!ARTICLE_ID) return;
+    var content = document.getElementById('narrated-log-content');
+    var empty   = document.getElementById('narrated-log-empty');
+    content.textContent = 'Loading…';
+    content.classList.remove('d-none');
+    empty.classList.add('d-none');
+    fetch('/admin/articles/' + ARTICLE_ID + '/narrated-log')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.log) {
+                content.textContent = d.log;
+            } else {
+                content.classList.add('d-none');
+                empty.classList.remove('d-none');
+            }
+            new bootstrap.Modal(document.getElementById('narrated-log-modal')).show();
+        })
+        .catch(function() { alert('Could not load narrated video log.'); });
+}
+
 function narratedFinish(error) {
     const btn = document.getElementById('narrated-btn');
     if (btn) btn.disabled = false;
@@ -4015,15 +4058,6 @@ function viewActivityLog() {
                     title: 'Cinemagraph Generation Log',
                     timestamp: '',
                     content: d.cinemagraph_log
-                });
-            }
-
-            // Add narrated video run log if it exists
-            if (d.narrated_log) {
-                allEntries.push({
-                    title: 'Narrated Video Generation Log',
-                    timestamp: '',
-                    content: d.narrated_log
                 });
             }
 
