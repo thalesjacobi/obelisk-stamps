@@ -3613,7 +3613,8 @@ def _narrated_video_worker(article_id, cfg):
                 "-i", str(audio_path),
                 "-filter_complex", zp_filter,
                 "-map", "[v]", "-map", "1:a",
-                "-c:v", "libx264", "-preset", "fast", "-crf", str(crf),
+                "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+                "-crf", str(crf),
                 "-c:a", "aac", "-shortest",
                 str(clip_path)
             ]
