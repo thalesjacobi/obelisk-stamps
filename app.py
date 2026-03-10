@@ -3602,14 +3602,15 @@ def _narrated_video_worker(article_id, cfg):
             py = f"({ZH}-{H})*(1-t/{dur_video:.4f})"
             zp_filter = (
                 f"[0:v]"
+                f"fps={render_fps},"
                 f"scale={ZW}:{ZH}:force_original_aspect_ratio=increase:flags=fast_bilinear,"
                 f"crop={ZW}:{ZH},"
-                f"fps={render_fps},"
                 f"crop={W}:{H}:x='{px}':y='{py}',"
                 f"setsar=1[v]"
             )
             cmd = [
                 ffmpeg_exe, "-y",
+                "-framerate", str(render_fps),
                 "-loop", "1", "-t", str(dur_video), "-i", str(img_path),
                 "-i", str(audio_path),
                 "-filter_complex", zp_filter,
