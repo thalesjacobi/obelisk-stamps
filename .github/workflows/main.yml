@@ -11,6 +11,7 @@ on:
       - 'templates/**'
       - 'static/**'
       - 'kb/**'
+      - 'CLAUDE.md'
       - '.github/workflows/main.yml'
   pull_request:
     branches:
