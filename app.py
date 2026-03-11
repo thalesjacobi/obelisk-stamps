@@ -3417,7 +3417,7 @@ def _narrated_video_worker(article_id, cfg):
     # ─────────────────────────────────────────────────────────────────────────
 
     row = query_one(
-        "SELECT carousel_images, carousel_prompts, carousel_punchlines, title FROM articles WHERE id = %s",
+        "SELECT carousel_images, carousel_prompts, carousel_punchlines, title, carousel_cinemagraphs FROM articles WHERE id = %s",
         (article_id,),
     )
     if not row or not row[0]:
@@ -3431,9 +3431,11 @@ def _narrated_video_worker(article_id, cfg):
     prompts   = (json.loads(row[1]) if row[1] else [])[:10]
     punchlines= (json.loads(row[2]) if row[2] else [])[:10]
     article_title = row[3] if row[3] else "Unknown"
+    cinemagraphs  = (json.loads(row[4]) if row[4] else [])[:10]
     n_slides  = len(images)
+    n_cine    = sum(1 for c in cinemagraphs if c)
 
-    _log(f"Article: \"{article_title}\", {n_slides} slides")
+    _log(f"Article: \"{article_title}\", {n_slides} slides, {n_cine} cinemagraphs")
     _log(f"Settings: format={fmt}, voice={voice}, tts={tts_model}, script={script_len}, kb={kb_speed}, crf={crf}, fps={fps}, render_fps={render_fps}, res={W}x{H}")
 
     ts        = int(time.time())
@@ -3571,18 +3573,11 @@ def _narrated_video_worker(article_id, cfg):
                 _log(f"probe_duration failed: {e}")
             return 5.0
 
-        # ── 4. FFmpeg per-clip (Ken Burns + audio) ─────────────────────────────
+        # ── 4. FFmpeg per-clip (cinemagraph or Ken Burns + audio) ────────────
         clip_paths = []
         for i, img_url in enumerate(images):
             execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
                     (f"running:clip:{i+1}/{n_slides}", article_id))
-            img_path = resolve_image_to_local_path(img_url)
-            if not img_path or not img_path.exists():
-                _log(f"ERROR: Image not found: {img_url}")
-                execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
-                        (f"error:Image not found: {img_url}", article_id))
-                return
-            _log(f"Clip {i+1}: image resolved → {img_path} ({img_path.stat().st_size} bytes)")
 
             audio_path = audio_paths[i]
             dur        = probe_duration(audio_path)
@@ -3590,43 +3585,90 @@ def _narrated_video_worker(article_id, cfg):
             clip_path  = video_dir / f"clip_{i+1}.mp4"
             temp_files.append(clip_path)
 
-            # Ken Burns via scale + animated crop.
-            # This is orders of magnitude faster than zoompan, which runs a
-            # per-pixel interpolation on every single frame. Here we scale the
-            # image once to a slightly larger canvas, then use the crop filter's
-            # time-variable x/y to pan smoothly — just pointer arithmetic per frame.
-            zoom_factor = min(1.0 + zoom_step * 200, 1.3)
-            ZW = int(W * zoom_factor)
-            ZH = int(H * zoom_factor)
-            px = f"({ZW}-{W})*(1-t/{dur_video:.4f})"
-            py = f"({ZH}-{H})*(1-t/{dur_video:.4f})"
-            zp_filter = (
-                f"[0:v]"
-                f"fps={render_fps},"
-                f"scale={ZW}:{ZH}:force_original_aspect_ratio=increase:flags=fast_bilinear,"
-                f"crop={ZW}:{ZH},"
-                f"crop={W}:{H}:x='{px}':y='{py}',"
-                f"setsar=1[v]"
-            )
-            cmd = [
-                ffmpeg_exe, "-y",
-                "-framerate", str(render_fps),
-                "-loop", "1", "-t", str(dur_video), "-i", str(img_path),
-                "-i", str(audio_path),
-                "-filter_complex", zp_filter,
-                "-map", "[v]", "-map", "1:a",
-                "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-                "-crf", str(crf),
-                "-c:a", "aac", "-shortest",
-                str(clip_path)
-            ]
-            result, err = _run_ffmpeg(cmd, f"clip {i+1}/{n_slides}", timeout=120)
-            if err:
-                _log(f"Clip {i+1} FAILED: {err}")
-                execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
-                        (f"error:FFmpeg clip {i+1} failed: {err[:200]}", article_id))
-                return
-            _log(f"Clip {i+1}/{n_slides}: dur={dur:.1f}s, rendered OK")
+            # ── Check for cinemagraph ─────────────────────────────────────
+            cine_url  = cinemagraphs[i] if i < len(cinemagraphs) else None
+            use_cine  = False
+            cine_path = None
+            if cine_url:
+                cine_path = resolve_image_to_local_path(cine_url)
+                if cine_path and cine_path.exists():
+                    use_cine = True
+                    _log(f"Clip {i+1}: cinemagraph resolved → {cine_path} ({cine_path.stat().st_size} bytes)")
+                else:
+                    _log(f"Clip {i+1}: cinemagraph not resolved ({cine_url}), falling back to Ken Burns")
+
+            if use_cine:
+                # ── Cinemagraph: loop video + scale/crop to target size ───
+                S = max(W, H)
+                cine_filter = (
+                    f"[0:v]scale={S}:{S}:flags=fast_bilinear,"
+                    f"crop={W}:{H},"
+                    f"fps={render_fps},"
+                    f"setsar=1[v]"
+                )
+                cmd = [
+                    ffmpeg_exe, "-y",
+                    "-stream_loop", "-1",
+                    "-t", str(dur_video),
+                    "-i", str(cine_path),
+                    "-i", str(audio_path),
+                    "-filter_complex", cine_filter,
+                    "-map", "[v]", "-map", "1:a",
+                    "-c:v", "libx264", "-preset", "ultrafast",
+                    "-crf", str(crf),
+                    "-c:a", "aac", "-shortest",
+                    str(clip_path)
+                ]
+                result, err = _run_ffmpeg(cmd, f"clip {i+1}/{n_slides} (cine)", timeout=120)
+                if err:
+                    _log(f"Clip {i+1} cinemagraph FAILED: {err}")
+                    execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
+                            (f"error:FFmpeg clip {i+1} cinemagraph failed: {err[:200]}", article_id))
+                    return
+                _log(f"Clip {i+1}/{n_slides}: cinemagraph, dur={dur:.1f}s, rendered OK")
+            else:
+                # ── Ken Burns: scale + animated crop on still image ────────
+                img_path = resolve_image_to_local_path(img_url)
+                if not img_path or not img_path.exists():
+                    _log(f"ERROR: Image not found: {img_url}")
+                    execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
+                            (f"error:Image not found: {img_url}", article_id))
+                    return
+                _log(f"Clip {i+1}: image resolved → {img_path} ({img_path.stat().st_size} bytes)")
+
+                zoom_factor = min(1.0 + zoom_step * 200, 1.3)
+                ZW = int(W * zoom_factor)
+                ZH = int(H * zoom_factor)
+                px = f"({ZW}-{W})*(1-t/{dur_video:.4f})"
+                py = f"({ZH}-{H})*(1-t/{dur_video:.4f})"
+                zp_filter = (
+                    f"[0:v]"
+                    f"fps={render_fps},"
+                    f"scale={ZW}:{ZH}:force_original_aspect_ratio=increase:flags=fast_bilinear,"
+                    f"crop={ZW}:{ZH},"
+                    f"crop={W}:{H}:x='{px}':y='{py}',"
+                    f"setsar=1[v]"
+                )
+                cmd = [
+                    ffmpeg_exe, "-y",
+                    "-framerate", str(render_fps),
+                    "-loop", "1", "-t", str(dur_video), "-i", str(img_path),
+                    "-i", str(audio_path),
+                    "-filter_complex", zp_filter,
+                    "-map", "[v]", "-map", "1:a",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+                    "-crf", str(crf),
+                    "-c:a", "aac", "-shortest",
+                    str(clip_path)
+                ]
+                result, err = _run_ffmpeg(cmd, f"clip {i+1}/{n_slides} (kb)", timeout=120)
+                if err:
+                    _log(f"Clip {i+1} FAILED: {err}")
+                    execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
+                            (f"error:FFmpeg clip {i+1} failed: {err[:200]}", article_id))
+                    return
+                _log(f"Clip {i+1}/{n_slides}: Ken Burns, dur={dur:.1f}s, rendered OK")
+
             _flush_log()
             clip_paths.append(clip_path)
 
@@ -3669,6 +3711,7 @@ def _narrated_video_worker(article_id, cfg):
             "params": {"format": fmt, "voice": voice, "tts_model": tts_model,
                        "script_len": script_len, "kb_speed": kb_speed, "crf": crf, "fps": fps},
             "segments": segments,
+            "cinemagraph_slides": [i+1 for i in range(n_slides) if i < len(cinemagraphs) and cinemagraphs[i]],
         }
 
         existing_row      = query_one(
