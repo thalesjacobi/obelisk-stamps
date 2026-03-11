@@ -3601,9 +3601,9 @@ def _narrated_video_worker(article_id, cfg):
                 # ── Cinemagraph: loop video + scale/crop to target size ───
                 S = max(W, H)
                 cine_filter = (
-                    f"[0:v]scale={S}:{S}:flags=fast_bilinear,"
+                    f"[0:v]fps={render_fps},"
+                    f"scale={S}:{S}:flags=fast_bilinear,"
                     f"crop={W}:{H},"
-                    f"fps={render_fps},"
                     f"setsar=1[v]"
                 )
                 cmd = [
@@ -3619,7 +3619,7 @@ def _narrated_video_worker(article_id, cfg):
                     "-c:a", "aac", "-shortest",
                     str(clip_path)
                 ]
-                result, err = _run_ffmpeg(cmd, f"clip {i+1}/{n_slides} (cine)", timeout=120)
+                result, err = _run_ffmpeg(cmd, f"clip {i+1}/{n_slides} (cine)", timeout=240)
                 if err:
                     _log(f"Clip {i+1} cinemagraph FAILED: {err}")
                     execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
