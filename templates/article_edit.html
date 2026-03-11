@@ -2701,11 +2701,25 @@ function narratedUnlock() {
 
 /* ── Build one accordion item DOM node ───────────────────────── */
 function buildRunItem(run, expandIt) {
-    const fmtLabel    = run.params.format === 'vertical' ? '📱 9:16' : '⬜ 1:1';
+    const isVertical  = run.params.format === 'vertical';
+    const fmtLabel    = isVertical ? '9:16' : '1:1';
     const ttsLabel    = run.params.tts_model === 'tts-1-hd' ? 'HD' : 'Standard';
     const crfLabel    = run.params.crf === 18 ? 'High' : run.params.crf === 28 ? 'Low' : 'Medium';
     const scriptLabel = ({short:'Short', medium:'Medium', long:'Long'})[run.params.script_len] || run.params.script_len;
     const kbLabel     = ({slow:'Slow', medium:'Medium', fast:'Fast'})[run.params.kb_speed]     || run.params.kb_speed;
+    const voiceName   = (run.params.voice || 'onyx').charAt(0).toUpperCase() + (run.params.voice || 'onyx').slice(1);
+    const voiceColors = {onyx:'bg-dark', alloy:'bg-primary', nova:'bg-danger', shimmer:'bg-warning text-dark', echo:'bg-success', fable:'bg-info text-dark'};
+    const voiceBadge  = voiceColors[run.params.voice] || 'bg-secondary';
+    const speedVal    = run.params.speed || 1.0;
+    const cineSlides  = (run.cinemagraph_slides || []).length;
+    const totalSlides = (run.segments || []).length || 10;
+
+    /* header badges */
+    const fmtBadge   = `<span class="badge ${isVertical ? 'bg-primary' : 'bg-secondary'} me-1">${isVertical ? '📱' : '⬜'} ${fmtLabel}</span>`;
+    const vBadge     = `<span class="badge ${voiceBadge} me-1">${voiceName}</span>`;
+    const sBadge     = speedVal !== 1.0 ? `<span class="badge bg-success me-1">${speedVal}×</span>` : '';
+    const cineBadge  = cineSlides > 0 ? `<span class="badge bg-info text-dark me-1" title="${cineSlides} slides used cinemagraphs">${cineSlides}/${totalSlides} cine</span>` : '';
+
     const collapseId  = 'nrun-' + run.ts;
     const show        = expandIt ? 'show' : '';
     const collapsed   = expandIt ? '' : 'collapsed';
@@ -2718,8 +2732,8 @@ function buildRunItem(run, expandIt) {
         <h2 class="accordion-header">
             <button class="accordion-button ${collapsed} py-2" type="button"
                     data-bs-toggle="collapse" data-bs-target="#${collapseId}">
-                <span class="badge bg-secondary me-2">${fmtLabel}</span>
-                <span class="small">${run.ts_label}</span>
+                ${fmtBadge}${vBadge}${sBadge}${cineBadge}
+                <span class="small text-muted ms-1">${run.ts_label}</span>
             </button>
         </h2>
         <div id="${collapseId}" class="accordion-collapse collapse ${show}"
@@ -2727,13 +2741,15 @@ function buildRunItem(run, expandIt) {
             <div class="accordion-body p-3">
                 <table class="table table-sm table-bordered small mb-3">
                     <tbody>
-                        <tr><th style="width:38%">Format</th><td>${run.params.format === 'vertical' ? 'Vertical 9:16 (Reels / TikTok / Shorts)' : 'Square 1:1'}</td></tr>
-                        <tr><th>Voice</th><td>${run.params.voice.charAt(0).toUpperCase() + run.params.voice.slice(1)}</td></tr>
+                        <tr><th style="width:38%">Format</th><td>${isVertical ? 'Vertical 9:16 (Reels / TikTok / Shorts)' : 'Square 1:1'}</td></tr>
+                        <tr><th>Voice</th><td>${voiceName}</td></tr>
                         <tr><th>TTS Quality</th><td>${ttsLabel}</td></tr>
                         <tr><th>Script Length</th><td>${scriptLabel}</td></tr>
                         <tr><th>Ken Burns</th><td>${kbLabel}</td></tr>
                         <tr><th>Video Quality</th><td>${crfLabel} (CRF ${run.params.crf})</td></tr>
                         <tr><th>FPS</th><td>${run.params.fps}</td></tr>
+                        ${speedVal !== 1.0 ? `<tr><th>Speed</th><td>${speedVal}× (social media)</td></tr>` : ''}
+                        ${cineSlides > 0 ? `<tr><th>Cinemagraphs</th><td>${cineSlides} of ${totalSlides} slides</td></tr>` : ''}
                     </tbody>
                 </table>
                 <video src="${run.url}" controls class="rounded mb-3"

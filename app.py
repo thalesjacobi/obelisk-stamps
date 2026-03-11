@@ -3738,7 +3738,8 @@ def _narrated_video_worker(article_id, cfg):
         run_obj  = {
             "ts": ts, "ts_label": ts_label, "url": static_url,
             "params": {"format": fmt, "voice": voice, "tts_model": tts_model,
-                       "script_len": script_len, "kb_speed": kb_speed, "crf": crf, "fps": fps},
+                       "script_len": script_len, "kb_speed": kb_speed, "crf": crf, "fps": fps,
+                       "speed": speed_factor},
             "segments": segments,
             "cinemagraph_slides": [i+1 for i in range(n_slides) if i < len(cinemagraphs) and cinemagraphs[i]],
         }
