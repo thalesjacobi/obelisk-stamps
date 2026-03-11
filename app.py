@@ -3391,9 +3391,10 @@ def _narrated_video_worker(article_id, cfg):
     crf        = int(cfg.get("crf",    23))
     fps        = int(cfg.get("fps",    25))
 
-    W, H       = (720, 1280) if fmt == "vertical" else (720, 720)
-    render_fps = 12  # Ken Burns on still images looks identical at 12fps vs 25fps
-    zoom_step  = {"slow": 0.0010, "medium": 0.0015, "fast": 0.0025}.get(kb_speed, 0.0010)
+    W, H         = (720, 1280) if fmt == "vertical" else (720, 720)
+    render_fps   = 12   # Ken Burns on still images looks identical at 12fps vs 25fps
+    speed_factor = 1.35  # Speed up final video for social-media pacing
+    zoom_step    = {"slow": 0.0010, "medium": 0.0015, "fast": 0.0025}.get(kb_speed, 0.0010)
     word_range = {"short": "20-40", "medium": "40-70", "long": "70-100"}.get(script_len, "40-70")
 
     # ── Log capture (mirrors cinemagraph pattern) ────────────────────────────
@@ -3436,7 +3437,7 @@ def _narrated_video_worker(article_id, cfg):
     n_cine    = sum(1 for c in cinemagraphs if c)
 
     _log(f"Article: \"{article_title}\", {n_slides} slides, {n_cine} cinemagraphs")
-    _log(f"Settings: format={fmt}, voice={voice}, tts={tts_model}, script={script_len}, kb={kb_speed}, crf={crf}, fps={fps}, render_fps={render_fps}, res={W}x{H}")
+    _log(f"Settings: format={fmt}, voice={voice}, tts={tts_model}, script={script_len}, kb={kb_speed}, crf={crf}, fps={fps}, render_fps={render_fps}, res={W}x{H}, speed={speed_factor}x")
 
     ts        = int(time.time())
     video_dir = Path(f"static/articles/{article_id}/video")
@@ -3694,6 +3695,34 @@ def _narrated_video_worker(article_id, cfg):
                     (f"error:FFmpeg concat failed: {err[:200]}", article_id))
             return
         _flush_log()
+
+        # ── 5b. Speed up final video for social-media pacing ─────────────────
+        if speed_factor and speed_factor != 1.0:
+            _log(f"Speeding up video by {speed_factor}x…")
+            fast_path = video_dir / f"narrated_{ts}_fast.mp4"
+            temp_files.append(fast_path)
+            speed_filter = (
+                f"[0:v]setpts=PTS/{speed_factor:.4f}[v];"
+                f"[0:a]atempo={speed_factor:.4f}[a]"
+            )
+            cmd_speed = [
+                ffmpeg_exe, "-y",
+                "-i", str(out_path),
+                "-filter_complex", speed_filter,
+                "-map", "[v]", "-map", "[a]",
+                "-c:v", "libx264", "-preset", "ultrafast",
+                "-crf", str(crf),
+                "-c:a", "aac",
+                str(fast_path)
+            ]
+            result, err = _run_ffmpeg(cmd_speed, "speed-up", timeout=180)
+            if err:
+                _log(f"Speed-up FAILED: {err} — using original speed")
+            else:
+                _log(f"Speed-up OK ({speed_factor}x)")
+                temp_files.append(out_path)  # clean up the slow version
+                out_path = fast_path
+            _flush_log()
 
         # ── 6. Upload to GCS + save run to history ──────────────────────────────
         gcs_obj = f"articles/{article_id}/video/narrated_{ts}.mp4"
