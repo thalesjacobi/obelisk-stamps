@@ -2794,7 +2794,8 @@ function buildRunItem(run, expandIt) {
                     <div class="text-end text-muted small mb-2" id="nv-ig-${run.ts}-count">0 / 2200</div>
                     <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-ig-${run.ts}-btn-row">
                         <button type="button" class="btn btn-sm btn-dark" id="nv-ig-${run.ts}-post-btn"
-                                onclick="postNarratedToIg(${run.ts}, ${JSON.stringify(run.url)})"
+                                data-video-url="${run.url}"
+                                onclick="postNarratedToIg(${run.ts}, this.dataset.videoUrl)"
                                 ${!IG_CONFIGURED ? 'disabled' : ''}>
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
                                  fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
