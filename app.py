@@ -5506,6 +5506,163 @@ def admin_article_check_instagram_post(article_id):
         return jsonify({"error": f"Failed to reach Instagram API: {exc}"}), 500
 
 
+def _post_narrated_reel_worker(article_id, video_url, caption, run_ts):
+    """Background thread: post a single narrated video MP4 as an Instagram Reel."""
+    import time as _time, requests as _req
+    status_key = f"narrated_ig_status_{article_id}_{run_ts}"
+    result_key = f"narrated_ig_result_{article_id}_{run_ts}"
+
+    def _set_status(s):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, s, s))
+    def _set_result(r):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, r, r))
+    def _clear_status():
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        # ── 1. Create Reel container ──────────────────────────────────────
+        _set_status("running:container")
+        print(f"IG Reel: creating container article={article_id}", flush=True)
+        resp = _ig_api_call("POST",
+            f"{_IG_GRAPH_URL}/{IG_USER_ID}/media",
+            data={"media_type": "REELS", "video_url": video_url,
+                  "caption": (caption or "")[:2200],
+                  "access_token": IG_ACCESS_TOKEN},
+            timeout=30,
+        )
+        data = resp.json()
+        if "id" not in data:
+            err = data.get("error", {}).get("message", str(data))
+            print(f"IG Reel: container FAILED: {err}", flush=True)
+            _set_result(f"error:Container failed: {err}")
+            _add_activity_log(article_id, "Instagram Reel Post Failed",
+                              f"Container creation failed.\nAPI error: {err}",
+                              component="narrated")
+            _clear_status(); return
+        container_id = data["id"]
+        print(f"IG Reel: container id={container_id}", flush=True)
+
+        # ── 2. Poll container until FINISHED ──────────────────────────────
+        _set_status("running:poll")
+        deadline = _time.time() + 300
+        _poll_n  = 0
+        while _time.time() < deadline:
+            r = _ig_api_call("GET", f"{_IG_GRAPH_URL}/{container_id}",
+                params={"fields": "status_code,status", "access_token": IG_ACCESS_TOKEN},
+                timeout=15)
+            pd           = r.json()
+            status_code  = pd.get("status_code", "")
+            status_detail = pd.get("status", "")
+            if status_code == "FINISHED":
+                print(f"IG Reel: container FINISHED", flush=True); break
+            if status_code == "ERROR":
+                err_msg = f"Container ERROR: {status_detail}" if status_detail else "Container ERROR"
+                _set_result(f"error:{err_msg}")
+                _add_activity_log(article_id, "Instagram Reel Post Failed",
+                                  f"Container (id={container_id}) ERROR.\nDetail: {status_detail or 'none'}",
+                                  component="narrated")
+                _clear_status(); return
+            _time.sleep(min(5 + _poll_n * 5, 30))
+            _poll_n += 1
+        else:
+            _set_result("error:Container timed out waiting for FINISHED")
+            _add_activity_log(article_id, "Instagram Reel Post Failed",
+                              f"Container {container_id} timed out after 5 minutes.",
+                              component="narrated")
+            _clear_status(); return
+
+        # ── 3. Publish ────────────────────────────────────────────────────
+        _set_status("running:publish")
+        print(f"IG Reel: publishing {container_id}", flush=True)
+        resp = _req.post(f"{_IG_GRAPH_URL}/{IG_USER_ID}/media_publish",
+                         data={"creation_id": container_id, "access_token": IG_ACCESS_TOKEN},
+                         timeout=30)
+        data = resp.json()
+        if "id" not in data:
+            err = data.get("error", {}).get("message", str(data))
+            if "request limit" in err.lower():
+                print("IG Reel: rate-limited, retrying in 60 s…", flush=True)
+                _set_status("running:publish_retry")
+                _time.sleep(60)
+                resp = _req.post(f"{_IG_GRAPH_URL}/{IG_USER_ID}/media_publish",
+                                 data={"creation_id": container_id, "access_token": IG_ACCESS_TOKEN},
+                                 timeout=30)
+                data = resp.json()
+        if "id" not in data:
+            err = data.get("error", {}).get("message", str(data))
+            _set_result(f"error:Publish failed: {err}")
+            _add_activity_log(article_id, "Instagram Reel Post Failed",
+                              f"Publish failed for {container_id}.\nAPI error: {err}",
+                              component="narrated")
+            _clear_status(); return
+
+        post_id = data["id"]
+
+        # ── 4. Fetch permalink ────────────────────────────────────────────
+        try:
+            plink = _ig_api_call("GET", f"{_IG_GRAPH_URL}/{post_id}",
+                params={"fields": "permalink", "access_token": IG_ACCESS_TOKEN},
+                timeout=15).json()
+            permalink = plink.get("permalink") or f"https://www.instagram.com/p/{post_id}/"
+        except Exception:
+            permalink = f"https://www.instagram.com/p/{post_id}/"
+
+        print(f"IG Reel: SUCCESS post_id={post_id} permalink={permalink}", flush=True)
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, "Posted Narrated Video to Instagram",
+                          f"post_id={post_id}\npermalink={permalink}", component="narrated")
+        _clear_status()
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        _set_result(f"error:Unexpected error: {e}")
+        _add_activity_log(article_id, "Instagram Reel Post Failed",
+                          f"Error: {e}", component="narrated")
+        try: _clear_status()
+        except Exception: pass
+
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-instagram", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_instagram(article_id):
+    """Start a background thread to post a narrated video as an Instagram Reel.
+    Body: {video_url, caption, run_ts}
+    """
+    if not IG_USER_ID or not IG_ACCESS_TOKEN:
+        return jsonify({"error": "Instagram credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = (data.get("video_url") or "").strip()
+    caption   = (data.get("caption")   or "").strip()[:2200]
+    run_ts    = int(data.get("run_ts") or 0)
+    if not video_url:
+        return jsonify({"error": "No video URL provided."}), 400
+    status_key = f"narrated_ig_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (status_key, "running:start", "running:start"))
+    threading.Thread(target=_post_narrated_reel_worker,
+                     args=(article_id, video_url, caption, run_ts),
+                     daemon=True).start()
+    return jsonify({"started": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-ig-status")
+@login_required
+@admin_required
+def admin_narrated_ig_status(article_id):
+    """Poll status of a narrated video Instagram post. Query: ?ts=<run_ts>"""
+    run_ts = request.args.get("ts", "0")
+    return jsonify({
+        "status": get_setting(f"narrated_ig_status_{article_id}_{run_ts}") or "",
+        "result": get_setting(f"narrated_ig_result_{article_id}_{run_ts}") or "",
+    })
+
+
 @app.route("/admin/articles/<int:article_id>/archive-instagram-post", methods=["POST"])
 @login_required
 @admin_required

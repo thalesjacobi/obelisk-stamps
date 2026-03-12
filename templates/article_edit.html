@@ -1288,7 +1288,8 @@ const IG_CAPTION_PROMPT  = {{ ig_caption_prompt | tojson }};
 const IG_ARTICLE_CAPTION_PROMPT = {{ ig_article_caption_prompt | tojson }};
 const ARTICLE_TITLE = {{ (article.title if article and article.title else '') | tojson }};
 const CAROUSEL_PUNCHLINES = {{ (article.carousel_punchlines if article and article.carousel_punchlines else []) | tojson }};
-const ARTICLE_URL = {{ ((site_url ~ '/articles/' ~ article.slug) if article and article.slug else '') | tojson }};
+const ARTICLE_URL    = {{ ((site_url ~ '/articles/' ~ article.slug) if article and article.slug else '') | tojson }};
+const IG_CONFIGURED  = {{ ig_configured | tojson }};
 
 function openCarouselStyleModal() {
     document.getElementById('carousel-style-text').value = CAROUSEL_STYLE;
@@ -2756,9 +2757,92 @@ function buildRunItem(run, expandIt) {
                        style="max-height:520px;width:auto;max-width:100%;display:block;margin:0 auto;"></video>
                 <p class="fw-semibold small mb-1">Narration Script</p>
                 <ol class="small">${scriptRows}</ol>
+                <div class="mt-3 pt-3 border-top">
+                    <p class="fw-semibold small mb-2">Post to Instagram</p>
+                    ${!IG_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">Instagram not configured (IG_USER_ID / IG_ACCESS_TOKEN missing).</div>' : ''}
+                    <textarea class="form-control form-control-sm mb-2" id="nv-ig-caption-${run.ts}"
+                              rows="3" maxlength="2200"
+                              placeholder="Caption…"
+                              ${!IG_CONFIGURED ? 'disabled' : ''}></textarea>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <button class="btn btn-sm btn-dark" id="nv-ig-btn-${run.ts}"
+                                onclick="postNarratedToIg(${run.ts}, ${JSON.stringify(run.url)}, this)"
+                                ${!IG_CONFIGURED ? 'disabled' : ''}>
+                            Post to Instagram
+                        </button>
+                        <span id="nv-ig-status-${run.ts}" class="small text-muted"></span>
+                    </div>
+                    <div id="nv-ig-result-${run.ts}" class="mt-2"></div>
+                </div>
             </div>
         </div>`;
+    /* Set caption default after DOM is built (avoids HTML-escaping issues in textarea) */
+    var defaultCaption = [ARTICLE_TITLE, ARTICLE_URL ? '\n' + ARTICLE_URL : ''].filter(Boolean).join('\n');
+    var captionEl = item.querySelector('#nv-ig-caption-' + run.ts);
+    if (captionEl) captionEl.value = defaultCaption;
     return item;
+}
+
+/* ── Instagram Reel posting for a narrated video run ─────────── */
+function postNarratedToIg(runTs, videoUrl, btn) {
+    var caption   = (document.getElementById('nv-ig-caption-' + runTs) || {}).value || '';
+    var statusEl  = document.getElementById('nv-ig-status-' + runTs);
+    var resultEl  = document.getElementById('nv-ig-result-' + runTs);
+    btn.disabled  = true;
+    statusEl.textContent = 'Starting…';
+    resultEl.innerHTML   = '';
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-narrated-to-instagram', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({video_url: videoUrl, caption: caption, run_ts: runTs})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) {
+            statusEl.textContent = '';
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 small mb-0">' + d.error + '</div>';
+            btn.disabled = false;
+        } else {
+            pollNarratedIg(runTs, btn);
+        }
+    })
+    .catch(function(e) {
+        statusEl.textContent = '';
+        resultEl.innerHTML = '<div class="alert alert-danger py-1 small mb-0">Request failed: ' + e + '</div>';
+        btn.disabled = false;
+    });
+}
+
+function pollNarratedIg(runTs, btn) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/narrated-ig-status?ts=' + runTs)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        var statusEl = document.getElementById('nv-ig-status-' + runTs);
+        var resultEl = document.getElementById('nv-ig-result-' + runTs);
+        if (!statusEl) return;
+        if (d.result && d.result.indexOf('done:') === 0) {
+            var permalink = d.result.slice(5);
+            statusEl.textContent = '';
+            resultEl.innerHTML = '<div class="alert alert-success py-1 small mb-0">Posted! ' +
+                '<a href="' + permalink + '" target="_blank" rel="noopener">View on Instagram ↗</a></div>';
+            btn.disabled = false;
+        } else if (d.result && d.result.indexOf('error:') === 0) {
+            statusEl.textContent = '';
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 small mb-0">' + d.result.slice(6) + '</div>';
+            btn.disabled = false;
+        } else {
+            var labels = {
+                'running:start':          'Starting…',
+                'running:container':      'Creating Reel…',
+                'running:poll':           'Processing video…',
+                'running:publish':        'Publishing…',
+                'running:publish_retry':  'Rate limited — retrying…'
+            };
+            statusEl.textContent = labels[d.status] || d.status || 'Running…';
+            setTimeout(function() { pollNarratedIg(runTs, btn); }, 5000);
+        }
+    })
+    .catch(function() { setTimeout(function() { pollNarratedIg(runTs, btn); }, 5000); });
 }
 
 /* ── Load all existing runs on page load ─────────────────────── */
