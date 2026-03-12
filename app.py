@@ -3700,7 +3700,6 @@ def _narrated_video_worker(article_id, cfg):
         if speed_factor and speed_factor != 1.0:
             _log(f"Speeding up video by {speed_factor}x…")
             fast_path = video_dir / f"narrated_{ts}_fast.mp4"
-            temp_files.append(fast_path)
             speed_filter = (
                 f"[0:v]setpts=PTS/{speed_factor:.4f}[v];"
                 f"[0:a]atempo={speed_factor:.4f}[a]"
@@ -3720,7 +3719,8 @@ def _narrated_video_worker(article_id, cfg):
                 _log(f"Speed-up FAILED: {err} — using original speed")
             else:
                 _log(f"Speed-up OK ({speed_factor}x)")
-                temp_files.append(out_path)  # clean up the slow version
+                temp_files.append(out_path)   # clean up the slow version
+                temp_files.append(fast_path)  # fast version cleaned up after GCS upload
                 out_path = fast_path
             _flush_log()
 
