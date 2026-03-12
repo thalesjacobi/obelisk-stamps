@@ -3246,13 +3246,13 @@ function viewComponentLog(component, title) {
     fetch('/admin/articles/' + ARTICLE_ID + '/component-log/' + component)
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            // Generation Log pinned first; activity entries newest-first after it
+            // Activity entries newest-first, then Generation Log at the end
             var allEntries = [];
-            if (d.run_log) {
-                allEntries.push({ title: 'Generation Log', timestamp: '', content: d.run_log });
-            }
             if (d.entries && d.entries.length) {
                 d.entries.slice().reverse().forEach(function(e) { allEntries.push(e); });
+            }
+            if (d.run_log) {
+                allEntries.push({ title: 'Generation Log', timestamp: '', content: d.run_log });
             }
 
             if (!allEntries.length) {
