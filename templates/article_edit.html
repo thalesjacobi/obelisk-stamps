@@ -2755,15 +2755,32 @@ function buildRunItem(run, expandIt) {
                 </table>
                 <video src="${run.url}" controls class="rounded mb-3"
                        style="max-height:520px;width:auto;max-width:100%;display:block;margin:0 auto;"></video>
-                <p class="fw-semibold small mb-1">Narration Script</p>
-                <ol class="small">${scriptRows}</ol>
+                <div class="mt-2">
+                    <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1"
+                       data-bs-toggle="collapse" href="#nv-script-${run.ts}" role="button"
+                       aria-expanded="false">
+                        <span>Narration Script</span>
+                        <span class="text-muted" style="font-size:.7rem;">▼</span>
+                    </a>
+                    <div class="collapse" id="nv-script-${run.ts}">
+                        <ol class="small mt-1">${scriptRows}</ol>
+                    </div>
+                </div>
                 <div class="mt-3 pt-3 border-top">
                     <p class="fw-semibold small mb-2">Post to Instagram</p>
                     ${!IG_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">Instagram not configured (IG_USER_ID / IG_ACCESS_TOKEN missing).</div>' : ''}
-                    <textarea class="form-control form-control-sm mb-2" id="nv-ig-caption-${run.ts}"
+                    <div class="d-flex align-items-center mb-1">
+                        <label class="form-label small fw-semibold mb-0">Caption</label>
+                        <a href="#" class="small ms-auto" id="nv-ig-gen-link-${run.ts}"
+                           onclick="event.preventDefault(); generateNarratedIgCaption(${run.ts})">
+                           Generate caption <span class="text-muted">(~$0.01)</span></a>
+                    </div>
+                    <textarea class="form-control form-control-sm mb-1" id="nv-ig-caption-${run.ts}"
                               rows="3" maxlength="2200"
-                              placeholder="Caption…"
+                              placeholder="Write your caption here… #stamps #philately"
+                              oninput="var c=this.value.length; document.getElementById('nv-ig-count-${run.ts}').textContent=c+' / 2200';"
                               ${!IG_CONFIGURED ? 'disabled' : ''}></textarea>
+                    <div class="text-end text-muted small mb-2" id="nv-ig-count-${run.ts}">0 / 2200</div>
                     <div class="d-flex align-items-center gap-2 flex-wrap">
                         <button class="btn btn-sm btn-dark" id="nv-ig-btn-${run.ts}"
                                 onclick="postNarratedToIg(${run.ts}, ${JSON.stringify(run.url)}, this)"
@@ -2781,6 +2798,35 @@ function buildRunItem(run, expandIt) {
     var captionEl = item.querySelector('#nv-ig-caption-' + run.ts);
     if (captionEl) captionEl.value = defaultCaption;
     return item;
+}
+
+/* ── Generate IG caption for a narrated run (reuses same endpoint) ─ */
+function generateNarratedIgCaption(runTs) {
+    if (!ARTICLE_ID) return;
+    var link      = document.getElementById('nv-ig-gen-link-' + runTs);
+    var captionEl = document.getElementById('nv-ig-caption-' + runTs);
+    var countEl   = document.getElementById('nv-ig-count-' + runTs);
+    if (!link || !captionEl) return;
+    var origHTML = link.innerHTML;
+    link.textContent = 'Generating…';
+    link.style.pointerEvents = 'none';
+    fetch('/admin/articles/' + ARTICLE_ID + '/generate-ig-caption', {method: 'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        link.innerHTML = origHTML;
+        link.style.pointerEvents = '';
+        if (d.error) { alert('Failed to generate caption: ' + d.error); return; }
+        captionEl.value = d.caption;
+        if (ARTICLE_URL && d.caption.indexOf(ARTICLE_URL) === -1) {
+            captionEl.value += '\n\nWant to read the full article? Access the following link:\n' + ARTICLE_URL;
+        }
+        if (countEl) countEl.textContent = captionEl.value.length + ' / 2200';
+    })
+    .catch(function(err) {
+        link.innerHTML = origHTML;
+        link.style.pointerEvents = '';
+        alert('Failed to generate caption: ' + err);
+    });
 }
 
 /* ── Instagram Reel posting for a narrated video run ─────────── */
