@@ -5599,6 +5599,10 @@ def _post_narrated_reel_worker(article_id, video_url, caption, run_ts):
             _clear_status(); return
 
         post_id = data["id"]
+        # Persist media_id for live-check and archive operations
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"narrated_ig_media_id_{article_id}_{run_ts}", post_id, post_id))
 
         # ── 4. Fetch permalink ────────────────────────────────────────────
         try:
@@ -5657,10 +5661,103 @@ def admin_post_narrated_to_instagram(article_id):
 def admin_narrated_ig_status(article_id):
     """Poll status of a narrated video Instagram post. Query: ?ts=<run_ts>"""
     run_ts = request.args.get("ts", "0")
+    history_raw = get_setting(f"narrated_ig_history_{article_id}_{run_ts}")
+    history = json.loads(history_raw) if history_raw else []
     return jsonify({
-        "status": get_setting(f"narrated_ig_status_{article_id}_{run_ts}") or "",
-        "result": get_setting(f"narrated_ig_result_{article_id}_{run_ts}") or "",
+        "status":  get_setting(f"narrated_ig_status_{article_id}_{run_ts}") or "",
+        "result":  get_setting(f"narrated_ig_result_{article_id}_{run_ts}") or "",
+        "history": history,
     })
+
+
+@app.route("/admin/articles/<int:article_id>/check-narrated-ig-post")
+@login_required
+@admin_required
+def admin_check_narrated_ig_post(article_id):
+    """Check if a narrated video Instagram post is still live. Query: ?ts=<run_ts>"""
+    if not IG_ACCESS_TOKEN:
+        return jsonify({"error": "Instagram credentials not configured."}), 400
+    run_ts   = request.args.get("ts", "0")
+    media_id = get_setting(f"narrated_ig_media_id_{article_id}_{run_ts}")
+    if not media_id:
+        import re as _re
+        result_val = get_setting(f"narrated_ig_result_{article_id}_{run_ts}") or ""
+        if result_val.startswith("done:"):
+            m = _re.search(r'/p/(\d{10,})', result_val)
+            if m:
+                media_id = m.group(1)
+                execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE value = %s",
+                        (f"narrated_ig_media_id_{article_id}_{run_ts}", media_id, media_id))
+    if not media_id:
+        return jsonify({"error": "No published post found for this run."}), 400
+    import requests as _req
+    try:
+        resp = _req.get(
+            f"{_IG_GRAPH_URL}/{media_id}",
+            params={"fields": "id,permalink", "access_token": IG_ACCESS_TOKEN},
+            timeout=15,
+        )
+        data = resp.json()
+        if "id" in data:
+            _add_activity_log(article_id, "Check Narrated Post Live",
+                              f"Post is live. media_id={media_id}, ts={run_ts}",
+                              component="narrated")
+            return jsonify({"live": True, "permalink": data.get("permalink", "")})
+        api_err = data.get("error", {}).get("message", "Post not found.")
+        for _suffix in (". Please read the Graph API", ". See the Graph API"):
+            if _suffix in api_err:
+                api_err = api_err[:api_err.index(_suffix)]
+                break
+        _add_activity_log(article_id, "Check Narrated Post Live",
+                          f"Post not found. media_id={media_id}, ts={run_ts}: {api_err}",
+                          component="narrated")
+        return jsonify({"live": False, "api_error": api_err})
+    except Exception as exc:
+        return jsonify({"error": f"Failed to reach Instagram API: {exc}"}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-ig-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_ig_post(article_id):
+    """Archive a narrated video Instagram post record. Body: {run_ts}"""
+    data     = request.get_json() or {}
+    run_ts   = int(data.get("run_ts") or 0)
+    media_id_key = f"narrated_ig_media_id_{article_id}_{run_ts}"
+    result_key   = f"narrated_ig_result_{article_id}_{run_ts}"
+    history_key  = f"narrated_ig_history_{article_id}_{run_ts}"
+    media_id = get_setting(media_id_key)
+    result   = get_setting(result_key)
+    if not media_id:
+        import re as _re
+        result_val = result or ""
+        if result_val.startswith("done:"):
+            m = _re.search(r'/p/(\d{10,})', result_val)
+            if m:
+                media_id = m.group(1)
+    if not media_id:
+        return jsonify({"error": "No published post found for this run."}), 400
+    permalink = result[5:] if (result and result.startswith("done:")) else None
+    history_raw = get_setting(history_key)
+    history = json.loads(history_raw) if history_raw else []
+    import datetime as _dt
+    history.append({
+        "media_id":    media_id,
+        "permalink":   permalink,
+        "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    })
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (history_key, json.dumps(history), json.dumps(history)))
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (media_id_key, "", ""))
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (result_key, "", ""))
+    _add_activity_log(article_id, "Archived Narrated Post",
+                      f"run_ts={run_ts}, media_id={media_id}, permalink={permalink or 'N/A'}",
+                      component="narrated")
+    return jsonify({"ok": True, "history": history})
 
 
 @app.route("/admin/articles/<int:article_id>/archive-instagram-post", methods=["POST"])

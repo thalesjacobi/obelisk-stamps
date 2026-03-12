@@ -2782,31 +2782,51 @@ function buildRunItem(run, expandIt) {
                     ${!IG_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">Instagram not configured (IG_USER_ID / IG_ACCESS_TOKEN missing).</div>' : ''}
                     <div class="d-flex align-items-center mb-1">
                         <label class="form-label small fw-semibold mb-0">Caption</label>
-                        <a href="#" class="small ms-auto" id="nv-ig-gen-link-${run.ts}"
+                        <a href="#" class="small ms-auto" id="nv-ig-${run.ts}-gen-link"
                            onclick="event.preventDefault(); generateNarratedIgCaption(${run.ts})">
                            Generate caption <span class="text-muted">(~$0.01)</span></a>
                     </div>
-                    <textarea class="form-control form-control-sm mb-1" id="nv-ig-caption-${run.ts}"
+                    <textarea class="form-control form-control-sm mb-1" id="nv-ig-${run.ts}-caption"
                               rows="3" maxlength="2200"
                               placeholder="Write your caption here… #stamps #philately"
-                              oninput="var c=this.value.length; document.getElementById('nv-ig-count-${run.ts}').textContent=c+' / 2200';"
+                              oninput="document.getElementById('nv-ig-${run.ts}-count').textContent=this.value.length+' / 2200';"
                               ${!IG_CONFIGURED ? 'disabled' : ''}></textarea>
-                    <div class="text-end text-muted small mb-2" id="nv-ig-count-${run.ts}">0 / 2200</div>
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <button type="button" class="btn btn-sm btn-dark" id="nv-ig-btn-${run.ts}"
-                                onclick="postNarratedToIg(${run.ts}, ${JSON.stringify(run.url)}, this)"
+                    <div class="text-end text-muted small mb-2" id="nv-ig-${run.ts}-count">0 / 2200</div>
+                    <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-ig-${run.ts}-btn-row">
+                        <button type="button" class="btn btn-sm btn-dark" id="nv-ig-${run.ts}-post-btn"
+                                onclick="postNarratedToIg(${run.ts}, ${JSON.stringify(run.url)})"
                                 ${!IG_CONFIGURED ? 'disabled' : ''}>
-                            Post to Instagram
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                 stroke-linejoin="round" class="me-1">
+                                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                                <circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.5" fill="currentColor"/>
+                            </svg>Post to Instagram
                         </button>
-                        <span id="nv-ig-status-${run.ts}" class="small text-muted"></span>
                     </div>
-                    <div id="nv-ig-result-${run.ts}" class="mt-2"></div>
+                    <div id="nv-ig-${run.ts}-status-area" class="d-none">
+                        <div class="d-flex align-items-center gap-2 mb-1" id="nv-ig-${run.ts}-status-running">
+                            <div class="spinner-border spinner-border-sm text-secondary" role="status"
+                                 style="width:.9rem;height:.9rem;border-width:.12em"></div>
+                            <span id="nv-ig-${run.ts}-status-text" class="text-muted small">Starting…</span>
+                        </div>
+                        <div class="progress mb-2" style="height:4px" id="nv-ig-${run.ts}-progress-wrap">
+                            <div id="nv-ig-${run.ts}-progress-bar"
+                                 class="progress-bar progress-bar-striped progress-bar-animated"
+                                 role="progressbar" style="width:0%"></div>
+                        </div>
+                        <div id="nv-ig-${run.ts}-result" class="d-none small"></div>
+                        <div id="nv-ig-${run.ts}-history" class="d-none mt-3">
+                            <div class="text-muted small fw-semibold mb-1">Past Posts</div>
+                            <div id="nv-ig-${run.ts}-history-list"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>`;
     /* Set caption default after DOM is built (avoids HTML-escaping issues in textarea) */
     var defaultCaption = [ARTICLE_TITLE, ARTICLE_URL ? '\n' + ARTICLE_URL : ''].filter(Boolean).join('\n');
-    var captionEl = item.querySelector('#nv-ig-caption-' + run.ts);
+    var captionEl = item.querySelector('#nv-ig-' + run.ts + '-caption');
     if (captionEl) captionEl.value = defaultCaption;
     return item;
 }
@@ -2814,9 +2834,9 @@ function buildRunItem(run, expandIt) {
 /* ── Generate IG caption for a narrated run (reuses same endpoint) ─ */
 function generateNarratedIgCaption(runTs) {
     if (!ARTICLE_ID) return;
-    var link      = document.getElementById('nv-ig-gen-link-' + runTs);
-    var captionEl = document.getElementById('nv-ig-caption-' + runTs);
-    var countEl   = document.getElementById('nv-ig-count-' + runTs);
+    var link      = document.getElementById('nv-ig-' + runTs + '-gen-link');
+    var captionEl = document.getElementById('nv-ig-' + runTs + '-caption');
+    var countEl   = document.getElementById('nv-ig-' + runTs + '-count');
     if (!link || !captionEl) return;
     var origHTML = link.innerHTML;
     link.textContent = 'Generating…';
@@ -2840,14 +2860,193 @@ function generateNarratedIgCaption(runTs) {
     });
 }
 
+/* ── Narrated video Instagram helpers ────────────────────────── */
+function _nvIgId(ts, suffix) { return 'nv-ig-' + ts + '-' + suffix; }
+
+function showNvIgRunning(ts, statusStr) {
+    var area        = document.getElementById(_nvIgId(ts, 'status-area'));
+    var running     = document.getElementById(_nvIgId(ts, 'status-running'));
+    var textEl      = document.getElementById(_nvIgId(ts, 'status-text'));
+    var progressBar = document.getElementById(_nvIgId(ts, 'progress-bar'));
+    var resultEl    = document.getElementById(_nvIgId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (resultEl) resultEl.classList.add('d-none');
+    var labels = {
+        'running:0': 'Starting…', 'running:start': 'Starting…',
+        'running:container': 'Creating Reel…',
+        'running:poll': 'Processing video…',
+        'running:publish': 'Publishing…',
+        'running:publish_retry': 'Rate limited — retrying…'
+    };
+    var pcts = {
+        'running:0': 10, 'running:start': 10,
+        'running:container': 30, 'running:poll': 55,
+        'running:publish': 80, 'running:publish_retry': 85
+    };
+    if (textEl) textEl.textContent = labels[statusStr] || statusStr || 'Running…';
+    if (progressBar) progressBar.style.width = (pcts[statusStr] || 10) + '%';
+}
+
+function showNvIgDone(ts, permalink) {
+    var area         = document.getElementById(_nvIgId(ts, 'status-area'));
+    var running      = document.getElementById(_nvIgId(ts, 'status-running'));
+    var progressWrap = document.getElementById(_nvIgId(ts, 'progress-wrap'));
+    var resultEl     = document.getElementById(_nvIgId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progressWrap) progressWrap.classList.add('d-none');
+    if (resultEl) {
+        resultEl.classList.remove('d-none');
+        resultEl.innerHTML = '<div class="alert alert-success py-1 small mb-2">Posted! ' +
+            '<a href="' + permalink + '" target="_blank" rel="noopener">View on Instagram ↗</a></div>';
+    }
+    var postBtn = document.getElementById(_nvIgId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    var btnRow = document.getElementById(_nvIgId(ts, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.nv-ig-done-btn').forEach(function(b) { b.remove(); });
+        var checkBtn = document.createElement('button');
+        checkBtn.type = 'button';
+        checkBtn.className = 'btn btn-outline-secondary btn-sm nv-ig-done-btn';
+        checkBtn.id = _nvIgId(ts, 'check-live-btn');
+        checkBtn.textContent = 'Check if post is still live';
+        checkBtn.onclick = function() { nvIgCheckPostLive(ts); };
+        btnRow.appendChild(checkBtn);
+        var archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-outline-danger btn-sm nv-ig-done-btn';
+        archiveBtn.id = _nvIgId(ts, 'archive-btn');
+        archiveBtn.textContent = 'Archive post';
+        archiveBtn.onclick = function() { nvIgArchivePost(ts); };
+        btnRow.appendChild(archiveBtn);
+        if (!document.getElementById(_nvIgId(ts, 'check-live-status'))) {
+            var statusDiv = document.createElement('div');
+            statusDiv.id = _nvIgId(ts, 'check-live-status');
+            statusDiv.className = 'small mt-2 w-100';
+            btnRow.insertAdjacentElement('afterend', statusDiv);
+        }
+    }
+}
+
+function showNvIgError(ts, msg) {
+    var area         = document.getElementById(_nvIgId(ts, 'status-area'));
+    var running      = document.getElementById(_nvIgId(ts, 'status-running'));
+    var progressWrap = document.getElementById(_nvIgId(ts, 'progress-wrap'));
+    var resultEl     = document.getElementById(_nvIgId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progressWrap) progressWrap.classList.add('d-none');
+    if (resultEl) {
+        resultEl.classList.remove('d-none');
+        resultEl.innerHTML = '<div class="alert alert-danger py-1 small mb-0">' + msg + '</div>';
+    }
+}
+
+function nvIgCheckPostLive(ts) {
+    var btn       = document.getElementById(_nvIgId(ts, 'check-live-btn'));
+    var statusDiv = document.getElementById(_nvIgId(ts, 'check-live-status'));
+    if (btn) btn.disabled = true;
+    if (statusDiv) statusDiv.innerHTML = 'Checking…';
+    fetch('/admin/articles/' + ARTICLE_ID + '/check-narrated-ig-post?ts=' + ts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (btn) btn.disabled = false;
+        if (d.live) {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-success">✓ Post is live</span>';
+        } else if (d.error) {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Error: ' + d.error + '</span>';
+        } else {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-warning">✗ Not found: ' + (d.api_error || 'Unknown') + '</span>';
+        }
+    })
+    .catch(function() {
+        if (btn) btn.disabled = false;
+        if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Request failed</span>';
+    });
+}
+
+function nvIgArchivePost(ts) {
+    var statusDiv = document.getElementById(_nvIgId(ts, 'check-live-status'));
+    if (statusDiv) statusDiv.innerHTML = 'Archiving…';
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-ig-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.ok) {
+            var resultEl = document.getElementById(_nvIgId(ts, 'result'));
+            if (resultEl) resultEl.innerHTML = '<span class="text-muted small">Post archived. You can now publish a new post.</span>';
+            var postBtn = document.getElementById(_nvIgId(ts, 'post-btn'));
+            if (postBtn) postBtn.disabled = false;
+            var btnRow = document.getElementById(_nvIgId(ts, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.nv-ig-done-btn').forEach(function(b) { b.remove(); });
+            if (d.history && d.history.length) renderNvIgHistory(ts, d.history);
+            if (statusDiv) statusDiv.innerHTML = '';
+        } else {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">' + (d.error || 'Archive failed') + '</span>';
+        }
+    })
+    .catch(function() {
+        if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Archive request failed</span>';
+    });
+}
+
+function renderNvIgHistory(ts, history) {
+    var wrap = document.getElementById(_nvIgId(ts, 'history'));
+    var list = document.getElementById(_nvIgId(ts, 'history-list'));
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.forEach(function(entry, i) {
+        var div = document.createElement('div');
+        div.className = 'border rounded p-2 mb-2 small';
+        var pLink = entry.permalink
+            ? '<a href="' + entry.permalink + '" target="_blank" rel="noopener">' + entry.permalink + '</a>'
+            : '(no permalink)';
+        div.innerHTML = '<div class="text-muted">#' + (i + 1) + ' &mdash; ' + (entry.archived_at || '') + '</div>' +
+                        '<div>' + pLink + '</div>';
+        list.appendChild(div);
+    });
+    wrap.classList.remove('d-none');
+    var area         = document.getElementById(_nvIgId(ts, 'status-area'));
+    var running      = document.getElementById(_nvIgId(ts, 'status-running'));
+    var progressWrap = document.getElementById(_nvIgId(ts, 'progress-wrap'));
+    if (area)         area.classList.remove('d-none');
+    if (running)      running.classList.add('d-none');
+    if (progressWrap) progressWrap.classList.add('d-none');
+}
+
+function restoreNvIgState(ts) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/narrated-ig-status?ts=' + ts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.history && d.history.length) renderNvIgHistory(ts, d.history);
+        if (!d.result && !d.status) return;
+        if (d.result && d.result.startsWith('done:')) {
+            showNvIgDone(ts, d.result.slice(5));
+        } else if (d.result && d.result.startsWith('error:')) {
+            showNvIgError(ts, d.result.slice(6));
+        } else if (d.status && d.status.startsWith('running')) {
+            var postBtn = document.getElementById(_nvIgId(ts, 'post-btn'));
+            if (postBtn) postBtn.disabled = true;
+            showNvIgRunning(ts, d.status);
+            pollNarratedIg(ts);
+        }
+    })
+    .catch(function() {});
+}
+
 /* ── Instagram Reel posting for a narrated video run ─────────── */
-function postNarratedToIg(runTs, videoUrl, btn) {
-    var caption   = (document.getElementById('nv-ig-caption-' + runTs) || {}).value || '';
-    var statusEl  = document.getElementById('nv-ig-status-' + runTs);
-    var resultEl  = document.getElementById('nv-ig-result-' + runTs);
-    btn.disabled  = true;
-    statusEl.textContent = 'Starting…';
-    resultEl.innerHTML   = '';
+function postNarratedToIg(runTs, videoUrl) {
+    var caption = (document.getElementById(_nvIgId(runTs, 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_nvIgId(runTs, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showNvIgRunning(runTs, 'running:0');
     fetch('/admin/articles/' + ARTICLE_ID + '/post-narrated-to-instagram', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -2856,50 +3055,35 @@ function postNarratedToIg(runTs, videoUrl, btn) {
     .then(function(r) { return r.json(); })
     .then(function(d) {
         if (d.error) {
-            statusEl.textContent = '';
-            resultEl.innerHTML = '<div class="alert alert-danger py-1 small mb-0">' + d.error + '</div>';
-            btn.disabled = false;
+            showNvIgError(runTs, d.error);
+            if (postBtn) postBtn.disabled = false;
         } else {
-            pollNarratedIg(runTs, btn);
+            pollNarratedIg(runTs);
         }
     })
     .catch(function(e) {
-        statusEl.textContent = '';
-        resultEl.innerHTML = '<div class="alert alert-danger py-1 small mb-0">Request failed: ' + e + '</div>';
-        btn.disabled = false;
+        showNvIgError(runTs, 'Request failed: ' + e);
+        if (postBtn) postBtn.disabled = false;
     });
 }
 
-function pollNarratedIg(runTs, btn) {
+function pollNarratedIg(runTs) {
     fetch('/admin/articles/' + ARTICLE_ID + '/narrated-ig-status?ts=' + runTs)
     .then(function(r) { return r.json(); })
     .then(function(d) {
-        var statusEl = document.getElementById('nv-ig-status-' + runTs);
-        var resultEl = document.getElementById('nv-ig-result-' + runTs);
-        if (!statusEl) return;
-        if (d.result && d.result.indexOf('done:') === 0) {
-            var permalink = d.result.slice(5);
-            statusEl.textContent = '';
-            resultEl.innerHTML = '<div class="alert alert-success py-1 small mb-0">Posted! ' +
-                '<a href="' + permalink + '" target="_blank" rel="noopener">View on Instagram ↗</a></div>';
-            btn.disabled = false;
-        } else if (d.result && d.result.indexOf('error:') === 0) {
-            statusEl.textContent = '';
-            resultEl.innerHTML = '<div class="alert alert-danger py-1 small mb-0">' + d.result.slice(6) + '</div>';
-            btn.disabled = false;
+        var postBtn = document.getElementById(_nvIgId(runTs, 'post-btn'));
+        if (d.result && d.result.startsWith('done:')) {
+            showNvIgDone(runTs, d.result.slice(5));
+            if (postBtn) postBtn.disabled = false;
+        } else if (d.result && d.result.startsWith('error:')) {
+            showNvIgError(runTs, d.result.slice(6));
+            if (postBtn) postBtn.disabled = false;
         } else {
-            var labels = {
-                'running:start':          'Starting…',
-                'running:container':      'Creating Reel…',
-                'running:poll':           'Processing video…',
-                'running:publish':        'Publishing…',
-                'running:publish_retry':  'Rate limited — retrying…'
-            };
-            statusEl.textContent = labels[d.status] || d.status || 'Running…';
-            setTimeout(function() { pollNarratedIg(runTs, btn); }, 5000);
+            showNvIgRunning(runTs, d.status || '');
+            setTimeout(function() { pollNarratedIg(runTs); }, 5000);
         }
     })
-    .catch(function() { setTimeout(function() { pollNarratedIg(runTs, btn); }, 5000); });
+    .catch(function() { setTimeout(function() { pollNarratedIg(runTs); }, 5000); });
 }
 
 /* ── Load all existing runs on page load ─────────────────────── */
@@ -2911,6 +3095,7 @@ function loadNarratedRuns(runs) {
         try {
             accordion.appendChild(buildRunItem(run, false));
             rendered++;
+            restoreNvIgState(run.ts);
         } catch(e) {
             console.warn('Could not render narrated run', i, e);
         }
