@@ -5649,6 +5649,9 @@ def admin_post_narrated_to_instagram(article_id):
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s",
             (status_key, "running:start", "running:start"))
+    _add_activity_log(article_id, "Instagram Reel Post Started",
+                      f"run_ts={run_ts}\nvideo_url={video_url[:120]}",
+                      component="narrated")
     threading.Thread(target=_post_narrated_reel_worker,
                      args=(article_id, video_url, caption, run_ts),
                      daemon=True).start()
@@ -5885,16 +5888,20 @@ def admin_article_generate_ig_caption(article_id):
         if article_link:
             caption += f"\n\nWant to read the full article? Access the following link:\n{article_link}"
 
+        log_component = (request.get_json() or {}).get("component") or "carousel"
+        if log_component not in ("carousel", "cinemagraph", "narrated"):
+            log_component = "carousel"
         _add_activity_log(article_id, "Caption Generated (OpenAI)",
                           f"Prompt: {system_msg[:120]}…\n\nGenerated caption:\n{caption[:300]}…",
-                          component="carousel")
+                          component=log_component)
         return jsonify({"caption": caption})
 
     except Exception as e:
         print(f"IG caption generation error: {e}", flush=True)
         try:
+            log_component = (request.get_json() or {}).get("component") or "carousel"
             _add_activity_log(article_id, "Caption Generation Failed", f"Error: {e}",
-                              component="carousel")
+                              component=log_component)
         except Exception:
             pass
         return jsonify({"error": f"Caption generation failed: {e}"}), 500

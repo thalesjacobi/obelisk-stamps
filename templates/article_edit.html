@@ -2842,7 +2842,11 @@ function generateNarratedIgCaption(runTs) {
     var origHTML = link.innerHTML;
     link.textContent = 'Generating…';
     link.style.pointerEvents = 'none';
-    fetch('/admin/articles/' + ARTICLE_ID + '/generate-ig-caption', {method: 'POST'})
+    fetch('/admin/articles/' + ARTICLE_ID + '/generate-ig-caption', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({component: 'narrated'})
+    })
     .then(function(r) { return r.json(); })
     .then(function(d) {
         link.innerHTML = origHTML;
