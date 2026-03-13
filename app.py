@@ -5206,28 +5206,47 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
             _clear_status()
             return
 
-        # ── 6. Publish (with up to 3 retries for rate-limit / Fatal) ─────
+        # ── 6. Publish ─────────────────────────────────────────────────────
         _set_status("running:publish")
         print(f"IG worker: publishing carousel {carousel_id}", flush=True)
-        _publish_delays = [60, 120, 180]  # escalating wait times
-        data = {}
-        for _pub_attempt in range(4):  # initial + 3 retries
-            resp = _req.post(
-                f"{_IG_GRAPH_URL}/{ig_user_id}/media_publish",
-                data={"creation_id": carousel_id, "access_token": access_token},
-                timeout=30,
-            )
-            data = resp.json()
-            if "id" in data:
-                break  # success
+        resp = _req.post(
+            f"{_IG_GRAPH_URL}/{ig_user_id}/media_publish",
+            data={"creation_id": carousel_id, "access_token": access_token},
+            timeout=30,
+        )
+        data = resp.json()
+
+        # If publish returned an error, check if it actually went through
+        # (Instagram sometimes returns rate-limit/Fatal but publishes anyway)
+        if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
-            is_retryable = "request limit" in err.lower() or err.strip().lower() == "fatal"
-            if not is_retryable or _pub_attempt >= 3:
-                break
-            wait = _publish_delays[min(_pub_attempt, len(_publish_delays) - 1)]
-            print(f"IG worker: publish attempt {_pub_attempt+1} failed ({err}), retrying in {wait}s…", flush=True)
-            _set_status(f"running:publish_retry_{_pub_attempt+1}")
-            _time.sleep(wait)
+            print(f"IG worker: publish returned error ({err}), checking if post went through…", flush=True)
+            _set_status("running:publish_verify")
+            _time.sleep(10)  # give Instagram a moment
+            try:
+                check_resp = _req.get(
+                    f"{_IG_GRAPH_URL}/{ig_user_id}/media",
+                    params={"limit": "3", "fields": "id,timestamp,media_type",
+                            "access_token": access_token},
+                    timeout=15,
+                )
+                recent = check_resp.json().get("data", [])
+                if recent:
+                    # If the most recent post was created in the last 2 minutes,
+                    # it's almost certainly our publish that went through
+                    import datetime as _dt
+                    for post in recent:
+                        try:
+                            ts = _dt.datetime.strptime(post["timestamp"], "%Y-%m-%dT%H:%M:%S+0000")
+                            age = (_dt.datetime.utcnow() - ts).total_seconds()
+                            if age < 120:
+                                print(f"IG worker: post {post['id']} found (age={age:.0f}s) — publish succeeded despite error", flush=True)
+                                data = {"id": post["id"]}
+                                break
+                        except Exception:
+                            continue
+            except Exception as verify_err:
+                print(f"IG worker: verify check failed: {verify_err}", flush=True)
 
         if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
@@ -5573,26 +5592,42 @@ def _post_narrated_reel_worker(article_id, video_url, caption, run_ts):
             _clear_status(); return
 
         # ── 3. Publish ────────────────────────────────────────────────────
-        # ── Publish (with up to 3 retries for rate-limit / Fatal) ─────
         _set_status("running:publish")
         print(f"IG Reel: publishing {container_id}", flush=True)
-        _publish_delays = [60, 120, 180]
-        data = {}
-        for _pub_attempt in range(4):
-            resp = _req.post(f"{_IG_GRAPH_URL}/{IG_USER_ID}/media_publish",
-                             data={"creation_id": container_id, "access_token": IG_ACCESS_TOKEN},
-                             timeout=30)
-            data = resp.json()
-            if "id" in data:
-                break
+        resp = _req.post(f"{_IG_GRAPH_URL}/{IG_USER_ID}/media_publish",
+                         data={"creation_id": container_id, "access_token": IG_ACCESS_TOKEN},
+                         timeout=30)
+        data = resp.json()
+
+        # If publish returned an error, check if it actually went through
+        if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
-            is_retryable = "request limit" in err.lower() or err.strip().lower() == "fatal"
-            if not is_retryable or _pub_attempt >= 3:
-                break
-            wait = _publish_delays[min(_pub_attempt, len(_publish_delays) - 1)]
-            print(f"IG Reel: publish attempt {_pub_attempt+1} failed ({err}), retrying in {wait}s…", flush=True)
-            _set_status(f"running:publish_retry_{_pub_attempt+1}")
-            _time.sleep(wait)
+            print(f"IG Reel: publish returned error ({err}), checking if post went through…", flush=True)
+            _set_status("running:publish_verify")
+            _time.sleep(10)
+            try:
+                check_resp = _req.get(
+                    f"{_IG_GRAPH_URL}/{IG_USER_ID}/media",
+                    params={"limit": "3", "fields": "id,timestamp,media_type",
+                            "access_token": IG_ACCESS_TOKEN},
+                    timeout=15,
+                )
+                recent = check_resp.json().get("data", [])
+                if recent:
+                    import datetime as _dt
+                    for post in recent:
+                        try:
+                            ts = _dt.datetime.strptime(post["timestamp"], "%Y-%m-%dT%H:%M:%S+0000")
+                            age = (_dt.datetime.utcnow() - ts).total_seconds()
+                            if age < 120:
+                                print(f"IG Reel: post {post['id']} found (age={age:.0f}s) — publish succeeded despite error", flush=True)
+                                data = {"id": post["id"]}
+                                break
+                        except Exception:
+                            continue
+            except Exception as verify_err:
+                print(f"IG Reel: verify check failed: {verify_err}", flush=True)
+
         if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
             _set_result(f"error:Publish failed: {err}")
