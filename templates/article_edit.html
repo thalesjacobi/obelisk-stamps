@@ -1748,7 +1748,9 @@ function showIgRunning(mode, statusStr) {
         textEl.textContent = 'Creating carousel container…';
         progress.style.width = '90%';
     } else if (statusStr.includes('publish_retry')) {
-        textEl.textContent = 'Rate-limited — retrying publish in 60 s…';
+        var retryNum = statusStr.match(/retry_(\d+)/);
+        var retryLabel = retryNum ? ' (attempt ' + retryNum[1] + '/3)' : '';
+        textEl.textContent = 'Rate-limited — retrying publish' + retryLabel + '…';
         progress.style.width = '98%';
     } else if (statusStr.includes('publish')) {
         textEl.textContent = 'Publishing to Instagram…';
@@ -2883,12 +2885,17 @@ function showNvIgRunning(ts, statusStr) {
         'running:container': 'Creating Reel…',
         'running:poll': 'Processing video…',
         'running:publish': 'Publishing…',
-        'running:publish_retry': 'Rate limited — retrying…'
+        'running:publish_retry': 'Rate limited — retrying…',
+        'running:publish_retry_1': 'Rate limited — retry 1/3…',
+        'running:publish_retry_2': 'Rate limited — retry 2/3…',
+        'running:publish_retry_3': 'Rate limited — retry 3/3…'
     };
     var pcts = {
         'running:0': 10, 'running:start': 10,
         'running:container': 30, 'running:poll': 55,
-        'running:publish': 80, 'running:publish_retry': 85
+        'running:publish': 80, 'running:publish_retry': 85,
+        'running:publish_retry_1': 85, 'running:publish_retry_2': 90,
+        'running:publish_retry_3': 95
     };
     if (textEl) textEl.textContent = labels[statusStr] || statusStr || 'Running…';
     if (progressBar) progressBar.style.width = (pcts[statusStr] || 10) + '%';

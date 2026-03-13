@@ -5206,29 +5206,28 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
             _clear_status()
             return
 
-        # ── 6. Publish ────────────────────────────────────────────────────
+        # ── 6. Publish (with up to 3 retries for rate-limit / Fatal) ─────
         _set_status("running:publish")
         print(f"IG worker: publishing carousel {carousel_id}", flush=True)
-        resp = _req.post(
-            f"{_IG_GRAPH_URL}/{ig_user_id}/media_publish",
-            data={"creation_id": carousel_id, "access_token": access_token},
-            timeout=30,
-        )
-        data = resp.json()
-
-        # If rate-limited on publish, retry once after 60 s
-        if "id" not in data:
+        _publish_delays = [60, 120, 180]  # escalating wait times
+        data = {}
+        for _pub_attempt in range(4):  # initial + 3 retries
+            resp = _req.post(
+                f"{_IG_GRAPH_URL}/{ig_user_id}/media_publish",
+                data={"creation_id": carousel_id, "access_token": access_token},
+                timeout=30,
+            )
+            data = resp.json()
+            if "id" in data:
+                break  # success
             err = data.get("error", {}).get("message", str(data))
-            if "request limit" in err.lower():
-                print(f"IG worker: publish rate-limited, retrying in 60 s…", flush=True)
-                _set_status("running:publish_retry")
-                _time.sleep(60)
-                resp = _req.post(
-                    f"{_IG_GRAPH_URL}/{ig_user_id}/media_publish",
-                    data={"creation_id": carousel_id, "access_token": access_token},
-                    timeout=30,
-                )
-                data = resp.json()
+            is_retryable = "request limit" in err.lower() or err.strip().lower() == "fatal"
+            if not is_retryable or _pub_attempt >= 3:
+                break
+            wait = _publish_delays[min(_pub_attempt, len(_publish_delays) - 1)]
+            print(f"IG worker: publish attempt {_pub_attempt+1} failed ({err}), retrying in {wait}s…", flush=True)
+            _set_status(f"running:publish_retry_{_pub_attempt+1}")
+            _time.sleep(wait)
 
         if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
@@ -5574,22 +5573,26 @@ def _post_narrated_reel_worker(article_id, video_url, caption, run_ts):
             _clear_status(); return
 
         # ── 3. Publish ────────────────────────────────────────────────────
+        # ── Publish (with up to 3 retries for rate-limit / Fatal) ─────
         _set_status("running:publish")
         print(f"IG Reel: publishing {container_id}", flush=True)
-        resp = _req.post(f"{_IG_GRAPH_URL}/{IG_USER_ID}/media_publish",
-                         data={"creation_id": container_id, "access_token": IG_ACCESS_TOKEN},
-                         timeout=30)
-        data = resp.json()
-        if "id" not in data:
+        _publish_delays = [60, 120, 180]
+        data = {}
+        for _pub_attempt in range(4):
+            resp = _req.post(f"{_IG_GRAPH_URL}/{IG_USER_ID}/media_publish",
+                             data={"creation_id": container_id, "access_token": IG_ACCESS_TOKEN},
+                             timeout=30)
+            data = resp.json()
+            if "id" in data:
+                break
             err = data.get("error", {}).get("message", str(data))
-            if "request limit" in err.lower():
-                print("IG Reel: rate-limited, retrying in 60 s…", flush=True)
-                _set_status("running:publish_retry")
-                _time.sleep(60)
-                resp = _req.post(f"{_IG_GRAPH_URL}/{IG_USER_ID}/media_publish",
-                                 data={"creation_id": container_id, "access_token": IG_ACCESS_TOKEN},
-                                 timeout=30)
-                data = resp.json()
+            is_retryable = "request limit" in err.lower() or err.strip().lower() == "fatal"
+            if not is_retryable or _pub_attempt >= 3:
+                break
+            wait = _publish_delays[min(_pub_attempt, len(_publish_delays) - 1)]
+            print(f"IG Reel: publish attempt {_pub_attempt+1} failed ({err}), retrying in {wait}s…", flush=True)
+            _set_status(f"running:publish_retry_{_pub_attempt+1}")
+            _time.sleep(wait)
         if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
             _set_result(f"error:Publish failed: {err}")
