@@ -77,16 +77,6 @@
     #preview-scrub { height: 4px; background: #e9ecef; border-radius: 2px; overflow: hidden; }
     #preview-scrub-fill { height: 100%; width: 0%; background: #fd7e14; transition: width 0.25s linear; }
 
-    /* === Component C — AI Explainer Video === */
-    #ai-video-clip-grid { display: flex; flex-wrap: wrap; gap: 4px; }
-    .ai-clip-tile {
-        width: 28px; height: 28px; border-radius: 4px; background: #dee2e6;
-        transition: background 0.4s ease;
-    }
-    .ai-clip-tile.generating { background: #ffc107; }
-    .ai-clip-tile.done       { background: #198754; }
-    .ai-clip-tile.error      { background: #dc3545; }
-
     /* === Component D — Cinemagraph === */
     #cinemagraph-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     #cinemagraph-grid .carousel-col { flex: 0 0 calc(20% - 0.4rem); }
@@ -970,59 +960,6 @@
     </div>
 
 
-    <!-- ══════════════════════════════════════════════════════════
-         Component C — AI Explainer Video (Luma AI)
-         ══════════════════════════════════════════════════════════ -->
-    <div class="card mt-3 mb-4" id="ai-video-card">
-        <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2 position-relative">
-            <div>
-                <h5 class="mb-0">AI Explainer Video</h5>
-                <p class="text-muted small mb-0 mt-1">
-                    Each carousel image animated via Luma Ray-2 (5 s per clip) then merged.
-                    ~10–20 min, ~$0.50–1.00.
-                </p>
-            </div>
-            <div class="d-flex gap-2 align-items-center" style="margin-right:1.5rem;">
-                <button type="button" id="ai-video-stop-btn" class="btn btn-sm btn-outline-danger d-none" onclick="aiVideoStop()">Stop</button>
-                <button type="button" id="ai-video-locked-btn" class="btn btn-sm btn-secondary" disabled>Generate carousel images first</button>
-                <button type="button" id="ai-video-btn" class="btn btn-sm btn-primary d-none" onclick="aiVideoGenerate()">Generate AI Video</button>
-            </div>
-            <!-- Kebab menu -->
-            <div class="dropdown position-absolute" style="top:0.6rem;right:0.75rem;">
-                <button type="button" class="btn btn-sm btn-link text-muted p-1 lh-1"
-                        style="font-size:1.25rem; text-decoration:none;"
-                        data-bs-toggle="dropdown" aria-expanded="false"
-                        title="AI Explainer options">&#8942;</button>
-                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                    <li><h6 class="dropdown-header">Logs</h6></li>
-                    <li>
-                        <button type="button" class="dropdown-item small"
-                                onclick="viewComponentLog('explainer', 'AI Explainer Video')">View Logs</button>
-                    </li>
-                </ul>
-            </div>
-        </div>
-        <div class="card-body">
-            <div id="ai-video-status" class="d-none mb-3">
-                <div class="d-flex align-items-center gap-2 mb-1">
-                    <div class="spinner-border spinner-border-sm text-primary" id="ai-video-spinner" role="status"></div>
-                    <span id="ai-video-status-text" class="text-muted small">Starting…</span>
-                </div>
-                <div class="progress mb-2" style="height:6px;">
-                    <div id="ai-video-progress" class="progress-bar progress-bar-striped progress-bar-animated"
-                         role="progressbar" style="width:0%"></div>
-                </div>
-                <div id="ai-video-clip-grid"></div>
-            </div>
-            <div id="ai-video-output" class="d-none">
-                <video id="ai-video-player" controls class="w-100 rounded" style="max-height:360px;"></video>
-            </div>
-            <div id="ai-video-empty" class="text-muted small text-center py-3">
-                Generate a carousel first, then click <strong>Generate AI Video</strong>.
-            </div>
-        </div>
-    </div>
-
     {% endif %}
 
     <!-- Article Content card -->
@@ -1301,6 +1238,7 @@ const ARTICLE_TITLE = {{ (article.title if article and article.title else '') | 
 const CAROUSEL_PUNCHLINES = {{ (article.carousel_punchlines if article and article.carousel_punchlines else []) | tojson }};
 const ARTICLE_URL    = {{ ((site_url ~ '/articles/' ~ article.slug) if article and article.slug else '') | tojson }};
 const IG_CONFIGURED  = {{ ig_configured | tojson }};
+const YT_CONFIGURED  = {{ yt_configured | tojson }};
 
 function openCarouselStyleModal() {
     document.getElementById('carousel-style-text').value = CAROUSEL_STYLE;
@@ -1500,7 +1438,6 @@ let _carouselGenerating = false;
             if (d.images && d.images.filter(Boolean).slice(0, 10).length) {
                 initPreview(d.images.slice(0, 10), (d.punchlines || []).slice(0, 10));
                 narratedUnlock();
-                aiVideoUnlock();
                 cinemagraphUnlock();
             }
         }).catch(() => {});
@@ -2289,7 +2226,7 @@ function carouselDone(count) {
     }
     updateCarouselTabCounts();
     // Unlock video components now that carousel images exist
-    if (count > 0) { narratedUnlock(); aiVideoUnlock(); cinemagraphUnlock(); }
+    if (count > 0) { narratedUnlock(); cinemagraphUnlock(); }
 }
 
 function carouselStopped() {
@@ -2823,6 +2760,40 @@ function buildRunItem(run, expandIt) {
                         </div>
                     </div>
                 </div>
+                <div class="mt-3 pt-3 border-top">
+                    <!-- YouTube section -->
+                    <hr class="my-2">
+                    <div class="mb-1 d-flex align-items-center justify-content-between">
+                        <span class="small fw-semibold">Post to YouTube Shorts</span>
+                    </div>
+                    <div class="mb-2">
+                        <label class="small text-muted">Title</label>
+                        <input type="text" class="form-control form-control-sm" id="nv-yt-${run.ts}-title"
+                               maxlength="100" placeholder="Video title…">
+                        <label class="small text-muted mt-1">Description</label>
+                        <textarea class="form-control form-control-sm mt-1" id="nv-yt-${run.ts}-desc"
+                                  rows="2" maxlength="5000" placeholder="Description…"></textarea>
+                    </div>
+                    ${!YT_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">YouTube not connected. <a href="/admin/settings" target="_blank">Connect in Settings</a>.</div>' : ''}
+                    <button type="button" class="btn btn-sm btn-danger"
+                            id="nv-yt-${run.ts}-post-btn"
+                            data-video-url="${run.url}"
+                            ${!YT_CONFIGURED ? 'disabled' : ''}
+                            onclick="postToYouTube(${run.ts}, this)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" class="me-1"><path d="M8.051 1.999h.089c.822.003 4.987.033 6.11.335a2.01 2.01 0 0 1 1.415 1.42c.101.38.172.883.22 1.402l.01.104.022.26.008.104c.065.914.073 1.77.074 1.957v.075c-.001.194-.01 1.108-.082 2.06l-.008.105-.009.104c-.05.572-.124 1.14-.235 1.558a2.007 2.007 0 0 1-1.415 1.42c-1.16.312-5.569.334-6.18.335h-.142c-.309 0-1.587-.006-2.927-.052l-.17-.006-.087-.004-.171-.007-.171-.007c-1.11-.049-2.167-.128-2.654-.26a2.007 2.007 0 0 1-1.415-1.419c-.111-.417-.185-.986-.235-1.558L.09 9.82l-.008-.104A31.4 31.4 0 0 1 0 7.68v-.123c.002-.215.01-.958.064-1.778l.007-.103.003-.052.008-.104.022-.26.01-.104c.048-.519.119-1.023.22-1.402a2.007 2.007 0 0 1 1.415-1.42c.487-.13 1.544-.21 2.654-.26l.17-.007.172-.006.086-.003.171-.007A99.788 99.788 0 0 1 7.858 2h.193zM6.4 5.209v4.818l4.157-2.408L6.4 5.209z"/></svg>
+                        Post to YouTube Shorts
+                    </button>
+                    <div id="nv-yt-${run.ts}-running" class="d-none mt-2">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <div class="spinner-border spinner-border-sm text-danger" role="status"></div>
+                            <span id="nv-yt-${run.ts}-status-text" class="text-muted small">Starting…</span>
+                        </div>
+                        <div class="progress" style="height:4px;">
+                            <div id="nv-yt-${run.ts}-progress" class="progress-bar bg-danger progress-bar-striped progress-bar-animated" style="width:10%"></div>
+                        </div>
+                    </div>
+                    <div id="nv-yt-${run.ts}-result" class="d-none mt-2"></div>
+                </div>
             </div>
         </div>`;
     /* Set caption default after DOM is built (avoids HTML-escaping issues in textarea) */
@@ -3091,6 +3062,91 @@ function pollNarratedIg(runTs) {
     .catch(function() { setTimeout(function() { pollNarratedIg(runTs); }, 5000); });
 }
 
+// ── YouTube Shorts upload ──────────────────────────────────────
+function postToYouTube(runTs, btn) {
+    if (!ARTICLE_ID) return;
+    var videoUrl  = btn.dataset.videoUrl;
+    var titleEl   = document.getElementById('nv-yt-' + runTs + '-title');
+    var descEl    = document.getElementById('nv-yt-' + runTs + '-desc');
+    var title     = titleEl ? titleEl.value.trim() : '';
+    var desc      = descEl  ? descEl.value.trim()  : '';
+    btn.disabled  = true;
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-to-youtube', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({video_url: videoUrl, title: title, description: desc, run_ts: runTs})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { btn.disabled = false; alert('Error: ' + d.error); return; }
+        _ytShowRunning(runTs);
+        pollYouTube(runTs, btn);
+    })
+    .catch(function(err) { btn.disabled = false; alert('Network error: ' + err.message); });
+}
+
+function _ytShowRunning(runTs) {
+    var running = document.getElementById('nv-yt-' + runTs + '-running');
+    var result  = document.getElementById('nv-yt-' + runTs + '-result');
+    if (running) running.classList.remove('d-none');
+    if (result)  result.classList.add('d-none');
+}
+
+function pollYouTube(runTs, btn) {
+    var labels = {
+        'running:start':    'Starting…',
+        'running:token':    'Authorising…',
+        'running:download': 'Downloading video…',
+        'running:upload':   'Uploading to YouTube…'
+    };
+    var pcts = {
+        'running:start': 10, 'running:token': 20,
+        'running:download': 40, 'running:upload': 70
+    };
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/youtube-status?ts=' + runTs)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var statusStr = d.status || '';
+            var textEl    = document.getElementById('nv-yt-' + runTs + '-status-text');
+            var progEl    = document.getElementById('nv-yt-' + runTs + '-progress');
+            if (textEl) textEl.textContent = labels[statusStr] || statusStr || 'Processing…';
+            if (progEl) progEl.style.width = (pcts[statusStr] || 50) + '%';
+
+            if (statusStr.startsWith('running')) {
+                pollYouTube(runTs, btn);
+            } else if (d.result && d.result.startsWith('done:')) {
+                var ytUrl = d.result.slice(5);
+                var running = document.getElementById('nv-yt-' + runTs + '-running');
+                var resultEl = document.getElementById('nv-yt-' + runTs + '-result');
+                if (running) running.classList.add('d-none');
+                if (resultEl) {
+                    resultEl.innerHTML = '<div class="alert alert-success py-2 px-3 small mb-0">' +
+                        '<strong>Posted to YouTube Shorts!</strong><br>' +
+                        '<a href="' + ytUrl + '" target="_blank" rel="noopener">' + ytUrl + '</a>' +
+                        '</div>';
+                    resultEl.classList.remove('d-none');
+                }
+                if (btn) btn.disabled = false;
+            } else if (d.result && d.result.startsWith('error:')) {
+                var errMsg = d.result.slice(6);
+                var running = document.getElementById('nv-yt-' + runTs + '-running');
+                var resultEl = document.getElementById('nv-yt-' + runTs + '-result');
+                if (running) running.classList.add('d-none');
+                if (resultEl) {
+                    resultEl.innerHTML = '<div class="alert alert-danger py-2 px-3 small mb-0">' +
+                        '<strong>Upload failed:</strong> ' + errMsg + '</div>';
+                    resultEl.classList.remove('d-none');
+                }
+                if (btn) btn.disabled = false;
+            } else {
+                if (btn) btn.disabled = false;
+            }
+        })
+        .catch(function() { pollYouTube(runTs, btn); });
+    }, 5000);
+}
+
 /* ── Load all existing runs on page load ─────────────────────── */
 function loadNarratedRuns(runs) {
     if (!runs || !runs.length) return;
@@ -3323,155 +3379,7 @@ function narratedFinish(error) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// COMPONENT C — AI Explainer Video (Luma AI)
-// ════════════════════════════════════════════════════════════════
-let aiVideoAbortCtrl = null;
-
-function aiVideoUnlock() {
-    const lockedBtn = document.getElementById('ai-video-locked-btn');
-    if (lockedBtn) lockedBtn.classList.add('d-none');
-    const btn = document.getElementById('ai-video-btn');
-    if (btn) btn.classList.remove('d-none');
-    document.getElementById('ai-video-empty').classList.add('d-none');
-}
-
-/* ── helpers ─────────────────────────────────────────────────── */
-function _aiVideoInitClipGrid(n) {
-    const grid = document.getElementById('ai-video-clip-grid');
-    grid.innerHTML = '';
-    for (let i = 0; i < n; i++) {
-        const t = document.createElement('div');
-        t.className = 'ai-clip-tile';
-        t.id = 'ai-tile-' + (i + 1);
-        t.title = 'Clip ' + (i + 1);
-        grid.appendChild(t);
-    }
-}
-
-function _aiVideoApplyStatus(aiStatus, nSlides) {
-    /* Parse "running:3/7" and update the progress bar + tile colours. */
-    const prgEl    = document.getElementById('ai-video-progress');
-    const statusEl = document.getElementById('ai-video-status-text');
-    const m = aiStatus && aiStatus.match(/^running:(\d+)\/(\d+)$/);
-    if (m) {
-        const done  = parseInt(m[1]);
-        const total = parseInt(m[2]) || nSlides || 1;
-        const pct   = Math.round((done / total) * 85);
-        prgEl.style.width = pct + '%';
-        statusEl.textContent = done === 0
-            ? `Submitting clips to Luma… (0 / ${total} done)`
-            : `${done} / ${total} clips done — merging when all complete…`;
-        // Colour the first `done` tiles green
-        for (let i = 1; i <= total; i++) {
-            const tile = document.getElementById('ai-tile-' + i);
-            if (!tile) continue;
-            tile.classList.remove('generating', 'done', 'error');
-            if (i <= done) tile.classList.add('done');
-        }
-    } else {
-        prgEl.style.width = '5%';
-        statusEl.textContent = 'Generation in progress — come back in a few minutes…';
-    }
-}
-
-function showAiVideoOutput(url) {
-    const player = document.getElementById('ai-video-player');
-    player.src = url;
-    document.getElementById('ai-video-output').classList.remove('d-none');
-    document.getElementById('ai-video-empty').classList.add('d-none');
-}
-
-/* ── main button handler ─────────────────────────────────────── */
-function aiVideoGenerate() {
-    if (!ARTICLE_ID) return;
-    const btn = document.getElementById('ai-video-btn');
-    btn.disabled = true;
-
-    fetch('/admin/articles/' + ARTICLE_ID + '/generate-ai-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-    })
-    .then(r => r.json())
-    .then(d => {
-        if (d.error) {
-            if (d.error === 'already_running') {
-                // Job is already going — just show the running UI and start polling
-                _aiVideoShowRunning(d.n_slides || 10);
-            } else {
-                btn.disabled = false;
-                alert('Error: ' + d.error);
-            }
-            return;
-        }
-        // Job started — show running UI and begin polling
-        _aiVideoShowRunning(d.n_slides || 10);
-    })
-    .catch(err => {
-        btn.disabled = false;
-        alert('Network error: ' + err.message);
-    });
-}
-
-function _aiVideoShowRunning(nSlides) {
-    document.getElementById('ai-video-btn').disabled = true;
-    document.getElementById('ai-video-stop-btn').classList.remove('d-none');
-    document.getElementById('ai-video-status').classList.remove('d-none');
-    document.getElementById('ai-video-output').classList.add('d-none');
-    document.getElementById('ai-video-empty').classList.add('d-none');
-    _aiVideoInitClipGrid(nSlides);
-    _aiVideoApplyStatus('running:0/' + nSlides, nSlides);
-    _aiVideoPoll();
-}
-
-/* ── polling ─────────────────────────────────────────────────── */
-function _aiVideoPoll() {
-    setTimeout(function () {
-        fetch('/admin/articles/' + ARTICLE_ID + '/video-data')
-            .then(r => r.json())
-            .then(d => {
-                if (d.ai_status && d.ai_status.startsWith('running')) {
-                    _aiVideoApplyStatus(d.ai_status, null);
-                    _aiVideoPoll();                      // keep polling
-                } else if (d.ai_status && d.ai_status.startsWith('error')) {
-                    _aiVideoFinish(d.ai_status.slice(6) || 'Unknown error');
-                } else if (d.ai_url) {
-                    showAiVideoOutput(d.ai_url);
-                    _aiVideoFinish(null);
-                } else {
-                    _aiVideoFinish(null);                // idle/unknown — reset UI
-                }
-            })
-            .catch(() => _aiVideoPoll());                // network blip — retry
-    }, 20000);  // poll every 20 s
-}
-
-function aiVideoStop() {
-    /* There is no server-side cancel (Luma tasks are already submitted).
-       We just reset the UI; the background thread will finish and save the result. */
-    _aiVideoFinish(null);
-    document.getElementById('ai-video-status-text').textContent =
-        'Stopped watching — the job is still running in the background. Reload the page to check again.';
-    document.getElementById('ai-video-status').classList.remove('d-none');
-    document.getElementById('ai-video-spinner').classList.add('d-none');
-}
-
-function _aiVideoFinish(error) {
-    const btn = document.getElementById('ai-video-btn');
-    if (btn) btn.disabled = false;
-    document.getElementById('ai-video-stop-btn').classList.add('d-none');
-    const spinner    = document.getElementById('ai-video-spinner');
-    const statusText = document.getElementById('ai-video-status-text');
-    if (error) {
-        if (statusText) statusText.textContent = 'Error: ' + error;
-        if (spinner)    spinner.classList.add('d-none');
-    } else {
-        document.getElementById('ai-video-status').classList.add('d-none');
-    }
-}
-
-// ════════════════════════════════════════════════════════════════
-// SHARED — load saved video data on page load (Components B + C)
+// SHARED — load saved video data on page load (Components B & D)
 // ════════════════════════════════════════════════════════════════
 (function loadVideoData() {
     if (!ARTICLE_ID) return;
@@ -3493,17 +3401,6 @@ function _aiVideoFinish(error) {
                 _narratedApplyStatus(d.narrated_status, nSlides);
             } else if (d.narrated_status && d.narrated_status.startsWith('error')) {
                 narratedFinish(d.narrated_status.slice(6) || 'Unknown error');
-            }
-            // AI Explainer — resume if job was running when page loaded
-            if (d.ai_status && d.ai_status.startsWith('running')) {
-                const m = d.ai_status.match(/^running:(\d+)\/(\d+)$/);
-                const nSlides = m ? parseInt(m[2]) : 10;
-                _aiVideoShowRunning(nSlides);
-                _aiVideoApplyStatus(d.ai_status, nSlides);
-            } else if (d.ai_status && d.ai_status.startsWith('error')) {
-                _aiVideoFinish(d.ai_status.slice(6) || 'Unknown error');
-            } else if (d.ai_url) {
-                showAiVideoOutput(d.ai_url);
             }
             // Cinemagraph — resume or show existing
             _cinePrompts   = d.cinemagraph_prompts    || [];

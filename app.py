@@ -105,7 +105,7 @@ _IG_CAPTION_DEFAULT_PROMPT = (
     "Return ONLY the caption text, no extra commentary."
 )
 
-# --- Luma AI client (image-to-video) ---
+# --- Luma AI client (image-to-video, used by cinemagraph worker) ---
 try:
     from lumaai import LumaAI as _LumaAI
 except ImportError:
@@ -124,7 +124,7 @@ if LUMAAI_API_KEY and _LumaAI:
         print(f"WARNING: Luma AI init failed: {e}")
 else:
     if not LUMAAI_API_KEY:
-        print("INFO: LUMAAI_API_KEY not set — AI video generation disabled")
+        print("INFO: LUMAAI_API_KEY not set — Luma cinemagraph generation disabled")
 
 
 def _is_luma_billing_error(exc):
@@ -348,6 +348,14 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 client = WebApplicationClient(GOOGLE_CLIENT_ID) if GOOGLE_CLIENT_ID else None
+
+# ------------------------------------------------------------
+# YOUTUBE OAUTH
+# ------------------------------------------------------------
+YT_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID")
+YT_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+YT_REDIRECT_URI  = os.getenv("SITE_URL", "").rstrip("/") + "/admin/youtube-oauth-callback"
+YT_SCOPES        = ["https://www.googleapis.com/auth/youtube.upload"]
 
 # ------------------------------------------------------------
 # PATHS + UPLOADS
@@ -2452,7 +2460,8 @@ def admin_settings():
                            cinemagraph_prompt=cinemagraph_prompt,
                            ig_caption_prompt=ig_caption_prompt,
                            ig_user_id_set=bool(IG_USER_ID),
-                           ig_token_set=bool(IG_ACCESS_TOKEN))
+                           ig_token_set=bool(IG_ACCESS_TOKEN),
+                           yt_connected=bool(get_setting("youtube_refresh_token")))
 
 
 @app.route("/admin/settings/save", methods=["POST"])
@@ -2524,7 +2533,8 @@ def admin_article_new():
                            cinemagraph_prompt=get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
                            ig_caption_prompt=get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT),
                            ig_article_caption_prompt='',
-                           ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN))
+                           ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN),
+                           yt_configured=bool(get_setting("youtube_refresh_token")))
 
 
 @app.route("/admin/articles/new", methods=["POST"])
@@ -2588,6 +2598,7 @@ def admin_article_edit(article_id):
                            ig_caption_prompt=get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT),
                            ig_article_caption_prompt=get_setting(f'ig_caption_prompt_{article_id}', ''),
                            ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN),
+                           yt_configured=bool(get_setting("youtube_refresh_token")),
                            ig_cine_caption=cine_caption,
                            ig_car_caption=car_caption)
 
@@ -3288,10 +3299,10 @@ def admin_article_regenerate_carousel_image(article_id):
 @login_required
 @admin_required
 def admin_article_video_data(article_id):
-    """Return existing video URLs and narration script from DB (shared by Components B, C & D)."""
+    """Return existing video URLs and narration script from DB (shared by Components B & D)."""
     row = query_one(
-        "SELECT video_narrated_url, video_narrated_script, video_ai_url, video_narrated_runs, "
-        "video_ai_status, video_narrated_status, carousel_cinemagraphs, carousel_cinemagraph_log, "
+        "SELECT video_narrated_url, video_narrated_script, video_narrated_runs, "
+        "video_narrated_status, carousel_cinemagraphs, carousel_cinemagraph_log, "
         "carousel_cinemagraph_prompts, carousel_cinemagraph_archived, "
         "carousel_cinemagraph_created_at, video_narrated_log "
         "FROM articles WHERE id = %s",
@@ -3299,7 +3310,7 @@ def admin_article_video_data(article_id):
     )
     if not row:
         return jsonify({"error": "Article not found"}), 404
-    (narrated_url, narrated_script_raw, ai_url, narrated_runs_raw, ai_status, narrated_status,
+    (narrated_url, narrated_script_raw, narrated_runs_raw, narrated_status,
      cinemagraphs_raw, cinemagraph_log_raw, cinemagraph_prompts_raw, cinemagraph_archived_raw,
      cinemagraph_created_at_raw, narrated_log_raw) = row
     narrated_script          = json.loads(narrated_script_raw)          if narrated_script_raw          else []
@@ -3315,8 +3326,6 @@ def admin_article_video_data(article_id):
         "narrated_script":        narrated_script,
         "narrated_runs":          narrated_runs,
         "narrated_status":        narrated_status or None,
-        "ai_url":                 ai_url or None,
-        "ai_status":              ai_status or None,
         "cinemagraph_urls":       cinemagraph_urls,
         "cinemagraph_prompts":    cinemagraph_prompts,
         "cinemagraph_archived":   cinemagraph_archived,
@@ -3337,7 +3346,6 @@ def admin_article_component_log(article_id, component):
     col_map = {
         "cinemagraph": "carousel_cinemagraph_log",
         "narrated":    "video_narrated_log",
-        "explainer":   "video_ai_log",
     }
     run_log = None
     col = col_map.get(component)
@@ -3847,215 +3855,6 @@ def admin_article_stop_narrated_video(article_id):
         (article_id,),
     )
     return jsonify({"ok": True})
-
-
-def _ai_video_worker(article_id, images, prompts, ts):
-    """Background thread: Luma AI per slide → FFmpeg concat → save URL to DB."""
-    n_slides = len(images)
-    video_dir = Path(f"static/articles/{article_id}/video")
-    video_dir.mkdir(parents=True, exist_ok=True)
-    temp_clips = []
-
-    # ── Logging (same pattern as cinemagraph / narrated workers) ─────────
-    log_lines = []
-    ts_start = time.strftime("%Y-%m-%d %H:%M:%S")
-
-    def _log(msg):
-        line = f"[{time.strftime('%H:%M:%S')}] {msg}"
-        log_lines.append(line)
-        print(f"AIVideo: {msg}", flush=True)
-
-    def _flush_log():
-        if log_lines:
-            log_text = f"Run started: {ts_start}\n" + "\n".join(log_lines)
-            try:
-                execute("UPDATE articles SET video_ai_log = %s WHERE id = %s",
-                        (log_text[:65000], article_id))
-            except Exception:
-                pass
-
-    _log(f"Starting AI explainer video — {n_slides} slides")
-
-    try:
-        # ── Per-slide: submit to Luma + poll ──────────────────────────────────
-        clip_paths = []
-        consecutive_failures = 0
-        for i, img_url in enumerate(images):
-            prompt_text = prompts[i] if i < len(prompts) else ""
-            _log(f"Slide {i+1}/{n_slides}: submitting to Luma")
-
-            # Resolve image URL for Luma (needs public URL)
-            if img_url.startswith("https://"):
-                luma_img_url = img_url
-            else:
-                img_path = resolve_image_to_local_path(img_url)
-                if img_path and img_path.exists():
-                    gcs_obj = f"articles/{article_id}/temp/slide_{i}_{ts}.jpg"
-                    luma_img_url = upload_to_gcs(img_path, gcs_obj, content_type="image/jpeg")
-                    if not luma_img_url:
-                        _log(f"Slide {i+1}: GCS upload failed, skipping")
-                        consecutive_failures += 1
-                        if consecutive_failures >= 3:
-                            _log("3 consecutive failures — aborting")
-                            break
-                        continue
-                else:
-                    _log(f"Slide {i+1}: image not found locally, skipping")
-                    consecutive_failures += 1
-                    if consecutive_failures >= 3:
-                        _log("3 consecutive failures — aborting")
-                        break
-                    continue
-
-            try:
-                gen_id = _luma_create_task(luma_img_url, prompt_text)
-                _log(f"Slide {i+1}: Luma task created (gen_id={gen_id})")
-            except Exception as e:
-                _log(f"Slide {i+1}: Luma task creation failed: {e}")
-                consecutive_failures += 1
-                if consecutive_failures >= 3:
-                    _log("3 consecutive failures — aborting")
-                    break
-                continue
-
-            # Poll Luma until the clip is ready
-            mp4_url = None
-            while True:
-                time.sleep(6)
-                try:
-                    luma_status, mp4_url, _msg = _luma_poll_task(gen_id)
-                except Exception as e:
-                    _log(f"Slide {i+1}: Luma poll error: {e}")
-                    break
-
-                if luma_status == "completed":
-                    _log(f"Slide {i+1}: Luma completed")
-                    break
-                elif luma_status == "failed":
-                    _log(f"Slide {i+1}: Luma failed — {_msg}")
-                    break
-
-            if mp4_url:
-                clip_path = video_dir / f"clip_{i+1}.mp4"
-                r = http_requests.get(mp4_url, timeout=120)
-                clip_path.write_bytes(r.content)
-                clip_paths.append(clip_path)
-                temp_clips.append(clip_path)
-                consecutive_failures = 0
-                _log(f"Slide {i+1}: clip downloaded ({len(r.content)} bytes)")
-            else:
-                _log(f"Slide {i+1}: no clip URL returned")
-                consecutive_failures += 1
-                if consecutive_failures >= 3:
-                    _log("3 consecutive failures — aborting")
-                    break
-
-            # Update progress counter in DB so the frontend can show N/M
-            done_so_far = len(clip_paths)
-            execute(
-                "UPDATE articles SET video_ai_status = %s WHERE id = %s",
-                (f"running:{done_so_far}/{n_slides}", article_id),
-            )
-            _flush_log()
-
-        if not clip_paths:
-            _log("ERROR: No clips were generated successfully")
-            execute(
-                "UPDATE articles SET video_ai_status = %s WHERE id = %s",
-                ("error:No clips were generated successfully.", article_id),
-            )
-            return
-
-        # ── FFmpeg concat ─────────────────────────────────────────────────────
-        _log(f"Concatenating {len(clip_paths)} clips with FFmpeg")
-        import shutil as _shutil
-        ffmpeg_exe = _shutil.which("ffmpeg")
-        if not ffmpeg_exe:
-            try:
-                import imageio_ffmpeg
-                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-            except Exception as ff_err:
-                _log(f"imageio_ffmpeg fallback failed: {ff_err}")
-        if not ffmpeg_exe:
-            _log("ERROR: FFmpeg not found")
-            execute(
-                "UPDATE articles SET video_ai_status = %s WHERE id = %s",
-                ("error:FFmpeg not found.", article_id),
-            )
-            return
-        _log(f"Using FFmpeg: {ffmpeg_exe}")
-
-        concat_txt = video_dir / f"concat_ai_{ts}.txt"
-        temp_clips.append(concat_txt)
-        concat_txt.write_text(
-            "\n".join(f"file '{p.resolve()}'" for p in clip_paths),
-            encoding="utf-8",
-        )
-        out_path = video_dir / f"ai_explainer_{ts}.mp4"
-        result = subprocess.run(
-            [ffmpeg_exe, "-y", "-f", "concat", "-safe", "0",
-             "-i", str(concat_txt), "-c", "copy", str(out_path)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-            text=True, timeout=120,
-        )
-        if result.returncode != 0:
-            _log(f"ERROR: FFmpeg failed: {result.stderr[-300:] if result.stderr else 'unknown'}")
-            execute(
-                "UPDATE articles SET video_ai_status = %s WHERE id = %s",
-                (f"error:FFmpeg failed: {(result.stderr or '')[-200:]}", article_id),
-            )
-            return
-        _log("FFmpeg concat succeeded")
-
-        # ── Upload to GCS + save URL + clear status ─────────────────────────
-        gcs_obj = f"articles/{article_id}/video/ai_explainer_{ts}.mp4"
-        gcs_url = upload_to_gcs(out_path, gcs_obj, content_type="video/mp4")
-        static_url = gcs_url if gcs_url else ("/" + str(out_path).replace("\\", "/"))
-        if gcs_url:
-            temp_clips.append(out_path)
-        execute(
-            "UPDATE articles SET video_ai_url = %s, video_ai_status = NULL WHERE id = %s",
-            (static_url, article_id),
-        )
-        _log(f"DONE — {len(clip_paths)} clips, video: {static_url}")
-
-    except Exception as e:
-        _log(f"EXCEPTION: {e}")
-        import traceback
-        traceback.print_exc()
-        execute(
-            "UPDATE articles SET video_ai_status = %s WHERE id = %s",
-            (f"error:{str(e)[:200]}", article_id),
-        )
-    finally:
-        # Persist log to DB
-        try:
-            _flush_log()
-        except Exception as db_err:
-            print(f"AIVideo: Could not save log to DB: {db_err}", flush=True)
-        # Persist log to GCS
-        try:
-            if log_lines:
-                log_text = f"Run started: {ts_start}\n" + "\n".join(log_lines)
-                gcs_log_obj = f"articles/{article_id}/video/ai_explainer_run_{ts}.log"
-                upload_bytes_to_gcs(log_text.encode(), gcs_log_obj, content_type="text/plain")
-        except Exception:
-            pass
-        # Activity log
-        try:
-            summary = "\n".join(log_lines) if log_lines else "No log output"
-            _add_activity_log(article_id, "AI Explainer video generation",
-                              f"Slides: {n_slides}\n{summary}",
-                              component="explainer")
-        except Exception as al_err:
-            print(f"AIVideo: Activity log failed: {al_err}", flush=True)
-        # Cleanup temp files
-        for f in temp_clips:
-            try:
-                if f.exists():
-                    f.unlink()
-            except Exception:
-                pass
 
 
 def _cinemagraph_worker(article_id, images, prompts=None,
@@ -4762,42 +4561,228 @@ def admin_article_archive_all_cinemagraphs(article_id):
     return jsonify({"ok": True, "archived_start_idx": archived_start_idx})
 
 
-@app.route("/admin/articles/<int:article_id>/generate-ai-video", methods=["POST"])
+# ------------------------------------------------------------
+# YOUTUBE UPLOAD WORKER + ROUTES
+# ------------------------------------------------------------
+def _upload_to_youtube_worker(article_id, video_url, title, desc, run_ts, refresh_token):
+    """Background thread: download video → upload to YouTube as a Short."""
+    import requests as _req
+    import tempfile as _tmp
+    import os as _os
+
+    status_key = f"yt_status_{article_id}_{run_ts}"
+    result_key = f"yt_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        # 1. Get fresh access token
+        _set_status("running:token")
+        token_resp = _req.post("https://oauth2.googleapis.com/token", data={
+            "client_id":     YT_CLIENT_ID,
+            "client_secret": YT_CLIENT_SECRET,
+            "refresh_token": refresh_token,
+            "grant_type":    "refresh_token",
+        }, timeout=15)
+        token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            _set_result(f"error:Failed to get access token: {token_data.get('error_description', token_data)}")
+            _add_activity_log(article_id, "YouTube Upload Failed",
+                              f"Token refresh failed: {token_data}", component="narrated")
+            return
+
+        # 2. Download the video to a temp file
+        _set_status("running:download")
+        with _tmp.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_f:
+            tmp_path = tmp_f.name
+        try:
+            with _req.get(video_url, stream=True, timeout=120) as dl:
+                dl.raise_for_status()
+                with open(tmp_path, "wb") as f:
+                    for chunk in dl.iter_content(chunk_size=1024 * 1024):
+                        f.write(chunk)
+        except Exception as dl_err:
+            _os.unlink(tmp_path) if _os.path.exists(tmp_path) else None
+            _set_result(f"error:Download failed: {dl_err}")
+            _add_activity_log(article_id, "YouTube Upload Failed",
+                              f"Download error: {dl_err}", component="narrated")
+            return
+
+        # 3. Upload to YouTube using resumable upload
+        _set_status("running:upload")
+        file_size = _os.path.getsize(tmp_path)
+
+        # Initiate resumable upload
+        metadata = {
+            "snippet": {
+                "title":       title or "Obelisk Stamps",
+                "description": desc  or "",
+                "tags":        ["stamps", "philately", "shorts"],
+                "categoryId":  "26",  # Howto & Style
+            },
+            "status": {
+                "privacyStatus": "public",
+                "selfDeclaredMadeForKids": False,
+            },
+        }
+        init_resp = _req.post(
+            "https://www.googleapis.com/upload/youtube/v3/videos"
+            "?uploadType=resumable&part=snippet,status",
+            headers={
+                "Authorization":           f"Bearer {access_token}",
+                "Content-Type":            "application/json; charset=UTF-8",
+                "X-Upload-Content-Type":   "video/mp4",
+                "X-Upload-Content-Length": str(file_size),
+            },
+            json=metadata,
+            timeout=30,
+        )
+        if init_resp.status_code not in (200, 201):
+            _os.unlink(tmp_path) if _os.path.exists(tmp_path) else None
+            _set_result(f"error:Upload init failed: {init_resp.text[:200]}")
+            _add_activity_log(article_id, "YouTube Upload Failed",
+                              f"Init error: {init_resp.text[:200]}", component="narrated")
+            return
+
+        upload_url = init_resp.headers.get("Location")
+        if not upload_url:
+            _os.unlink(tmp_path) if _os.path.exists(tmp_path) else None
+            _set_result("error:No upload URL returned from YouTube")
+            return
+
+        # Upload the file
+        with open(tmp_path, "rb") as f:
+            up_resp = _req.put(
+                upload_url,
+                headers={
+                    "Content-Type":   "video/mp4",
+                    "Content-Length": str(file_size),
+                },
+                data=f,
+                timeout=600,
+            )
+        _os.unlink(tmp_path) if _os.path.exists(tmp_path) else None
+
+        if up_resp.status_code not in (200, 201):
+            _set_result(f"error:Upload failed: {up_resp.text[:200]}")
+            _add_activity_log(article_id, "YouTube Upload Failed",
+                              f"Upload error {up_resp.status_code}: {up_resp.text[:200]}",
+                              component="narrated")
+            return
+
+        video_id = up_resp.json().get("id", "")
+        yt_url   = f"https://www.youtube.com/shorts/{video_id}" if video_id else "https://youtube.com"
+        _set_result(f"done:{yt_url}")
+        _add_activity_log(article_id, "Posted to YouTube Shorts",
+                          f"video_id={video_id}\nurl={yt_url}",
+                          component="narrated")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        try:
+            _os.unlink(tmp_path) if _os.path.exists(tmp_path) else None
+        except Exception:
+            pass
+        _set_result(f"error:{str(e)[:200]}")
+        _add_activity_log(article_id, "YouTube Upload Failed",
+                          f"Exception: {e}", component="narrated")
+
+
+@app.route("/admin/youtube-connect")
 @login_required
 @admin_required
-def admin_article_generate_ai_video(article_id):
-    """Start a background thread for Luma AI generation; return immediately."""
-    if not _luma_enabled:
-        return jsonify({"error": "Luma AI not configured. Set LUMAAI_API_KEY."}), 400
+def admin_youtube_connect():
+    """Redirect admin to Google OAuth to authorize YouTube upload access."""
+    import urllib.parse as _urlparse
+    params = {
+        "client_id":     YT_CLIENT_ID,
+        "redirect_uri":  YT_REDIRECT_URI,
+        "response_type": "code",
+        "scope":         " ".join(YT_SCOPES),
+        "access_type":   "offline",
+        "prompt":        "consent",
+    }
+    url = "https://accounts.google.com/o/oauth2/v2/auth?" + _urlparse.urlencode(params)
+    return redirect(url)
 
-    # Prevent double-start
-    row = query_one("SELECT video_ai_status FROM articles WHERE id = %s", (article_id,))
-    if row and row[0] and row[0].startswith("running"):
-        return jsonify({"error": "already_running"}), 409
 
-    row = query_one(
-        "SELECT carousel_images, carousel_prompts FROM articles WHERE id = %s", (article_id,)
-    )
-    if not row or not row[0]:
-        return jsonify({"error": "No carousel images found."}), 400
+@app.route("/admin/youtube-oauth-callback")
+@login_required
+@admin_required
+def admin_youtube_oauth_callback():
+    """Exchange auth code for YouTube refresh token and store it."""
+    import requests as _req
+    code = request.args.get("code")
+    if not code:
+        flash("YouTube authorization failed — no code returned.", "danger")
+        return redirect(url_for("admin_panel"))
+    resp = _req.post("https://oauth2.googleapis.com/token", data={
+        "code":          code,
+        "client_id":     YT_CLIENT_ID,
+        "client_secret": YT_CLIENT_SECRET,
+        "redirect_uri":  YT_REDIRECT_URI,
+        "grant_type":    "authorization_code",
+    }, timeout=15)
+    token_data = resp.json()
+    refresh_token = token_data.get("refresh_token")
+    if not refresh_token:
+        flash(f"YouTube auth failed: {token_data.get('error_description', token_data)}", "danger")
+        return redirect(url_for("admin_panel"))
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+            ("youtube_refresh_token", refresh_token, refresh_token))
+    flash("YouTube account connected successfully!", "success")
+    return redirect(url_for("admin_panel"))
 
-    images = (json.loads(row[0]) if row[0] else [])[:10]
-    prompts = (json.loads(row[1]) if row[1] else [])[:10]
-    if not images:
-        return jsonify({"error": "No carousel images found."}), 400
 
-    ts = int(time.time())
-    execute("UPDATE articles SET video_ai_status = %s WHERE id = %s",
-            (f"running:0/{len(images)}", article_id))
+@app.route("/admin/articles/<int:article_id>/post-to-youtube", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_to_youtube(article_id):
+    """Upload a narrated video to YouTube Shorts as a background task."""
+    refresh_token = get_setting("youtube_refresh_token")
+    if not refresh_token:
+        return jsonify({"error": "YouTube not connected. Go to Admin → Connect YouTube."}), 400
+    data      = request.get_json() or {}
+    video_url = (data.get("video_url") or "").strip()
+    title     = (data.get("title")     or "").strip()[:100]
+    desc      = (data.get("description") or "").strip()[:5000]
+    run_ts    = int(data.get("run_ts") or 0)
+    if not video_url:
+        return jsonify({"error": "No video URL provided."}), 400
+    status_key = f"yt_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already uploading this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+            (status_key, "running:start", "running:start"))
+    _add_activity_log(article_id, "YouTube Upload Started",
+                      f"run_ts={run_ts}\nvideo_url={video_url[:120]}",
+                      component="narrated")
+    threading.Thread(target=_upload_to_youtube_worker,
+                     args=(article_id, video_url, title, desc, run_ts, refresh_token),
+                     daemon=True).start()
+    return jsonify({"started": True})
 
-    t = threading.Thread(
-        target=_ai_video_worker,
-        args=(article_id, images, prompts, ts),
-        daemon=True,
-    )
-    t.start()
 
-    return jsonify({"status": "started", "n_slides": len(images)})
+@app.route("/admin/articles/<int:article_id>/youtube-status")
+@login_required
+@admin_required
+def admin_youtube_status(article_id):
+    """Poll YouTube upload status for a given run_ts."""
+    run_ts     = request.args.get("ts", "0")
+    status_key = f"yt_status_{article_id}_{run_ts}"
+    result_key = f"yt_result_{article_id}_{run_ts}"
+    status = get_setting(status_key) or "idle"
+    result = get_setting(result_key) or ""
+    return jsonify({"status": status, "result": result})
 
 
 # ------------------------------------------------------------
