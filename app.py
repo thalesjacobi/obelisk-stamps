@@ -4647,9 +4647,17 @@ def _upload_to_youtube_worker(article_id, video_url, title, desc, run_ts, refres
         )
         if init_resp.status_code not in (200, 201):
             _os.unlink(tmp_path) if _os.path.exists(tmp_path) else None
-            _set_result(f"error:Upload init failed: {init_resp.text[:200]}")
+            try:
+                err_json = init_resp.json()
+                err_msg  = err_json.get("error", {}).get("message", "") or init_resp.text[:300]
+                err_reason = (err_json.get("error", {}).get("errors") or [{}])[0].get("reason", "")
+                if err_reason == "youtubeSignupRequired":
+                    err_msg = "The authorized Google account has no YouTube channel. Go to youtube.com and create one first."
+            except Exception:
+                err_msg = init_resp.text[:300]
+            _set_result(f"error:{err_msg}")
             _add_activity_log(article_id, "YouTube Upload Failed",
-                              f"Init error: {init_resp.text[:200]}", component="narrated")
+                              f"HTTP {init_resp.status_code}: {err_msg}", component="narrated")
             return
 
         upload_url = init_resp.headers.get("Location")
