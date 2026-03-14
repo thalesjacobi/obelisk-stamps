@@ -2247,8 +2247,6 @@ function checkFbRunning(mode) {
     .then(function(d) {
         if (d.result && d.result.startsWith('done:')) {
             showFbDone(mode, d.result.slice(5));
-        } else if (d.result && d.result.startsWith('error:')) {
-            showFbError(mode, d.result.slice(6));
         } else if (d.status && d.status.startsWith('running')) {
             showFbRunning(mode, d.status);
             pollFbStatus(mode);
@@ -2431,8 +2429,6 @@ function restoreNvFbState(ts) {
         if (d.history && d.history.length) renderNvFbHistory(ts, d.history);
         if (d.result && d.result.startsWith('done:')) {
             showNvFbDone(ts, d.result.slice(5));
-        } else if (d.result && d.result.startsWith('error:')) {
-            showNvFbError(ts, d.result.slice(6));
         } else if (d.status && d.status.startsWith('running')) {
             showNvFbRunning(ts, d.status);
             pollNvFbStatus(ts);
@@ -3907,8 +3903,6 @@ function restoreNvIgState(ts) {
         if (d.result && d.result.startsWith('done:')) {
             showNvIgDone(ts, d.result.slice(5));
             // _setNvIgIconLive called inside showNvIgDone
-        } else if (d.result && d.result.startsWith('error:')) {
-            showNvIgError(ts, d.result.slice(6));
         } else if (d.status && d.status.startsWith('running')) {
             var postBtn = document.getElementById(_nvIgId(ts, 'post-btn'));
             if (postBtn) postBtn.disabled = true;
