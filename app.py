@@ -5775,6 +5775,52 @@ def admin_check_narrated_ig_post(article_id):
         return jsonify({"error": f"Failed to reach Instagram API: {exc}"}), 500
 
 
+@app.route("/admin/articles/<int:article_id>/edit-narrated-ig-caption", methods=["POST"])
+@login_required
+@admin_required
+def admin_edit_narrated_ig_caption(article_id):
+    """Update the caption of a published narrated video Instagram post.
+    Body: {caption, run_ts}
+    """
+    if not IG_ACCESS_TOKEN:
+        return jsonify({"error": "Instagram credentials not configured."}), 400
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts") or "0")
+    caption = (data.get("caption") or "").strip()[:2200]
+    if not caption:
+        return jsonify({"error": "Caption cannot be empty."}), 400
+    media_id = get_setting(f"narrated_ig_media_id_{article_id}_{run_ts}")
+    if not media_id:
+        import re as _re
+        result_val = get_setting(f"narrated_ig_result_{article_id}_{run_ts}") or ""
+        if result_val.startswith("done:"):
+            m = _re.search(r'/p/(\d{10,})', result_val)
+            if m:
+                media_id = m.group(1)
+                execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE value = %s",
+                        (f"narrated_ig_media_id_{article_id}_{run_ts}", media_id, media_id))
+    if not media_id:
+        return jsonify({"error": "No published post found for this run."}), 400
+    import requests as _req
+    resp = _req.post(
+        f"{_IG_GRAPH_URL}/{media_id}",
+        data={"caption": caption, "access_token": IG_ACCESS_TOKEN},
+        timeout=30,
+    )
+    result = resp.json()
+    if result.get("success") or result.get("id"):
+        _add_activity_log(article_id, "Caption Edited on Instagram (narrated)",
+                          f"media_id={media_id}, ts={run_ts}\nNew caption: {caption[:200]}…",
+                          component="narrated")
+        return jsonify({"ok": True})
+    err = result.get("error", {}).get("message", str(result))
+    _add_activity_log(article_id, "Caption Edit Failed (narrated)",
+                      f"media_id={media_id}, ts={run_ts}, error: {err}",
+                      component="narrated")
+    return jsonify({"error": err}), 400
+
+
 @app.route("/admin/articles/<int:article_id>/archive-narrated-ig-post", methods=["POST"])
 @login_required
 @admin_required
@@ -6418,6 +6464,109 @@ def admin_archive_narrated_fb_post(article_id):
 
     _add_activity_log(article_id, "Facebook Video Post Archived",
                       f"Post {media_id} archived", component="narrated")
+
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-facebook-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_delete_facebook_post(article_id):
+    import requests as _req
+    data      = request.get_json() or {}
+    post_type = data.get("type", "cine")
+    keys      = _fb_keys(post_type, article_id)
+    media_id  = get_setting(keys["media_id"])
+    if not media_id:
+        return jsonify({"error": "No post to delete"}), 400
+
+    resp = _req.delete(
+        f"{_IG_GRAPH_URL}/{media_id}",
+        params={"access_token": FB_PAGE_ACCESS_TOKEN},
+        timeout=15,
+    )
+    if not resp.ok and resp.status_code != 404:
+        try:
+            msg = resp.json().get("error", {}).get("message", resp.text)
+        except Exception:
+            msg = resp.text
+        return jsonify({"error": msg}), 400
+
+    # Archive (same logic as archive-facebook-post)
+    snap_raw  = get_setting(keys["snapshot"])
+    snapshot  = json.loads(snap_raw) if snap_raw else {}
+    result    = get_setting(keys["result"]) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+
+    history = json.loads(get_setting(keys["history"]) or "[]")
+    history.append({
+        "media_id":    media_id,
+        "permalink":   permalink,
+        "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "caption":     snapshot.get("caption", ""),
+        "post_type":   snapshot.get("post_type", post_type),
+        "posted_at":   snapshot.get("posted_at", ""),
+    })
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (keys["history"], hist_val, hist_val))
+    for k in ("media_id", "result", "status", "snapshot"):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (keys[k],))
+
+    component_label = "carousel" if post_type == "car" else "cinemagraph"
+    _add_activity_log(article_id, f"Facebook {component_label.title()} Post Deleted",
+                      f"Post {media_id} deleted from Facebook and archived", component=component_label)
+
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-narrated-fb-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_narrated_fb_post(article_id):
+    import requests as _req
+    data   = request.get_json() or {}
+    run_ts = str(data.get("run_ts", "0"))
+
+    media_key   = f"narrated_fb_media_id_{article_id}_{run_ts}"
+    result_key  = f"narrated_fb_result_{article_id}_{run_ts}"
+    status_key  = f"narrated_fb_status_{article_id}_{run_ts}"
+    history_key = f"narrated_fb_history_{article_id}_{run_ts}"
+
+    media_id = get_setting(media_key)
+    if not media_id:
+        return jsonify({"error": "No post to delete"}), 400
+
+    resp = _req.delete(
+        f"{_IG_GRAPH_URL}/{media_id}",
+        params={"access_token": FB_PAGE_ACCESS_TOKEN},
+        timeout=15,
+    )
+    if not resp.ok and resp.status_code != 404:
+        try:
+            msg = resp.json().get("error", {}).get("message", resp.text)
+        except Exception:
+            msg = resp.text
+        return jsonify({"error": msg}), 400
+
+    # Archive (same logic as archive-narrated-fb-post)
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+
+    history = json.loads(get_setting(history_key) or "[]")
+    history.append({
+        "media_id":    media_id,
+        "permalink":   permalink,
+        "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    })
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (media_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+
+    _add_activity_log(article_id, "Facebook Video Post Deleted",
+                      f"Post {media_id} deleted from Facebook and archived", component="narrated")
 
     return jsonify({"ok": True, "history": history})
 

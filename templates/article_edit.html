@@ -25,6 +25,34 @@
     .nv-run-yt-live { stroke: #ff0000 !important; }
     .nv-run-fb-live { stroke: #1877F2 !important; }
 
+    /* Instagram section shared styles */
+    .ig-section-link { text-decoration: none; }
+    .ig-section-link:hover { text-decoration: underline; }
+    .ig-caption-tooltip { display:inline-flex; align-items:center; justify-content:center;
+        width:14px; height:14px; border-radius:50%; border:1px solid #adb5bd;
+        color:#6c757d; font-size:9px; font-weight:700; cursor:default; position:relative;
+        top:-1px; margin-left:4px; line-height:1; }
+    .ig-caption-tooltip::before { content:''; display:none; position:absolute;
+        left:50%; bottom:calc(100% + 2px); transform:translateX(-50%);
+        border:5px solid transparent; border-top-color:#dee2e6; pointer-events:none; z-index:11; }
+    .ig-caption-tooltip::after { content:attr(data-tip); display:none; position:absolute;
+        left:50%; bottom:calc(100% + 12px); transform:translateX(-50%);
+        background:#fff; color:#495057; font-size:0.82rem; font-weight:400; white-space:normal;
+        width:280px; line-height:1.5;
+        padding:8px 12px; border-radius:6px; pointer-events:none; z-index:10;
+        border:1px solid #dee2e6; box-shadow:0 4px 12px rgba(0,0,0,0.1); }
+    .ig-caption-tooltip:hover::before,
+    .ig-caption-tooltip:hover::after { display:block; }
+
+    /* Social posting sections: consistent font + padding */
+    /* Tab text and section header icons both start at card-body edge */
+    #carousel-tabs .nav-link, #cine-tabs .nav-link { padding-left: 0; padding-right: 0.75rem; }
+    #car-ig-body, #car-fb-body, #cine-ig-body, #cine-fb-body, .nv-social-body,
+    #car-ig-body *, #car-fb-body *, #cine-ig-body *, #cine-fb-body *, .nv-social-body * {
+        font-family: var(--bs-font-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif) !important;
+        font-size: 0.8125rem !important;
+    }
+
     /* Instagram Carousel Generator */
     #carousel-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     #carousel-grid .carousel-col { flex: 0 0 calc(20% - 0.4rem); }
@@ -146,7 +174,10 @@
             <h5 class="mb-0">Main settings</h5>
         </div>
         <div class="card-body">
-            <!-- Row 1: Published | Slug | Cover Image -->
+            <!-- Hidden cover image URL (submitted with save) -->
+            <input type="url" id="image-url" style="display:none;" value="{{ article.image_url if article else '' }}">
+
+            <!-- Row 1: Published | Slug -->
             <div class="row g-3 align-items-end mb-3">
 
                 <!-- Published toggle -->
@@ -171,12 +202,6 @@
                     </div>
                 </div>
 
-                <!-- Cover image URL -->
-                <div class="col-md-4">
-                    <label class="form-label fw-semibold mb-1">Cover Image URL</label>
-                    <input type="url" id="image-url" class="form-control" value="{{ article.image_url if article else '' }}" placeholder="https://...">
-                </div>
-
             </div>
 
             <!-- Row 2: Excerpt | Image preview -->
@@ -188,11 +213,17 @@
                     <textarea id="excerpt" class="form-control" rows="3" placeholder="Short summary shown on the listing page...">{{ article.excerpt if article else '' }}</textarea>
                 </div>
 
-                <!-- Image preview -->
+                <!-- Cover image preview -->
                 <div class="col-md-4">
-                    <div id="image-preview" class="{% if not (article and article.image_url) %}d-none{% endif %}">
-                        <label class="form-label fw-semibold mb-1">Preview</label>
-                        <img src="{{ article.image_url if article and article.image_url else '' }}" class="img-fluid rounded" alt="Cover preview" style="max-height:100px; object-fit:cover; width:100%;">
+                    <label class="form-label fw-semibold mb-1">Cover Image</label>
+                    <div class="position-relative d-inline-block w-100">
+                        <div id="image-preview-wrap" class="{% if not (article and article.image_url) %}d-none{% endif %} mb-1">
+                            <img id="image-preview-img" src="{{ article.image_url if article and article.image_url else '' }}" class="img-fluid rounded" alt="Cover preview" style="max-height:100px; object-fit:cover; width:100%;">
+                            <button type="button" onclick="openCoverImagePicker()" title="Change cover image" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.55);color:#fff;font-size:12px;font-weight:700;line-height:22px;text-align:center;cursor:pointer;padding:0;opacity:0.8;">i</button>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="openCoverImagePicker()">
+                            {% if article and article.image_url %}Change image{% else %}Set cover image…{% endif %}
+                        </button>
                     </div>
                 </div>
 
@@ -289,13 +320,18 @@
             <!-- Tabs: Current / Archived -->
             <ul class="nav" id="carousel-tabs">
                 <li class="nav-item">
-                    <button class="nav-link active" id="tab-current" onclick="showCarouselTab('current')">
+                    <button type="button" class="nav-link active" id="tab-current" onclick="showCarouselTab('current')">
                         Images Grid <span id="tab-current-count" class="badge bg-secondary ms-1">0</span>
                     </button>
                 </li>
                 <li class="nav-item">
-                    <button class="nav-link" id="tab-removed" onclick="showCarouselTab('removed')">
+                    <button type="button" class="nav-link" id="tab-removed" onclick="showCarouselTab('removed')">
                         Archived <span id="tab-removed-count" class="badge bg-secondary ms-1">0</span>
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button type="button" class="nav-link" id="tab-preview" onclick="showCarouselTab('preview')">
+                        Preview
                     </button>
                 </li>
                 <li class="nav-item ms-auto d-flex align-items-center pe-1"
@@ -315,6 +351,28 @@
                 <div id="carousel-removed-grid" class="d-none"></div>
                 <div id="carousel-empty" class="text-muted small text-center py-3">
                     No carousel images yet. Click <strong>Generate Carousel</strong> to create them.
+                </div>
+                <!-- Preview tab pane -->
+                <div id="carousel-preview-pane" class="d-none p-2">
+                    <p class="text-muted small mb-2">Ken Burns slideshow from carousel images — no server, no cost.</p>
+                    <div id="preview-locked" class="text-muted small text-center py-3">
+                        Generate a carousel first to enable the preview.
+                    </div>
+                    <div id="preview-viewport-wrap" class="d-none">
+                        <div id="preview-viewport" class="mb-2">
+                            <div id="preview-layer-a" class="preview-layer"></div>
+                            <div id="preview-layer-b" class="preview-layer hidden"></div>
+                            <div id="preview-punchline"></div>
+                            <div id="preview-counter"></div>
+                        </div>
+                        <div id="preview-scrub" class="mb-2"><div id="preview-scrub-fill"></div></div>
+                        <div class="d-flex justify-content-center align-items-center gap-2 flex-wrap">
+                            <button type="button" id="preview-play-btn" class="btn btn-sm btn-primary" disabled onclick="previewPlay()">▶ Play</button>
+                            <button type="button" id="preview-pause-btn" class="btn btn-sm btn-outline-secondary d-none" onclick="previewPause()">⏸ Pause</button>
+                            <button type="button" id="preview-restart-btn" class="btn btn-sm btn-outline-secondary d-none" onclick="previewRestart()">↺ Restart</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openPreviewSettings()">Settings…</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             {% if article and article.id %}
@@ -344,8 +402,8 @@
             {% else %}
             <div class="mb-3">
                 <div class="d-flex align-items-center mb-1">
-                    <label for="car-ig-caption" class="form-label small fw-semibold mb-0">Caption</label>
-                    <a href="#" class="small ms-auto" id="car-ig-generate-caption-link"
+                    <label for="car-ig-caption" class="form-label small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="If you wish to delete this post and start over, you will need to delete the post directly on Instagram, then come back here, click the button &#39;Check if post is still live&#39;, and if it&#39;s no longer found on Instagram, an Archive option will appear. After being archived, this post will be visible below for your records, and you will be free to post another one again.">?</span></label>
+                    <a href="#" class="small ms-auto ig-section-link" id="car-ig-generate-caption-link"
                        onclick="event.preventDefault(); generateIgCaption('car')">Generate caption <span class="text-muted">(~$0.01)</span></a>
                 </div>
                 <textarea id="car-ig-caption" class="form-control form-control-sm" rows="3"
@@ -379,8 +437,8 @@
                 </div>
                 <div id="car-ig-result" class="d-none small"></div>
                 <div id="car-ig-history" class="d-none mt-3">
-                    <div class="text-muted small fw-semibold mb-1">Past Posts</div>
-                    <div id="car-ig-history-list"></div>
+                    <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-ig-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
+                    <div class="collapse" id="car-ig-history-list"></div>
                 </div>
             </div>
             {% endif %}
@@ -398,8 +456,8 @@
                 <span class="small fw-semibold">Post Carousel Images to Facebook</span>
                 <svg id="car-fb-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto"
-                     style="transition:transform 0.2s">
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
+                     style="transition:transform 0.2s;flex-shrink:0">
                     <polyline points="6 9 12 15 18 9"/>
                 </svg>
             </div>
@@ -407,8 +465,8 @@
                 {% if fb_configured %}
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small fw-semibold mb-0" for="car-fb-caption">Caption</label>
-                        <a href="#" class="small ms-auto" onclick="event.preventDefault(); copyIgCaptionToFb('car')">Copy from Instagram</a>
+                        <label class="small text-muted mb-0" for="car-fb-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from your Facebook Page. It will be saved below in Past Posts for your records.">?</span></label>
+                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyIgCaptionToFb('car')">Copy from Instagram</a>
                     </div>
                     <textarea id="car-fb-caption" class="form-control form-control-sm" rows="3"
                               placeholder="Write your Facebook caption…"
@@ -418,6 +476,7 @@
                 </div>
                 <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-fb-btn-row">
                     <button type="button" class="btn btn-sm btn-primary" onclick="postToFacebook('car')" id="car-fb-post-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
                         Post to Facebook
                     </button>
                 </div>
@@ -432,8 +491,8 @@
                     </div>
                     <div id="car-fb-result" class="d-none small"></div>
                     <div id="car-fb-history" class="d-none mt-3">
-                        <div class="text-muted small fw-semibold mb-1">Past Posts</div>
-                        <div id="car-fb-history-list"></div>
+                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-fb-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
+                        <div class="collapse" id="car-fb-history-list"></div>
                     </div>
                 </div>
                 {% else %}
@@ -669,8 +728,8 @@
             {% else %}
             <div class="mb-3">
                 <div class="d-flex align-items-center mb-1">
-                    <label for="cine-ig-caption" class="form-label small fw-semibold mb-0">Caption</label>
-                    <a href="#" class="small ms-auto" id="cine-ig-generate-caption-link"
+                    <label for="cine-ig-caption" class="form-label small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="If you wish to delete this post and start over, you will need to delete the post directly on Instagram, then come back here, click the button &#39;Check if post is still live&#39;, and if it&#39;s no longer found on Instagram, an Archive option will appear. After being archived, this post will be visible below for your records, and you will be free to post another one again.">?</span></label>
+                    <a href="#" class="small ms-auto ig-section-link" id="cine-ig-generate-caption-link"
                        onclick="event.preventDefault(); generateIgCaption('cine')">Generate caption <span class="text-muted">(~$0.01)</span></a>
                 </div>
                 <textarea id="cine-ig-caption" class="form-control form-control-sm" rows="3"
@@ -704,8 +763,8 @@
                 </div>
                 <div id="cine-ig-result" class="d-none small"></div>
                 <div id="cine-ig-history" class="d-none mt-3">
-                    <div class="text-muted small fw-semibold mb-1">Past Posts</div>
-                    <div id="cine-ig-history-list"></div>
+                    <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#cine-ig-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
+                    <div class="collapse" id="cine-ig-history-list"></div>
                 </div>
             </div>
             {% endif %}
@@ -723,8 +782,8 @@
                 <span class="small fw-semibold">Post Cinemagraph to Facebook</span>
                 <svg id="cine-fb-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto"
-                     style="transition:transform 0.2s">
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
+                     style="transition:transform 0.2s;flex-shrink:0">
                     <polyline points="6 9 12 15 18 9"/>
                 </svg>
             </div>
@@ -732,8 +791,8 @@
                 {% if fb_configured %}
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small fw-semibold mb-0" for="cine-fb-caption">Caption</label>
-                        <a href="#" class="small ms-auto" onclick="event.preventDefault(); copyIgCaptionToFb('cine')">Copy from Instagram</a>
+                        <label class="small text-muted mb-0" for="cine-fb-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from your Facebook Page. It will be saved below in Past Posts for your records.">?</span></label>
+                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyIgCaptionToFb('cine')">Copy from Instagram</a>
                     </div>
                     <textarea id="cine-fb-caption" class="form-control form-control-sm" rows="3"
                               placeholder="Write your Facebook caption…"
@@ -743,6 +802,7 @@
                 </div>
                 <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="cine-fb-btn-row">
                     <button type="button" class="btn btn-sm btn-primary" onclick="postToFacebook('cine')" id="cine-fb-post-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
                         Post to Facebook
                     </button>
                 </div>
@@ -757,8 +817,8 @@
                     </div>
                     <div id="cine-fb-result" class="d-none small"></div>
                     <div id="cine-fb-history" class="d-none mt-3">
-                        <div class="text-muted small fw-semibold mb-1">Past Posts</div>
-                        <div id="cine-fb-history-list"></div>
+                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#cine-fb-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
+                        <div class="collapse" id="cine-fb-history-list"></div>
                     </div>
                 </div>
                 {% else %}
@@ -776,60 +836,6 @@
     <!-- ══════════════════════════════════════════════════════════
          Component A — Browser Animation Preview (client-side)
          ══════════════════════════════════════════════════════════ -->
-    <div class="card mt-3 mb-4" id="preview-card">
-        <div class="card-header position-relative d-flex align-items-center justify-content-between flex-wrap gap-2 pe-5">
-            <div>
-                <h5 class="mb-0">Animation Preview</h5>
-                <p class="text-muted small mb-0 mt-1">
-                    Ken Burns slideshow from carousel images — no server, no cost.
-                </p>
-            </div>
-            <div class="d-flex gap-2 align-items-center flex-wrap">
-                <button type="button" id="preview-play-btn" class="btn btn-sm btn-primary" disabled onclick="previewPlay()">▶ Play</button>
-                <button type="button" id="preview-pause-btn" class="btn btn-sm btn-outline-secondary d-none" onclick="previewPause()">⏸ Pause</button>
-                <button type="button" id="preview-restart-btn" class="btn btn-sm btn-outline-secondary d-none" onclick="previewRestart()">↺ Restart</button>
-            </div>
-            <!-- Kebab menu -->
-            <div class="dropdown position-absolute" style="top:0.6rem;right:0.75rem;">
-                <button type="button" class="btn btn-sm btn-link text-muted p-1 lh-1"
-                        style="font-size:1.25rem; text-decoration:none;"
-                        data-bs-toggle="dropdown" aria-expanded="false"
-                        title="Preview options">&#8942;</button>
-                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                    <li><h6 class="dropdown-header">Settings</h6></li>
-                    <li>
-                        <button type="button" class="dropdown-item small"
-                                onclick="openPreviewSettings()">Settings…</button>
-                    </li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li><h6 class="dropdown-header">Display</h6></li>
-                    <li>
-                        <button type="button" class="dropdown-item small" id="preview-shuffle-item"
-                                onclick="togglePreviewShuffle()">Shuffle slides</button>
-                    </li>
-                    <li>
-                        <button type="button" class="dropdown-item small" id="preview-punchlines-item"
-                                onclick="togglePreviewPunchlines()">Show punchlines</button>
-                    </li>
-                </ul>
-            </div>
-        </div>
-        <div class="card-body">
-            <div id="preview-locked" class="text-muted small text-center py-3">
-                Generate a carousel first to enable the preview.
-            </div>
-            <div id="preview-viewport-wrap" class="d-none">
-                <div id="preview-viewport" class="mb-2">
-                    <div id="preview-layer-a" class="preview-layer"></div>
-                    <div id="preview-layer-b" class="preview-layer hidden"></div>
-                    <div id="preview-punchline"></div>
-                    <div id="preview-counter"></div>
-                </div>
-                <div id="preview-scrub"><div id="preview-scrub-fill"></div></div>
-            </div>
-        </div>
-    </div>
-
     <!-- Animation Preview — Settings Modal -->
     <div class="modal fade" id="preview-settings-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
@@ -1209,6 +1215,30 @@
     </div>
 </div>
 
+<!-- Cover Image Picker Modal -->
+<div class="modal fade" id="cover-image-picker-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Choose Cover Image</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold mb-1 small">Cover Image URL</label>
+                    <div class="input-group input-group-sm">
+                        <input type="url" id="cover-image-url-input" class="form-control" placeholder="https://…">
+                        <button type="button" class="btn btn-primary" onclick="setCoverImageFromInput()">Set</button>
+                    </div>
+                </div>
+                <p class="text-muted small mb-2">Or click an image from your carousel:</p>
+                <div id="cover-image-picker-grid" style="display:flex;flex-wrap:wrap;gap:0.5rem;"></div>
+                <p id="cover-image-picker-empty" class="text-muted small text-center py-3 d-none">No carousel images available yet.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Archived Info Modal (shared by carousel & cinemagraph) -->
 <div class="modal fade" id="archived-info-modal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -1417,17 +1447,46 @@ function autoSlug(title) {
         .replace(/\s+/g, '-');
 }
 
-// ---- Image preview ----
-document.getElementById('image-url').addEventListener('input', function() {
-    const preview = document.getElementById('image-preview');
-    const img = preview.querySelector('img');
-    if (this.value) {
-        img.src = this.value;
-        preview.classList.remove('d-none');
+// ---- Cover Image Picker ----
+function _applyCoverImage(url) {
+    document.getElementById('image-url').value = url;
+    document.getElementById('image-preview-img').src = url;
+    document.getElementById('image-preview-wrap').classList.remove('d-none');
+}
+
+function setCoverImageFromInput() {
+    const url = document.getElementById('cover-image-url-input').value.trim();
+    if (!url) return;
+    _applyCoverImage(url);
+    bootstrap.Modal.getInstance(document.getElementById('cover-image-picker-modal')).hide();
+}
+
+function openCoverImagePicker() {
+    const urls = _previewImages.filter(Boolean);
+    const grid  = document.getElementById('cover-image-picker-grid');
+    const empty = document.getElementById('cover-image-picker-empty');
+    // Pre-fill URL input with current value
+    document.getElementById('cover-image-url-input').value = document.getElementById('image-url').value.trim();
+    grid.innerHTML = '';
+    if (!urls.length) {
+        empty.classList.remove('d-none');
     } else {
-        preview.classList.add('d-none');
+        empty.classList.add('d-none');
+        const currentUrl = document.getElementById('image-url').value.trim();
+        urls.forEach(function(url) {
+            const img = document.createElement('img');
+            img.src = url;
+            img.style.cssText = 'width:calc(20% - 0.4rem);aspect-ratio:1/1;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid transparent;transition:border-color 0.15s;';
+            if (url === currentUrl) img.style.borderColor = '#0d6efd';
+            img.addEventListener('click', function() {
+                _applyCoverImage(url);
+                bootstrap.Modal.getInstance(document.getElementById('cover-image-picker-modal')).hide();
+            });
+            grid.appendChild(img);
+        });
     }
-});
+    new bootstrap.Modal(document.getElementById('cover-image-picker-modal')).show();
+}
 
 // ---- Source / Visual toggle ----
 let sourceMode = false;
@@ -1640,6 +1699,43 @@ const _ig = {
 
 // Return element ID for given mode + suffix, e.g. _igId('cine','caption') → 'cine-ig-caption'
 function _igId(mode, suffix) { return mode + '-ig-' + suffix; }
+
+var _extLinkSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-1" style="vertical-align:-1px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+var _platformIconSvg = {
+    ig: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>',
+    fb: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
+    yt: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.54C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/></svg>',
+};
+
+function _makeViewPostBtn(btn, permalink, platform) {
+    if (!btn) return;
+    if (!btn.dataset.origClass) {
+        btn.dataset.origClass = btn.className;
+        btn.dataset.origHtml = btn.innerHTML;
+        btn.dataset.origOnclick = btn.getAttribute('onclick') || '';
+    }
+    btn.disabled = false;
+    btn.style.pointerEvents = '';
+    btn.className = 'btn btn-outline-primary btn-sm';
+    var icon = (platform && _platformIconSvg[platform]) ? _platformIconSvg[platform] : '';
+    btn.innerHTML = icon + 'Already posted, click to view' + _extLinkSvg;
+    btn.setAttribute('onclick', '');
+    btn.onclick = function() { window.open(permalink, '_blank'); };
+}
+
+function _restorePostBtn(btn) {
+    if (!btn || !btn.dataset.origClass) return;
+    btn.disabled = false;
+    btn.style.pointerEvents = '';
+    btn.className = btn.dataset.origClass;
+    btn.innerHTML = btn.dataset.origHtml;
+    var orig = btn.dataset.origOnclick;
+    if (orig) btn.setAttribute('onclick', orig);
+    btn.onclick = null;
+    delete btn.dataset.origClass;
+    delete btn.dataset.origHtml;
+    delete btn.dataset.origOnclick;
+}
 
 function toggleIgSection(mode) {
     const body    = document.getElementById(_igId(mode, 'body'));
@@ -1862,18 +1958,26 @@ function _clearIgIconLive(mode) {
 function _setNvIgIconLive(ts) {
     var el = document.getElementById('nv-ig-icon-' + ts);
     if (el) { el.classList.add('nv-run-ig-live'); el.setAttribute('stroke', 'url(#ig-gradient)'); }
+    var hdr = document.getElementById('nv-ig-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', '#E1306C');
 }
 function _clearNvIgIconLive(ts) {
     var el = document.getElementById('nv-ig-icon-' + ts);
     if (el) { el.classList.remove('nv-run-ig-live'); el.setAttribute('stroke', '#ccc'); }
+    var hdr = document.getElementById('nv-ig-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', 'currentColor');
 }
 function _setNvYtIconLive(ts) {
     var el = document.getElementById('nv-yt-icon-' + ts);
     if (el) { el.classList.add('nv-run-yt-live'); el.setAttribute('stroke', '#ff0000'); }
+    var hdr = document.getElementById('nv-yt-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', '#ff0000');
 }
 function _clearNvYtIconLive(ts) {
     var el = document.getElementById('nv-yt-icon-' + ts);
     if (el) { el.classList.remove('nv-run-yt-live'); el.setAttribute('stroke', '#ccc'); }
+    var hdr = document.getElementById('nv-yt-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', 'currentColor');
 }
 
 /* Facebook section header icons (carousel/cinemagraph) */
@@ -1890,10 +1994,14 @@ function _clearFbIconLive(mode) {
 function _setNvFbIconLive(ts) {
     var el = document.getElementById('nv-fb-icon-' + ts);
     if (el) { el.classList.add('nv-run-fb-live'); el.setAttribute('stroke', '#1877F2'); }
+    var hdr = document.getElementById('nv-fb-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', '#1877F2');
 }
 function _clearNvFbIconLive(ts) {
     var el = document.getElementById('nv-fb-icon-' + ts);
     if (el) { el.classList.remove('nv-run-fb-live'); el.setAttribute('stroke', '#ccc'); }
+    var hdr = document.getElementById('nv-fb-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', 'currentColor');
 }
 
 /* ── Facebook toggle, post, poll, done, error, archive (carousel/cinemagraph) ── */
@@ -1902,6 +2010,30 @@ function _fbId(mode, suffix) { return mode + '-fb-' + suffix; }
 function toggleFbSection(mode) {
     var body    = document.getElementById(_fbId(mode, 'body'));
     var chevron = document.getElementById(_fbId(mode, 'chevron'));
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function toggleNvIgSection(ts) {
+    var body    = document.getElementById('nv-ig-' + ts + '-body');
+    var chevron = document.getElementById('nv-ig-' + ts + '-chevron');
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function toggleNvFbSection(ts) {
+    var body    = document.getElementById('nv-fb-' + ts + '-body');
+    var chevron = document.getElementById('nv-fb-' + ts + '-chevron');
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function toggleNvYtSection(ts) {
+    var body    = document.getElementById('nv-yt-' + ts + '-body');
+    var chevron = document.getElementById('nv-yt-' + ts + '-chevron');
     if (!body) return;
     body.classList.toggle('d-none');
     if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
@@ -1991,27 +2123,22 @@ function showFbDone(mode, permalink) {
     if (area) area.classList.remove('d-none');
     if (running) running.classList.add('d-none');
     if (progress) progress.classList.add('d-none');
-    if (result) {
-        result.classList.remove('d-none');
-        result.innerHTML = '<div class="alert alert-success py-1 small mb-2">Posted! ' +
-            '<a href="' + permalink + '" target="_blank" rel="noopener">View on Facebook ↗</a></div>';
-    }
     var postBtn = document.getElementById(_fbId(mode, 'post-btn'));
-    if (postBtn) postBtn.disabled = true;
+    _makeViewPostBtn(postBtn, permalink, 'fb');
     var btnRow = document.getElementById(_fbId(mode, 'btn-row'));
     if (btnRow) {
         btnRow.querySelectorAll('.fb-done-btn').forEach(function(b) { b.remove(); });
         var checkBtn = document.createElement('button');
         checkBtn.type = 'button';
-        checkBtn.className = 'btn btn-outline-secondary btn-sm fb-done-btn';
+        checkBtn.className = 'btn btn-outline-primary btn-sm fb-done-btn';
         checkBtn.textContent = 'Check if post is still live';
         checkBtn.onclick = function() { fbCheckPostLive(mode); };
         btnRow.appendChild(checkBtn);
         var archiveBtn = document.createElement('button');
         archiveBtn.type = 'button';
         archiveBtn.className = 'btn btn-outline-danger btn-sm fb-done-btn';
-        archiveBtn.textContent = 'Archive post';
-        archiveBtn.onclick = function() { fbArchivePost(mode); };
+        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.onclick = function() { fbDeleteAndArchive(mode); };
         btnRow.appendChild(archiveBtn);
     }
 }
@@ -2055,7 +2182,7 @@ function fbArchivePost(mode) {
             var result = document.getElementById(_fbId(mode, 'result'));
             if (result) result.innerHTML = '<span class="text-muted small">Post archived.</span>';
             var postBtn = document.getElementById(_fbId(mode, 'post-btn'));
-            if (postBtn) postBtn.disabled = false;
+            _restorePostBtn(postBtn);
             var btnRow = document.getElementById(_fbId(mode, 'btn-row'));
             if (btnRow) btnRow.querySelectorAll('.fb-done-btn').forEach(function(b) { b.remove(); });
             if (d.history && d.history.length) renderFbHistory(mode, d.history);
@@ -2066,18 +2193,49 @@ function fbArchivePost(mode) {
     .catch(function() { alert('Archive request failed'); });
 }
 
+function fbDeleteAndArchive(mode) {
+    if (!confirm('Delete this post from Facebook and archive it here?')) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/delete-facebook-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.ok) {
+            _clearFbIconLive(mode);
+            var result = document.getElementById(_fbId(mode, 'result'));
+            if (result) result.innerHTML = '<span class="text-muted small">Post deleted and archived.</span>';
+            var postBtn = document.getElementById(_fbId(mode, 'post-btn'));
+            _restorePostBtn(postBtn);
+            var btnRow = document.getElementById(_fbId(mode, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.fb-done-btn').forEach(function(b) { b.remove(); });
+            if (d.history && d.history.length) renderFbHistory(mode, d.history);
+        } else {
+            alert(d.error || 'Delete failed');
+        }
+    })
+    .catch(function() { alert('Delete request failed'); });
+}
+
 function renderFbHistory(mode, history) {
     var wrap = document.getElementById(_fbId(mode, 'history'));
     var list = document.getElementById(_fbId(mode, 'history-list'));
     if (!wrap || !list || !history || !history.length) return;
     list.innerHTML = '';
-    history.forEach(function(entry, i) {
+    history.forEach(function(entry) {
         var div = document.createElement('div');
-        div.className = 'border rounded p-2 mb-2 small';
-        var link = entry.permalink
-            ? '<a href="' + entry.permalink + '" target="_blank" rel="noopener">' + entry.permalink + '</a>'
-            : '(no permalink)';
-        div.innerHTML = '<div class="text-muted">#' + (i + 1) + ' — ' + (entry.archived_at || '') + '</div><div>' + link + '</div>';
+        div.className = 'mb-1 small text-muted';
+        var cap = (entry.caption || '').slice(0, 20);
+        var label = cap ? cap + '...' : 'Post archived';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        div.textContent = '\u2022 ' + label + (date ? ' \u2014 ' + date : '');
+        if (entry.permalink) {
+            var a = document.createElement('a');
+            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
+            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
+            div.appendChild(a);
+        }
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -2167,22 +2325,16 @@ function showNvFbDone(ts, permalink) {
     var result  = document.getElementById(_nvFbId(ts, 'result'));
     if (area) area.classList.remove('d-none');
     if (running) running.classList.add('d-none');
-    if (result) {
-        result.classList.remove('d-none');
-        result.innerHTML = '<div class="alert alert-success py-2 px-3 small mb-0">' +
-            '<strong>Posted to Facebook!</strong><br>' +
-            '<a href="' + permalink + '" target="_blank" rel="noopener">' + permalink + '</a></div>';
-    }
     var postBtn = document.getElementById(_nvFbId(ts, 'post-btn'));
-    if (postBtn) postBtn.disabled = true;
+    _makeViewPostBtn(postBtn, permalink, 'fb');
     var btnRow = document.getElementById(_nvFbId(ts, 'btn-row'));
     if (btnRow) {
         btnRow.querySelectorAll('.nv-fb-done-btn').forEach(function(b) { b.remove(); });
         var archiveBtn = document.createElement('button');
         archiveBtn.type = 'button';
         archiveBtn.className = 'btn btn-outline-danger btn-sm nv-fb-done-btn';
-        archiveBtn.textContent = 'Archive post';
-        archiveBtn.onclick = function() { nvFbArchivePost(ts); };
+        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.onclick = function() { nvFbDeleteAndArchive(ts); };
         btnRow.appendChild(archiveBtn);
     }
 }
@@ -2215,9 +2367,10 @@ function nvFbArchivePost(ts) {
             var result = document.getElementById(_nvFbId(ts, 'result'));
             if (result) result.innerHTML = '<span class="text-muted small">Post archived.</span>';
             var postBtn = document.getElementById(_nvFbId(ts, 'post-btn'));
-            if (postBtn) postBtn.disabled = false;
+            _restorePostBtn(postBtn);
             var btnRow = document.getElementById(_nvFbId(ts, 'btn-row'));
             if (btnRow) btnRow.querySelectorAll('.nv-fb-done-btn').forEach(function(b) { b.remove(); });
+            if (d.history && d.history.length) renderNvFbHistory(ts, d.history);
         } else {
             alert(d.error || 'Archive failed');
         }
@@ -2225,10 +2378,57 @@ function nvFbArchivePost(ts) {
     .catch(function() { alert('Archive request failed'); });
 }
 
+function nvFbDeleteAndArchive(ts) {
+    if (!confirm('Delete this post from Facebook and archive it here?')) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/delete-narrated-fb-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.ok) {
+            _clearNvFbIconLive(ts);
+            var result = document.getElementById(_nvFbId(ts, 'result'));
+            if (result) result.innerHTML = '<span class="text-muted small">Post deleted and archived.</span>';
+            var postBtn = document.getElementById(_nvFbId(ts, 'post-btn'));
+            _restorePostBtn(postBtn);
+            var btnRow = document.getElementById(_nvFbId(ts, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.nv-fb-done-btn').forEach(function(b) { b.remove(); });
+            if (d.history && d.history.length) renderNvFbHistory(ts, d.history);
+        } else {
+            alert(d.error || 'Delete failed');
+        }
+    })
+    .catch(function() { alert('Delete request failed'); });
+}
+
+function renderNvFbHistory(ts, history) {
+    var wrap = document.getElementById(_nvFbId(ts, 'history'));
+    var list = document.getElementById(_nvFbId(ts, 'history-list'));
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.forEach(function(entry) {
+        var div = document.createElement('div');
+        div.className = 'mb-1 small text-muted';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
+        if (entry.permalink) {
+            var a = document.createElement('a');
+            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
+            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
+            div.appendChild(a);
+        }
+        list.appendChild(div);
+    });
+    wrap.classList.remove('d-none');
+}
+
 function restoreNvFbState(ts) {
     fetch('/admin/articles/' + ARTICLE_ID + '/narrated-fb-status?ts=' + ts)
     .then(function(r) { return r.json(); })
     .then(function(d) {
+        if (d.history && d.history.length) renderNvFbHistory(ts, d.history);
         if (d.result && d.result.startsWith('done:')) {
             showNvFbDone(ts, d.result.slice(5));
         } else if (d.result && d.result.startsWith('error:')) {
@@ -2249,25 +2449,15 @@ function showIgDone(mode, permalink) {
     if (!area) return;
     area.classList.remove('d-none');
     running.classList.add('d-none');
+    var genLink = document.getElementById(mode + '-ig-generate-caption-link');
+    if (genLink) genLink.classList.add('d-none');
     if (progress) progress.classList.add('d-none');
     resultEl.classList.remove('d-none');
     _setIgIconLive(mode);
 
-    // Disable Post button and inject Edit + Check buttons inline in btn-row
+    // Transform Post button into "view" link
     const postBtn = document.getElementById(_igId(mode, 'post-btn'));
-    if (postBtn) {
-        postBtn.disabled = true;
-        postBtn.style.pointerEvents = 'none'; // let parent span catch hover for tooltip
-        // Wrap in a span so the tooltip shows even on a disabled button
-        if (!postBtn.parentElement || !postBtn.parentElement.classList.contains('ig-post-tooltip-wrap')) {
-            const wrap = document.createElement('span');
-            wrap.className = 'ig-post-tooltip-wrap';
-            wrap.title = 'A post is already live on Instagram. Archive it first to post again.';
-            wrap.style.cursor = 'not-allowed';
-            postBtn.parentNode.insertBefore(wrap, postBtn);
-            wrap.appendChild(postBtn);
-        }
-    }
+    _makeViewPostBtn(postBtn, permalink, 'ig');
     const btnRow = document.getElementById(_igId(mode, 'btn-row'));
     if (btnRow) {
         // Remove any previously injected done-buttons first
@@ -2275,14 +2465,14 @@ function showIgDone(mode, permalink) {
         const m = mode;
         const editBtn = document.createElement('button');
         editBtn.type = 'button';
-        editBtn.className = 'btn btn-outline-secondary btn-sm ig-done-btn';
+        editBtn.className = 'btn btn-outline-primary btn-sm ig-done-btn';
         editBtn.textContent = 'Edit caption';
         editBtn.onclick = function() { igShowEditCaption(m); };
         btnRow.appendChild(editBtn);
 
         const checkBtn = document.createElement('button');
         checkBtn.type = 'button';
-        checkBtn.className = 'btn btn-outline-secondary btn-sm ig-done-btn';
+        checkBtn.className = 'btn btn-outline-primary btn-sm ig-done-btn';
         checkBtn.id = _igId(mode, 'check-live-btn');
         checkBtn.textContent = 'Check if post is still live';
         checkBtn.onclick = function() { igCheckPostLive(m); };
@@ -2291,11 +2481,6 @@ function showIgDone(mode, permalink) {
 
     const m = mode;
     resultEl.innerHTML =
-        '<div class="mb-1">' +
-            '<span class="text-success fw-semibold">✓ Posted!</span>' +
-            (permalink ? ' <a href="' + permalink + '" target="_blank" rel="noopener">View on Instagram</a>' : '') +
-        '</div>' +
-        '<div class="text-muted mb-2" style="font-size:0.8rem;">To delete this post, remove it directly from the Instagram app.</div>' +
         '<div id="' + m + '-ig-check-live-status" class="small mb-2"></div>' +
         '<div id="' + m + '-ig-edit-caption-area" class="d-none mt-2">' +
             '<textarea id="' + m + '-ig-edit-caption-text" class="form-control form-control-sm mb-2" rows="4" maxlength="2200" ' +
@@ -2463,20 +2648,13 @@ function igArchivePost(mode) {
             const resultEl = document.getElementById(_igId(mode, 'result'));
             if (resultEl) resultEl.innerHTML = '<span class="text-muted small">Post archived. You can now publish a new post.</span>';
             _ig[mode].mediaId = null;
-            // Re-enable Post button and remove injected Edit/Check buttons
+            // Restore Post button to original state
             const postBtn = document.getElementById(_igId(mode, 'post-btn'));
-            if (postBtn) {
-                postBtn.disabled = false;
-                postBtn.style.pointerEvents = '';
-                // Unwrap from tooltip span if present
-                const wrap = postBtn.parentElement;
-                if (wrap && wrap.classList.contains('ig-post-tooltip-wrap')) {
-                    wrap.parentNode.insertBefore(postBtn, wrap);
-                    wrap.remove();
-                }
-            }
+            _restorePostBtn(postBtn);
             const btnRow = document.getElementById(_igId(mode, 'btn-row'));
             if (btnRow) btnRow.querySelectorAll('.ig-done-btn').forEach(function(b) { b.remove(); });
+            var genLink = document.getElementById(mode + '-ig-generate-caption-link');
+            if (genLink) genLink.classList.remove('d-none');
             _clearIgIconLive(mode);
             if (d.history && d.history.length) renderIgHistory(mode, d.history);
         } else {
@@ -2497,7 +2675,9 @@ function renderIgHistory(mode, history) {
         row.style.cursor = 'pointer';
         row.title = 'Click to view archived post';
         const date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
-        row.textContent = '📷 Post archived' + (date ? ' — ' + date : '');
+        const cap = (entry.caption || '').slice(0, 20);
+        const label = cap ? cap + '...' : 'Post archived';
+        row.textContent = '\u2022 ' + label + (date ? ' \u2014 ' + date : '');
         row.addEventListener('mouseenter', function() { row.style.color = '#0d6efd'; });
         row.addEventListener('mouseleave', function() { row.style.color = ''; });
         (function(e) { row.onclick = function() { showIgArchiveModal(e); }; })(entry);
@@ -2883,14 +3063,20 @@ function addRemovedImage(colEl) {
 
 function showCarouselTab(tab) {
     const isCurrent = (tab === 'current');
+    const isRemoved = (tab === 'removed');
+    const isPreview = (tab === 'preview');
     document.getElementById('carousel-grid').classList.toggle('d-none', !isCurrent);
-    document.getElementById('carousel-removed-grid').classList.toggle('d-none', isCurrent);
+    document.getElementById('carousel-removed-grid').classList.toggle('d-none', !isRemoved);
+    document.getElementById('carousel-preview-pane').classList.toggle('d-none', !isPreview);
     document.getElementById('tab-current').classList.toggle('active', isCurrent);
-    document.getElementById('tab-removed').classList.toggle('active', !isCurrent);
+    document.getElementById('tab-removed').classList.toggle('active', isRemoved);
+    document.getElementById('tab-preview').classList.toggle('active', isPreview);
     // If grid is collapsed, expand it when a tab is clicked
     var gridWrap = document.getElementById('carousel-grid-wrap');
     if (gridWrap && gridWrap.classList.contains('d-none')) {
-        toggleCarouselGrid();
+        gridWrap.classList.remove('d-none');
+        var chevron = document.getElementById('carousel-grid-chevron');
+        if (chevron) chevron.style.transform = 'rotate(180deg)';
     }
 }
 
@@ -2947,7 +3133,9 @@ function archiveAllCarousel() {
             });
         }
         // Switch to current tab (now empty) and show empty state
-        showCarouselTab('current');
+        if (!document.getElementById('tab-preview').classList.contains('active')) {
+            showCarouselTab('current');
+        }
         document.getElementById('carousel-empty').classList.remove('d-none');
         updateCarouselTabCounts();
     })
@@ -3230,7 +3418,8 @@ function buildRunItem(run, expandIt) {
                     data-bs-toggle="collapse" data-bs-target="#${collapseId}">
                 ${fmtBadge}${vBadge}${sBadge}${cineBadge}
                 <span class="small text-muted ms-1">${run.ts_label}</span>
-                <span class="ms-auto d-flex align-items-center gap-2 me-3" onclick="event.stopPropagation()" style="pointer-events:none">
+                <span style="flex:1"></span>
+                <span class="d-flex align-items-center gap-2 me-3" onclick="event.stopPropagation()" style="pointer-events:none">
                     <svg id="nv-ig-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
                          fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Instagram">
                         <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
@@ -3252,19 +3441,29 @@ function buildRunItem(run, expandIt) {
         <div id="${collapseId}" class="accordion-collapse collapse ${show}"
              data-bs-parent="#narrated-runs-accordion">
             <div class="accordion-body p-3">
-                <table class="table table-sm table-bordered small mb-3">
-                    <tbody>
-                        <tr><th style="width:38%">Format</th><td>${isVertical ? 'Vertical 9:16 (Reels / TikTok / Shorts)' : 'Square 1:1'}</td></tr>
-                        <tr><th>Voice</th><td>${voiceName}</td></tr>
-                        <tr><th>TTS Quality</th><td>${ttsLabel}</td></tr>
-                        <tr><th>Script Length</th><td>${scriptLabel}</td></tr>
-                        <tr><th>Ken Burns</th><td>${kbLabel}</td></tr>
-                        <tr><th>Video Quality</th><td>${crfLabel} (CRF ${run.params.crf})</td></tr>
-                        <tr><th>FPS</th><td>${run.params.fps}</td></tr>
-                        ${speedVal !== 1.0 ? `<tr><th>Speed</th><td>${speedVal}× (social media)</td></tr>` : ''}
-                        ${cineSlides > 0 ? `<tr><th>Cinemagraphs</th><td>${cineSlides} of ${totalSlides} slides</td></tr>` : ''}
-                    </tbody>
-                </table>
+                <div class="mt-0 mb-2">
+                    <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1"
+                       data-bs-toggle="collapse" href="#nv-details-${run.ts}" role="button"
+                       aria-expanded="false">
+                        <span>Video Details</span>
+                        <span class="text-muted" style="font-size:.7rem;">▼</span>
+                    </a>
+                    <div class="collapse" id="nv-details-${run.ts}">
+                        <table class="table table-sm table-bordered small mt-1 mb-0">
+                            <tbody>
+                                <tr><th style="width:38%">Format</th><td>${isVertical ? 'Vertical 9:16 (Reels / TikTok / Shorts)' : 'Square 1:1'}</td></tr>
+                                <tr><th>Voice</th><td>${voiceName}</td></tr>
+                                <tr><th>TTS Quality</th><td>${ttsLabel}</td></tr>
+                                <tr><th>Script Length</th><td>${scriptLabel}</td></tr>
+                                <tr><th>Ken Burns</th><td>${kbLabel}</td></tr>
+                                <tr><th>Video Quality</th><td>${crfLabel} (CRF ${run.params.crf})</td></tr>
+                                <tr><th>FPS</th><td>${run.params.fps}</td></tr>
+                                ${speedVal !== 1.0 ? `<tr><th>Speed</th><td>${speedVal}× (social media)</td></tr>` : ''}
+                                ${cineSlides > 0 ? `<tr><th>Cinemagraphs</th><td>${cineSlides} of ${totalSlides} slides</td></tr>` : ''}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
                 <video src="${run.url}" controls class="rounded mb-3"
                        style="max-height:520px;width:auto;max-width:100%;display:block;margin:0 auto;"></video>
                 <div class="mt-2">
@@ -3278,12 +3477,23 @@ function buildRunItem(run, expandIt) {
                         <ol class="small mt-1">${scriptRows}</ol>
                     </div>
                 </div>
-                <div class="mt-3 pt-3 border-top">
-                    <p class="fw-semibold small mb-2">Post to Instagram</p>
-                    ${!IG_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">Instagram not configured (IG_USER_ID / IG_ACCESS_TOKEN missing).</div>' : ''}
+                <hr class="mt-3 mb-0">
+                <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvIgSection(${run.ts})">
+                    <svg id="nv-ig-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+                        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+                    </svg>
+                    <span class="small fw-semibold">Post to Instagram</span>
+                    <svg id="nv-ig-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </div>
+                <div id="nv-ig-${run.ts}-body" class="nv-social-body d-none pt-1">
+                    ${!IG_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">Instagram not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>' : ''}
                     <div class="d-flex align-items-center mb-1">
-                        <label class="form-label small fw-semibold mb-0">Caption</label>
-                        <a href="#" class="small ms-auto" id="nv-ig-${run.ts}-gen-link"
+                        <label class="form-label small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="If you wish to delete this post and start over, you will need to delete the post directly on Instagram, then come back here, click the button &#39;Check if post is still live&#39;, and if it&#39;s no longer found on Instagram, an Archive option will appear. After being archived, this post will be visible below for your records, and you will be free to post another one again.">?</span></label>
+                        <a href="#" class="small ms-auto ig-section-link" id="nv-ig-${run.ts}-gen-link"
                            onclick="event.preventDefault(); generateNarratedIgCaption(${run.ts})">
                            Generate caption <span class="text-muted">(~$0.01)</span></a>
                     </div>
@@ -3319,24 +3529,44 @@ function buildRunItem(run, expandIt) {
                         </div>
                         <div id="nv-ig-${run.ts}-result" class="d-none small"></div>
                         <div id="nv-ig-${run.ts}-history" class="d-none mt-3">
-                            <div class="text-muted small fw-semibold mb-1">Past Posts</div>
-                            <div id="nv-ig-${run.ts}-history-list"></div>
+                            <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-ig-${run.ts}-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
+                            <div class="collapse" id="nv-ig-${run.ts}-history-list"></div>
                         </div>
                     </div>
                 </div>
-                <div class="mt-3 pt-3 border-top">
-                    <!-- YouTube section -->
-                    <hr class="my-2">
-                    <div class="mb-1 d-flex align-items-center justify-content-between">
-                        <span class="small fw-semibold">Post to YouTube Shorts</span>
-                    </div>
+                <hr class="mt-0 mb-0">
+                <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvFbSection(${run.ts})">
+                    <svg id="nv-fb-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                        <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+                    </svg>
+                    <span class="small fw-semibold">Post to Facebook</span>
+                    <svg id="nv-fb-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </div>
+                <div id="nv-fb-${run.ts}-body" class="nv-social-body d-none pt-1">
+                    ${FB_CONFIGURED ? '' : '<div class="alert alert-warning py-1 small mb-2">Facebook not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>'}
+                    ${FB_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from your Facebook Page. It will be saved below in Past Posts for your records.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToFb(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-fb-' + run.ts + '-caption" rows="3" maxlength="2200" placeholder="Write your Facebook caption…" oninput="document.getElementById(\'nv-fb-' + run.ts + '-count\').textContent=this.value.length+\' / 2200\'"></textarea><div class="text-end text-muted small mb-2" id="nv-fb-' + run.ts + '-count">0 / 2200</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-fb-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-primary" id="nv-fb-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToFb(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z\'/></svg>Post to Facebook</button></div><div id="nv-fb-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-fb-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-primary"></div><span id="nv-fb-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-fb-' + run.ts + '-progress-wrap"><div id="nv-fb-' + run.ts + '-progress-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-fb-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-fb-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-fb-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-fb-' + run.ts + '-history-list"></div></div></div>' : ''}
+                </div>
+                <hr class="mt-0 mb-0">
+                <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvYtSection(${run.ts})">
+                    <svg id="nv-yt-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                        <path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.54C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/>
+                        <polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/>
+                    </svg>
+                    <span class="small fw-semibold">Post to YouTube Shorts</span>
+                    <svg id="nv-yt-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </div>
+                <div id="nv-yt-${run.ts}-body" class="nv-social-body d-none pt-1">
                     <div class="mb-2">
                         <label class="small text-muted">Title</label>
                         <input type="text" class="form-control form-control-sm" id="nv-yt-${run.ts}-title"
                                maxlength="100" placeholder="Video title…">
                         <div class="d-flex align-items-center justify-content-between mt-1">
                             <label class="small text-muted mb-0">Description</label>
-                            <a href="#" class="small ms-auto" id="nv-yt-${run.ts}-gen-link"
+                            <a href="#" class="small ms-auto ig-section-link" id="nv-yt-${run.ts}-gen-link"
                                onclick="event.preventDefault(); generateYouTubeDesc(${run.ts})">Generate description <span class="text-muted">(~$0.01)</span></a>
                         </div>
                         <textarea class="form-control form-control-sm mt-1" id="nv-yt-${run.ts}-desc"
@@ -3362,20 +3592,6 @@ function buildRunItem(run, expandIt) {
                     </div>
                     <div id="nv-yt-${run.ts}-result" class="d-none mt-2"></div>
                 </div>
-            </div>
-
-            <!-- Facebook -->
-            <div class="border rounded p-2 mt-2">
-                <div class="d-flex align-items-center gap-2 mb-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                         stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
-                    <span class="small fw-semibold">Post to Facebook</span>
-                </div>
-                ${FB_CONFIGURED ? '' : '<div class="alert alert-warning py-1 small mb-0">Facebook not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>'}
-                ${FB_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small fw-semibold mb-0">Caption</label><a href="#" class="small ms-auto" onclick="event.preventDefault(); copyNvIgCaptionToFb(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-fb-' + run.ts + '-caption" rows="3" maxlength="2200" placeholder="Write your Facebook caption…" oninput="document.getElementById(\'nv-fb-' + run.ts + '-count\').textContent=this.value.length+\' / 2200\'"></textarea><div class="text-end text-muted small mb-2" id="nv-fb-' + run.ts + '-count">0 / 2200</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-fb-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-primary" id="nv-fb-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToFb(' + run.ts + ', this.dataset.videoUrl)">Post to Facebook</button></div><div id="nv-fb-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-fb-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-primary"></div><span id="nv-fb-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-fb-' + run.ts + '-progress-wrap"><div id="nv-fb-' + run.ts + '-progress-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-fb-' + run.ts + '-result" class="d-none mt-2"></div></div>' : ''}
-            </div>
-
         </div>`;
     /* Set caption default after DOM is built (avoids HTML-escaping issues in textarea) */
     var defaultCaption = [ARTICLE_TITLE, ARTICLE_URL ? '\n' + ARTICLE_URL : ''].filter(Boolean).join('\n');
@@ -3487,38 +3703,45 @@ function showNvIgDone(ts, permalink) {
     var resultEl     = document.getElementById(_nvIgId(ts, 'result'));
     if (!area) return;
     area.classList.remove('d-none');
+    var genLink = document.getElementById('nv-ig-' + ts + '-gen-link');
+    if (genLink) genLink.classList.add('d-none');
     if (running) running.classList.add('d-none');
     if (progressWrap) progressWrap.classList.add('d-none');
-    if (resultEl) {
-        resultEl.classList.remove('d-none');
-        resultEl.innerHTML = '<div class="alert alert-success py-1 small mb-2">Posted! ' +
-            '<a href="' + permalink + '" target="_blank" rel="noopener">View on Instagram ↗</a></div>';
-    }
     var postBtn = document.getElementById(_nvIgId(ts, 'post-btn'));
-    if (postBtn) postBtn.disabled = true;
+    _makeViewPostBtn(postBtn, permalink, 'ig');
     var btnRow = document.getElementById(_nvIgId(ts, 'btn-row'));
     if (btnRow) {
         btnRow.querySelectorAll('.nv-ig-done-btn').forEach(function(b) { b.remove(); });
+        var editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'btn btn-outline-primary btn-sm nv-ig-done-btn';
+        editBtn.textContent = 'Edit caption';
+        editBtn.onclick = function() { nvIgShowEditCaption(ts); };
+        btnRow.appendChild(editBtn);
         var checkBtn = document.createElement('button');
         checkBtn.type = 'button';
-        checkBtn.className = 'btn btn-outline-secondary btn-sm nv-ig-done-btn';
+        checkBtn.className = 'btn btn-outline-primary btn-sm nv-ig-done-btn';
         checkBtn.id = _nvIgId(ts, 'check-live-btn');
         checkBtn.textContent = 'Check if post is still live';
         checkBtn.onclick = function() { nvIgCheckPostLive(ts); };
         btnRow.appendChild(checkBtn);
-        var archiveBtn = document.createElement('button');
-        archiveBtn.type = 'button';
-        archiveBtn.className = 'btn btn-outline-danger btn-sm nv-ig-done-btn';
-        archiveBtn.id = _nvIgId(ts, 'archive-btn');
-        archiveBtn.textContent = 'Archive post';
-        archiveBtn.onclick = function() { nvIgArchivePost(ts); };
-        btnRow.appendChild(archiveBtn);
-        if (!document.getElementById(_nvIgId(ts, 'check-live-status'))) {
-            var statusDiv = document.createElement('div');
-            statusDiv.id = _nvIgId(ts, 'check-live-status');
-            statusDiv.className = 'small mt-2 w-100';
-            btnRow.insertAdjacentElement('afterend', statusDiv);
-        }
+    }
+    if (resultEl) {
+        resultEl.classList.remove('d-none');
+        resultEl.innerHTML =
+            '<div id="nv-ig-' + ts + '-check-live-status" class="small mb-2"></div>' +
+            '<div id="nv-ig-' + ts + '-edit-caption-area" class="d-none mt-2">' +
+                '<textarea id="nv-ig-' + ts + '-edit-caption-text" class="form-control form-control-sm mb-2" rows="4" maxlength="2200" ' +
+                    'placeholder="New caption…" oninput="nvIgUpdateEditCount(' + ts + ')"></textarea>' +
+                '<div class="d-flex justify-content-between align-items-center">' +
+                    '<span class="text-muted small" id="nv-ig-' + ts + '-edit-caption-count">0 / 2200</span>' +
+                    '<div class="d-flex gap-2">' +
+                        '<button type="button" class="btn btn-secondary btn-sm" onclick="nvIgHideEditCaption(' + ts + ')">Cancel</button>' +
+                        '<button type="button" class="btn btn-primary btn-sm" id="nv-ig-' + ts + '-edit-caption-btn" onclick="nvIgSaveCaption(' + ts + ')">Save caption</button>' +
+                    '</div>' +
+                '</div>' +
+                '<div id="nv-ig-' + ts + '-edit-caption-status" class="small mt-1"></div>' +
+            '</div>';
     }
 }
 
@@ -3539,7 +3762,7 @@ function showNvIgError(ts, msg) {
 
 function nvIgCheckPostLive(ts) {
     var btn       = document.getElementById(_nvIgId(ts, 'check-live-btn'));
-    var statusDiv = document.getElementById(_nvIgId(ts, 'check-live-status'));
+    var statusDiv = document.getElementById('nv-ig-' + ts + '-check-live-status');
     if (btn) btn.disabled = true;
     if (statusDiv) statusDiv.innerHTML = 'Checking…';
     fetch('/admin/articles/' + ARTICLE_ID + '/check-narrated-ig-post?ts=' + ts)
@@ -3551,7 +3774,10 @@ function nvIgCheckPostLive(ts) {
         } else if (d.error) {
             if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Error: ' + d.error + '</span>';
         } else {
-            if (statusDiv) statusDiv.innerHTML = '<span class="text-warning">✗ Not found: ' + (d.api_error || 'Unknown') + '</span>';
+            var apiNote = d.api_error ? ' <span class="text-muted">(' + d.api_error + ')</span>' : '';
+            if (statusDiv) statusDiv.innerHTML =
+                '<span class="text-warning fw-semibold">Post not found on Instagram.</span>' + apiNote + ' ' +
+                '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="nvIgArchivePost(' + ts + ')">Archive this post record</button>';
         }
     })
     .catch(function() {
@@ -3560,8 +3786,62 @@ function nvIgCheckPostLive(ts) {
     });
 }
 
+function nvIgShowEditCaption(ts) {
+    var area = document.getElementById('nv-ig-' + ts + '-edit-caption-area');
+    if (!area) return;
+    var ta = document.getElementById('nv-ig-' + ts + '-edit-caption-text');
+    if (ta && !ta.value) {
+        var current = (document.getElementById(_nvIgId(ts, 'caption')) || {}).value || '';
+        ta.value = current.slice(0, 2200);
+        nvIgUpdateEditCount(ts);
+    }
+    area.classList.remove('d-none');
+}
+
+function nvIgHideEditCaption(ts) {
+    var area = document.getElementById('nv-ig-' + ts + '-edit-caption-area');
+    if (area) area.classList.add('d-none');
+}
+
+function nvIgUpdateEditCount(ts) {
+    var ta  = document.getElementById('nv-ig-' + ts + '-edit-caption-text');
+    var lbl = document.getElementById('nv-ig-' + ts + '-edit-caption-count');
+    if (ta && lbl) lbl.textContent = ta.value.length + ' / 2200';
+}
+
+function nvIgSaveCaption(ts) {
+    if (!ARTICLE_ID) return;
+    var ta      = document.getElementById('nv-ig-' + ts + '-edit-caption-text');
+    var btn     = document.getElementById('nv-ig-' + ts + '-edit-caption-btn');
+    var status  = document.getElementById('nv-ig-' + ts + '-edit-caption-status');
+    var caption = (ta ? ta.value : '').trim();
+    if (!caption) { if (status) status.textContent = 'Caption cannot be empty.'; return; }
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = 'Saving…';
+    fetch('/admin/articles/' + ARTICLE_ID + '/edit-narrated-ig-caption', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({caption: caption, run_ts: ts}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (btn) btn.disabled = false;
+        if (d.ok) {
+            if (status) status.innerHTML = '<span class="text-success">✓ Caption updated on Instagram!</span>';
+            var mainCaption = document.getElementById(_nvIgId(ts, 'caption'));
+            if (mainCaption) mainCaption.value = caption;
+        } else {
+            if (status) status.innerHTML = '<span class="text-danger">Error: ' + (d.error || 'Unknown error') + '</span>';
+        }
+    })
+    .catch(function() {
+        if (btn) btn.disabled = false;
+        if (status) status.innerHTML = '<span class="text-danger">Request failed</span>';
+    });
+}
+
 function nvIgArchivePost(ts) {
-    var statusDiv = document.getElementById(_nvIgId(ts, 'check-live-status'));
+    var statusDiv = document.getElementById('nv-ig-' + ts + '-check-live-status');
     if (statusDiv) statusDiv.innerHTML = 'Archiving…';
     fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-ig-post', {
         method: 'POST',
@@ -3575,9 +3855,11 @@ function nvIgArchivePost(ts) {
             var resultEl = document.getElementById(_nvIgId(ts, 'result'));
             if (resultEl) resultEl.innerHTML = '<span class="text-muted small">Post archived. You can now publish a new post.</span>';
             var postBtn = document.getElementById(_nvIgId(ts, 'post-btn'));
-            if (postBtn) postBtn.disabled = false;
+            _restorePostBtn(postBtn);
             var btnRow = document.getElementById(_nvIgId(ts, 'btn-row'));
             if (btnRow) btnRow.querySelectorAll('.nv-ig-done-btn').forEach(function(b) { b.remove(); });
+            var genLink = document.getElementById('nv-ig-' + ts + '-gen-link');
+            if (genLink) genLink.classList.remove('d-none');
             if (d.history && d.history.length) renderNvIgHistory(ts, d.history);
             if (statusDiv) statusDiv.innerHTML = '';
         } else {
@@ -3594,14 +3876,17 @@ function renderNvIgHistory(ts, history) {
     var list = document.getElementById(_nvIgId(ts, 'history-list'));
     if (!wrap || !list || !history || !history.length) return;
     list.innerHTML = '';
-    history.forEach(function(entry, i) {
+    history.forEach(function(entry) {
         var div = document.createElement('div');
-        div.className = 'border rounded p-2 mb-2 small';
-        var pLink = entry.permalink
-            ? '<a href="' + entry.permalink + '" target="_blank" rel="noopener">' + entry.permalink + '</a>'
-            : '(no permalink)';
-        div.innerHTML = '<div class="text-muted">#' + (i + 1) + ' &mdash; ' + (entry.archived_at || '') + '</div>' +
-                        '<div>' + pLink + '</div>';
+        div.className = 'mb-1 small text-muted';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
+        if (entry.permalink) {
+            var a = document.createElement('a');
+            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
+            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
+            div.appendChild(a);
+        }
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -3736,16 +4021,10 @@ function pollYouTube(runTs, btn) {
                 _setNvYtIconLive(runTs);
                 var ytUrl = d.result.slice(5);
                 var running = document.getElementById('nv-yt-' + runTs + '-running');
-                var resultEl = document.getElementById('nv-yt-' + runTs + '-result');
                 if (running) running.classList.add('d-none');
-                if (resultEl) {
-                    resultEl.innerHTML = '<div class="alert alert-success py-2 px-3 small mb-0">' +
-                        '<strong>Posted to YouTube Shorts!</strong><br>' +
-                        '<a href="' + ytUrl + '" target="_blank" rel="noopener">' + ytUrl + '</a>' +
-                        '</div>';
-                    resultEl.classList.remove('d-none');
-                }
-                if (btn) btn.disabled = false;
+                _makeViewPostBtn(btn, ytUrl, 'yt');
+                var ytGenLink = document.getElementById('nv-yt-' + runTs + '-gen-link');
+                if (ytGenLink) ytGenLink.classList.add('d-none');
             } else if (d.result && d.result.startsWith('error:')) {
                 var errMsg = d.result.slice(6);
                 var running = document.getElementById('nv-yt-' + runTs + '-running');
@@ -3776,11 +4055,19 @@ function loadNarratedRuns(runs) {
             rendered++;
             restoreNvIgState(run.ts);
             restoreNvFbState(run.ts);
-            // Restore YouTube icon if a successful upload exists
+            // Restore YouTube icon + button if a successful upload exists
             (function(ts) {
                 fetch('/admin/articles/' + ARTICLE_ID + '/youtube-status?ts=' + ts)
                 .then(function(r) { return r.json(); })
-                .then(function(d) { if (d.result && d.result.startsWith('done:')) _setNvYtIconLive(ts); })
+                .then(function(d) {
+                    if (d.result && d.result.startsWith('done:')) {
+                        _setNvYtIconLive(ts);
+                        var ytBtn = document.getElementById('nv-yt-' + ts + '-post-btn');
+                        _makeViewPostBtn(ytBtn, d.result.slice(5), 'yt');
+                        var ytGenLink = document.getElementById('nv-yt-' + ts + '-gen-link');
+                        if (ytGenLink) ytGenLink.classList.add('d-none');
+                    }
+                })
                 .catch(function() {});
             })(run.ts);
         } catch(e) {
@@ -4352,7 +4639,9 @@ function carouselRestoreImage(archivedIdx, targetSlot) {
         }
         // Add restored image to the current grid
         addCarouselImage(targetSlot + 1, d.url, true, d.prompt || '', d.punchline || '');
-        showCarouselTab('current');
+        if (!document.getElementById('tab-preview').classList.contains('active')) {
+            showCarouselTab('current');
+        }
         updateCarouselTabCounts();
     })
     .catch(function() { alert('Could not restore image.'); });
