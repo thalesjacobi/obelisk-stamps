@@ -1,0 +1,1533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narrated Video Generator — Technical Documentation</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --sidebar-width: 260px;
+      --code-bg: #f3f4f6;
+      --border-color: #dee2e6;
+      --accent: #0d6efd;
+    }
+
+    body {
+      font-size: 0.94rem;
+      color: #212529;
+      background: #fff;
+    }
+
+    /* ── Layout ── */
+    #wrapper {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    #sidebar {
+      width: var(--sidebar-width);
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--border-color);
+      padding: 1.5rem 1rem;
+      background: #f8f9fa;
+    }
+
+    #main {
+      flex: 1;
+      padding: 2rem 3rem 4rem 3rem;
+      max-width: 960px;
+    }
+
+    /* ── TOC ── */
+    #toc-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6c757d;
+      margin-bottom: 0.75rem;
+    }
+
+    #toc a {
+      display: block;
+      color: #495057;
+      text-decoration: none;
+      font-size: 0.85rem;
+      padding: 0.2rem 0;
+      line-height: 1.4;
+    }
+
+    #toc a:hover { color: var(--accent); }
+
+    #toc .toc-sub {
+      padding-left: 0.9rem;
+      font-size: 0.8rem;
+      color: #6c757d;
+    }
+
+    #toc .toc-sub:hover { color: var(--accent); }
+
+    /* ── Headings ── */
+    h1 { font-size: 1.65rem; font-weight: 700; }
+    h2 { font-size: 1.25rem; font-weight: 700; margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); }
+    h3 { font-size: 1.05rem; font-weight: 600; margin-top: 1.6rem; }
+    h4 { font-size: 0.95rem; font-weight: 600; margin-top: 1.2rem; color: #343a40; }
+
+    /* ── Meta bar ── */
+    .meta-bar {
+      font-size: 0.82rem;
+      color: #6c757d;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .meta-bar span { margin-right: 1.5rem; }
+
+    /* ── Code ── */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid #e2e4e7;
+      border-radius: 6px;
+      padding: 1rem 1.1rem;
+      font-size: 0.82rem;
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.85em;
+    }
+
+    p code, li code, td code {
+      background: var(--code-bg);
+      padding: 0.1em 0.4em;
+      border-radius: 3px;
+      color: #d63384;
+    }
+
+    /* ── Tables ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      margin: 1rem 0 1.5rem;
+    }
+
+    th {
+      background: #f0f1f3;
+      font-weight: 600;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border-color);
+      text-align: left;
+    }
+
+    td {
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border-color);
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td { background: #fafafa; }
+
+    /* ── Callout boxes ── */
+    .callout {
+      border-left: 4px solid;
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1rem 0;
+      font-size: 0.875rem;
+    }
+
+    .callout-info  { border-color: #0dcaf0; background: #f0fbff; }
+    .callout-warn  { border-color: #ffc107; background: #fffbf0; }
+    .callout-key   { border-color: #0d6efd; background: #f0f5ff; }
+    .callout-tip   { border-color: #198754; background: #f0fff6; }
+    .callout-cost  { border-color: #6f42c1; background: #f8f4ff; }
+
+    /* ── Flow steps ── */
+    ol.flow li {
+      margin-bottom: 0.4rem;
+      padding-left: 0.25rem;
+    }
+
+    ol.flow li strong {
+      color: #0d6efd;
+    }
+
+    /* ── Badge-like labels ── */
+    .method-badge {
+      display: inline-block;
+      padding: 0.15em 0.5em;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-family: monospace;
+      margin-right: 0.35rem;
+    }
+    .get  { background: #d1e7dd; color: #0a3622; }
+    .post { background: #cfe2ff; color: #082a6a; }
+
+    /* ── Step pipeline ── */
+    .pipeline-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 1.4rem;
+    }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      background: #0d6efd;
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 0.1rem;
+    }
+
+    .step-body h4 { margin-top: 0; }
+    .step-body p  { margin-bottom: 0.4rem; }
+
+    @media print {
+      #sidebar { display: none; }
+      #main { max-width: 100%; padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+<div id="wrapper">
+
+  <!-- ── Sidebar TOC ── -->
+  <nav id="sidebar">
+    <div id="toc-title">Contents</div>
+    <nav id="toc">
+      <a href="#overview">1. Overview</a>
+      <a href="#file-structure">2. File Structure</a>
+      <a href="#database">3. Database Schema</a>
+      <a class="toc-sub" href="#db-columns">articles table columns</a>
+      <a class="toc-sub" href="#db-run-object">Run object schema</a>
+      <a class="toc-sub" href="#db-site-settings">site_settings keys</a>
+      <a href="#gen-params">4. Generation Parameters</a>
+      <a href="#env-vars">5. Environment Variables</a>
+      <a href="#backend-routes">6. Backend Routes</a>
+      <a class="toc-sub" href="#route-generate">Generate &amp; Status</a>
+      <a class="toc-sub" href="#route-instagram">Instagram routes</a>
+      <a class="toc-sub" href="#route-youtube">YouTube routes</a>
+      <a class="toc-sub" href="#route-misc">Misc routes</a>
+      <a href="#worker">7. Worker Pipeline</a>
+      <a class="toc-sub" href="#step1">Step 1 — Script generation</a>
+      <a class="toc-sub" href="#step2">Step 2 — TTS</a>
+      <a class="toc-sub" href="#step3">Step 3 — Frame rendering</a>
+      <a class="toc-sub" href="#step4">Step 4 — Mux audio+video</a>
+      <a class="toc-sub" href="#step5">Step 5 — Concat segments</a>
+      <a class="toc-sub" href="#step6">Step 6 — Speed-up</a>
+      <a class="toc-sub" href="#step7">Step 7 — GCS upload</a>
+      <a class="toc-sub" href="#status-strings">Status strings</a>
+      <a href="#ig-flow">8. Instagram Reels Flow</a>
+      <a href="#yt-flow">9. YouTube Shorts Flow</a>
+      <a href="#frontend-html">10. Frontend HTML</a>
+      <a class="toc-sub" href="#html-controls">Controls panel</a>
+      <a class="toc-sub" href="#html-progress">Progress bar</a>
+      <a class="toc-sub" href="#html-accordion">Runs accordion</a>
+      <a class="toc-sub" href="#html-ig-section">Instagram section</a>
+      <a class="toc-sub" href="#html-yt-section">YouTube section</a>
+      <a href="#frontend-js">11. Frontend JavaScript</a>
+      <a class="toc-sub" href="#js-polling">Status polling</a>
+      <a class="toc-sub" href="#js-buildrun">buildRunItem()</a>
+      <a class="toc-sub" href="#js-badges">Run badges</a>
+      <a class="toc-sub" href="#js-applystatus">_narratedApplyStatus()</a>
+      <a class="toc-sub" href="#js-ig">Instagram JS</a>
+      <a class="toc-sub" href="#js-yt">YouTube JS</a>
+      <a href="#logic-flows">12. Logic Flows</a>
+      <a class="toc-sub" href="#flow-generate">A. Start generation</a>
+      <a class="toc-sub" href="#flow-cancel">B. Cancel generation</a>
+      <a class="toc-sub" href="#flow-ig">C. Post to Instagram</a>
+      <a class="toc-sub" href="#flow-yt">D. Upload to YouTube</a>
+      <a href="#cost-limits">13. Cost &amp; Limits</a>
+    </nav>
+  </nav>
+
+  <!-- ── Main content ── -->
+  <main id="main">
+
+    <h1>Narrated Video Generator</h1>
+    <div class="meta-bar">
+      <span><strong>Project:</strong> Obelisk Stamps</span>
+      <span><strong>Component:</strong> B — article_edit.html</span>
+      <span><strong>Date:</strong> March 2026</span>
+    </div>
+
+    <!-- ── 1. Overview ── -->
+    <section id="overview">
+      <h2>1. Overview</h2>
+      <p>
+        The Narrated Video Generator is the most complex admin component in the Obelisk Stamps application.
+        It converts an article into a fully narrated MP4 video suitable for Instagram Reels and YouTube Shorts,
+        with no manual editing required. The entire pipeline runs in a background thread and produces a
+        publication-ready video in 5–15 minutes.
+      </p>
+
+      <h3>High-level pipeline</h3>
+      <ol class="flow">
+        <li><strong>Script:</strong> GPT-4.1-mini reads the article and writes exactly 10 narration segments.</li>
+        <li><strong>TTS:</strong> OpenAI Text-to-Speech converts each segment to an audio file.</li>
+        <li><strong>Frames:</strong> FFmpeg renders a video clip per segment — either a Ken Burns pan/zoom over a carousel image, or a looping cinemagraph clip.</li>
+        <li><strong>Mux:</strong> Each segment's video and audio are combined into one timed clip.</li>
+        <li><strong>Concat:</strong> All 10 clips are joined into a single continuous video.</li>
+        <li><strong>Speed-up:</strong> The full video is sped up 1.35× using FFmpeg <code>setpts</code> + <code>atempo</code>.</li>
+        <li><strong>Upload:</strong> The final MP4 is uploaded to Google Cloud Storage and the run is recorded in the DB.</li>
+      </ol>
+
+      <h3>Key capabilities</h3>
+      <table>
+        <tr><th>Capability</th><th>Detail</th></tr>
+        <tr><td>Multiple runs per article</td><td>Each generation is stored as a run object in <code>video_narrated_runs</code>. Runs accumulate; none are overwritten.</td></tr>
+        <tr><td>Configurable output format</td><td>Vertical 9:16 (720×1280), square 1:1 (1080×1080), landscape 16:9 (1280×720).</td></tr>
+        <tr><td>Cinemagraph integration</td><td>If cinemagraph clips exist for a segment slot, they are used instead of the Ken Burns still-image path.</td></tr>
+        <tr><td>Instagram Reels publishing</td><td>Direct publish via Instagram Graph API with caption generation and live-check polling.</td></tr>
+        <tr><td>YouTube Shorts publishing</td><td>Resumable upload via YouTube Data API v3; OAuth flow built into admin.</td></tr>
+        <tr><td>Live generation log</td><td>Full FFmpeg stdout/stderr captured to <code>video_narrated_log</code> for debugging.</td></tr>
+        <tr><td>Cancel support</td><td>In-progress generation can be cancelled via a dedicated route.</td></tr>
+      </table>
+
+      <div class="callout callout-info">
+        <strong>Component identifier:</strong> This component is labelled "Component B" inside
+        <code>templates/admin/article_edit.html</code>. The carousel generator is Component A.
+        Both components live on the same article-edit page.
+      </div>
+    </section>
+
+    <!-- ── 2. File Structure ── -->
+    <section id="file-structure">
+      <h2>2. File Structure</h2>
+      <table>
+        <tr><th>Path</th><th>Role</th></tr>
+        <tr><td><code>app.py</code></td><td>All Flask routes and worker functions for narrated video</td></tr>
+        <tr><td><code>templates/admin/article_edit.html</code></td><td>Admin page containing Component B HTML + JS</td></tr>
+        <tr><td><code>static/tech_docs/narrated-video.html</code></td><td>This documentation file</td></tr>
+      </table>
+
+      <h3>Relevant app.py sections</h3>
+      <table>
+        <tr><th>Symbol</th><th>Type</th><th>Description</th></tr>
+        <tr><td><code>_narrated_video_worker(article_id, params)</code></td><td>function</td><td>Background thread: runs all 7 pipeline steps</td></tr>
+        <tr><td><code>_post_narrated_reel_worker(article_id, video_url, caption, run_ts)</code></td><td>function</td><td>Background thread: posts video to Instagram Reels</td></tr>
+        <tr><td><code>_upload_to_youtube_worker(article_id, video_url, title, description, run_ts)</code></td><td>function</td><td>Background thread: uploads video to YouTube Shorts</td></tr>
+        <tr><td><code>/admin/articles/&lt;id&gt;/generate-narrated-video</code></td><td>POST route</td><td>Validates params, starts worker thread</td></tr>
+        <tr><td><code>/admin/articles/&lt;id&gt;/narrated-video-status</code></td><td>GET route</td><td>Returns live status JSON for polling</td></tr>
+        <tr><td><code>/admin/articles/&lt;id&gt;/cancel-narrated-video</code></td><td>POST route</td><td>Writes cancel signal to DB</td></tr>
+        <tr><td><code>/admin/articles/&lt;id&gt;/post-narrated-to-instagram</code></td><td>POST route</td><td>Starts IG posting worker</td></tr>
+        <tr><td><code>/admin/articles/&lt;id&gt;/post-to-youtube</code></td><td>POST route</td><td>Starts YouTube upload worker</td></tr>
+        <tr><td><code>/admin/youtube-connect</code></td><td>GET route</td><td>Initiates YouTube OAuth flow</td></tr>
+        <tr><td><code>/admin/youtube-oauth-callback</code></td><td>GET route</td><td>Exchanges authorization code for refresh token</td></tr>
+      </table>
+    </section>
+
+    <!-- ── 3. Database Schema ── -->
+    <section id="database">
+      <h2>3. Database Schema</h2>
+
+      <h3 id="db-columns">articles table — narrated video columns</h3>
+      <table>
+        <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+        <tr>
+          <td><code>video_narrated_url</code></td>
+          <td>TEXT</td>
+          <td>URL of the most recent generated video. Legacy field — superseded by the <code>url</code> field inside <code>video_narrated_runs</code>. Kept for backwards compatibility.</td>
+        </tr>
+        <tr>
+          <td><code>video_narrated_script</code></td>
+          <td>TEXT</td>
+          <td>JSON array of narration segment strings from the latest run. Populated during Step 1 of the worker so it is available for display even before rendering completes.</td>
+        </tr>
+        <tr>
+          <td><code>video_narrated_runs</code></td>
+          <td>TEXT</td>
+          <td>JSON array of run objects (see schema below). Newest run is prepended to the front of the array. Never overwritten — each generation adds one entry.</td>
+        </tr>
+        <tr>
+          <td><code>video_narrated_status</code></td>
+          <td>TEXT</td>
+          <td>Current generation status string. <code>NULL</code> when idle. Set to a <code>running:…</code> or <code>error:…</code> string while the worker is active. Reset to <code>NULL</code> on completion or cancellation.</td>
+        </tr>
+        <tr>
+          <td><code>video_narrated_log</code></td>
+          <td>TEXT</td>
+          <td>Live generation log. Accumulated during worker execution — includes FFmpeg output, step transitions, and error traces. Flushed periodically rather than per-line for DB efficiency. Cleared at the start of each new generation run.</td>
+        </tr>
+      </table>
+
+      <div class="callout callout-warn">
+        <strong>Status vs. NULL:</strong> The worker sets <code>video_narrated_status = NULL</code> (not an empty string)
+        on successful completion or clean cancellation. The frontend checks <code>status == null</code> to determine the
+        idle state. Any non-null value means a run is in progress or has errored.
+      </div>
+
+      <h3 id="db-run-object">Run object schema</h3>
+      <p>
+        Each element of the <code>video_narrated_runs</code> JSON array has the following structure:
+      </p>
+      <pre>{
+  "ts":              1741993020,          // Unix timestamp (int) — used as unique run ID
+  "ts_label":        "14 March 2026 21:17",
+  "url":             "https://storage.googleapis.com/bucket/articles/42/video/narrated_1741993020.mp4",
+  "params": {
+    "format":        "vertical",          // "vertical" | "square" | "landscape"
+    "voice":         "onyx",              // OpenAI TTS voice name
+    "tts_model":     "tts-1",             // "tts-1" | "tts-1-hd"
+    "script_len":    "medium",            // "short" | "medium" | "long"
+    "kb_speed":      "medium",            // Ken Burns speed: "slow" | "medium" | "fast"
+    "crf":           23,                  // FFmpeg CRF, 18–28
+    "fps":           25,                  // Output FPS, 25 or 30
+    "render_fps":    12,                  // Internal render FPS (fixed)
+    "speed":         1.35                 // Speed-up factor (fixed)
+  },
+  "segments":        ["Segment 1 text…", "Segment 2 text…", /* … 10 total */],
+  "cinemagraph_slides": [null, null, "https://…clip2.mp4", null, /* … 10 total */]
+                         // Array of 10 elements — GCS URL of cinemagraph clip used for that
+                         // slot, or null if Ken Burns was used instead
+}</pre>
+
+      <div class="callout callout-info">
+        <strong>cinemagraph_slides:</strong> This array always has exactly 10 elements (one per segment slot).
+        A non-null element means a cinemagraph clip was available and used for that slot during rendering.
+        The array is preserved for auditing and for potential future re-render support.
+      </div>
+
+      <h3 id="db-site-settings">site_settings keys</h3>
+      <p>
+        The <code>site_settings</code> table stores key/value pairs for ephemeral state that does not warrant
+        its own DB column. The narrated video component uses per-run keyed entries that incorporate both the
+        article ID and the run timestamp to allow multiple runs per article to coexist independently.
+      </p>
+      <table>
+        <tr><th>Key pattern</th><th>Description</th></tr>
+        <tr>
+          <td><code>narrated_ig_status_{article_id}_{run_ts}</code></td>
+          <td>Current Instagram posting status string for this run. Polled by the frontend.</td>
+        </tr>
+        <tr>
+          <td><code>narrated_ig_result_{article_id}_{run_ts}</code></td>
+          <td>Final Instagram posting result. Format: <code>done:https://www.instagram.com/p/…</code> on success, or <code>error:message</code> on failure.</td>
+        </tr>
+        <tr>
+          <td><code>narrated_ig_media_id_{article_id}_{run_ts}</code></td>
+          <td>Instagram <code>media_id</code> after successful publish. Used for live-check and archive operations.</td>
+        </tr>
+        <tr>
+          <td><code>yt_status_{article_id}_{run_ts}</code></td>
+          <td>Current YouTube upload status string for this run.</td>
+        </tr>
+        <tr>
+          <td><code>yt_result_{article_id}_{run_ts}</code></td>
+          <td>Final YouTube upload result. Format: <code>done:https://www.youtube.com/shorts/{video_id}</code> on success, or <code>error:message</code> on failure.</td>
+        </tr>
+        <tr>
+          <td><code>youtube_refresh_token</code></td>
+          <td>Stored OAuth 2.0 refresh token for the connected YouTube account. Written during the OAuth callback flow. Shared across all articles.</td>
+        </tr>
+        <tr>
+          <td><code>ig_activity_log_{article_id}</code></td>
+          <td>JSON array of activity log entries for this article. Narrated video entries have <code>component="narrated"</code>. Shared with any other components that log IG activity.</td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- ── 4. Generation Parameters ── -->
+    <section id="gen-params">
+      <h2>4. Generation Parameters</h2>
+      <p>
+        These parameters are submitted in the POST body of the generate route. They are stored
+        inside the run object under <code>params</code> for provenance tracking.
+      </p>
+      <table>
+        <tr><th>Parameter</th><th>Type</th><th>Values</th><th>Default</th><th>Description</th></tr>
+        <tr>
+          <td><code>format</code></td>
+          <td>string</td>
+          <td><code>vertical</code>, <code>square</code>, <code>landscape</code></td>
+          <td><code>vertical</code></td>
+          <td>Output video dimensions. Vertical = 720×1280 (9:16, ideal for Reels/Shorts). Square = 1080×1080 (1:1). Landscape = 1280×720 (16:9).</td>
+        </tr>
+        <tr>
+          <td><code>voice</code></td>
+          <td>string</td>
+          <td><code>onyx</code>, <code>nova</code>, <code>alloy</code>, <code>echo</code>, <code>fable</code>, <code>shimmer</code></td>
+          <td><code>onyx</code></td>
+          <td>OpenAI TTS voice. Each has a distinct character: onyx is deep/authoritative, nova is warm/conversational, alloy is neutral, echo is reserved, fable is expressive, shimmer is bright.</td>
+        </tr>
+        <tr>
+          <td><code>tts_model</code></td>
+          <td>string</td>
+          <td><code>tts-1</code>, <code>tts-1-hd</code></td>
+          <td><code>tts-1</code></td>
+          <td>OpenAI TTS model quality tier. <code>tts-1</code> is faster and cheaper (~$0.015/1K chars). <code>tts-1-hd</code> produces higher-fidelity audio (~$0.03/1K chars).</td>
+        </tr>
+        <tr>
+          <td><code>script_len</code></td>
+          <td>string</td>
+          <td><code>short</code>, <code>medium</code>, <code>long</code></td>
+          <td><code>medium</code></td>
+          <td>Target length of each segment. Short ≈ 3 sentences, medium ≈ 5, long ≈ 7. Controls the GPT-4.1-mini prompt instruction. Affects total video duration.</td>
+        </tr>
+        <tr>
+          <td><code>kb_speed</code></td>
+          <td>string</td>
+          <td><code>slow</code>, <code>medium</code>, <code>fast</code></td>
+          <td><code>medium</code></td>
+          <td>Ken Burns zoom/pan speed for still-image slides. Mapped to a zoom rate multiplier in the FFmpeg <code>zoompan</code> filter. Does not affect cinemagraph slides.</td>
+        </tr>
+        <tr>
+          <td><code>crf</code></td>
+          <td>integer</td>
+          <td>18–28</td>
+          <td>23</td>
+          <td>FFmpeg Constant Rate Factor for H.264 encoding. Lower values = higher quality + larger file. 18 is near-visually-lossless; 28 is the practical maximum for acceptable quality. Each unit ≈ 12% file size change.</td>
+        </tr>
+        <tr>
+          <td><code>fps</code></td>
+          <td>integer</td>
+          <td>25, 30</td>
+          <td>25</td>
+          <td>Output video frame rate. Affects smoothness of the final video. 25 fps is standard for PAL/European formats; 30 fps for NTSC/US formats.</td>
+        </tr>
+        <tr>
+          <td><code>render_fps</code></td>
+          <td>integer</td>
+          <td>12 (fixed)</td>
+          <td>12</td>
+          <td>Internal rendering frame rate used for the Ken Burns frame generation step. Fixed at 12 to significantly reduce FFmpeg processing time. The output is interpolated to the target <code>fps</code> during mux.</td>
+        </tr>
+        <tr>
+          <td><code>speed</code></td>
+          <td>float</td>
+          <td>1.35 (fixed)</td>
+          <td>1.35</td>
+          <td>Post-processing speed-up factor applied to the final concatenated video. Implemented via FFmpeg <code>setpts=PTS/1.35</code> (video) and <code>atempo=1.35</code> (audio). Reduces total duration by ~26% and tightens pacing.</td>
+        </tr>
+      </table>
+
+      <div class="callout callout-tip">
+        <strong>Duration estimate:</strong> Each of the 10 segments will have TTS audio of roughly
+        8–24 seconds depending on <code>script_len</code>. Total pre-speed-up duration is approximately
+        80–240 seconds. After the 1.35× speed-up, final duration is approximately 60–180 seconds
+        (1–3 minutes).
+      </div>
+    </section>
+
+    <!-- ── 5. Environment Variables ── -->
+    <section id="env-vars">
+      <h2>5. Environment Variables</h2>
+      <table>
+        <tr><th>Variable</th><th>Required</th><th>Description</th></tr>
+        <tr>
+          <td><code>OPENAI_API_KEY</code></td>
+          <td>Required</td>
+          <td>Used for both GPT-4.1-mini (script generation) and OpenAI TTS (audio synthesis). Without this key, generation will fail at Step 1.</td>
+        </tr>
+        <tr>
+          <td><code>GCS_BUCKET_NAME</code></td>
+          <td>Required</td>
+          <td>Target GCS bucket for video upload. Videos are stored at <code>articles/{id}/video/narrated_{ts}.mp4</code>.</td>
+        </tr>
+        <tr>
+          <td><code>GCS_PATH_PREFIX</code></td>
+          <td>Optional</td>
+          <td>Optional prefix prepended to all GCS object paths. Useful for multi-environment bucket sharing (e.g., <code>staging/</code>).</td>
+        </tr>
+        <tr>
+          <td><code>IG_USER_ID</code></td>
+          <td>Required for IG</td>
+          <td>Instagram Business Account user ID. Used as the target for the Graph API <code>/{ig_user_id}/media</code> and <code>/{ig_user_id}/media_publish</code> endpoints.</td>
+        </tr>
+        <tr>
+          <td><code>IG_ACCESS_TOKEN</code></td>
+          <td>Required for IG</td>
+          <td>Long-lived Instagram Graph API access token. Must have <code>instagram_basic</code>, <code>instagram_content_publish</code>, and <code>pages_read_engagement</code> permissions.</td>
+        </tr>
+        <tr>
+          <td><code>GOOGLE_CLIENT_ID</code></td>
+          <td>Required for YouTube</td>
+          <td>Google OAuth 2.0 client ID from the Cloud Console. Used in the YouTube OAuth authorization URL and token exchange.</td>
+        </tr>
+        <tr>
+          <td><code>GOOGLE_CLIENT_SECRET</code></td>
+          <td>Required for YouTube</td>
+          <td>Google OAuth 2.0 client secret. Used in the token exchange POST to <code>oauth2.googleapis.com/token</code>.</td>
+        </tr>
+        <tr>
+          <td><code>SITE_URL</code></td>
+          <td>Required for YouTube</td>
+          <td>The public base URL of the app (e.g., <code>https://admin.example.com</code>). Used to construct the OAuth redirect URI: <code>{SITE_URL}/admin/youtube-oauth-callback</code>.</td>
+        </tr>
+      </table>
+
+      <div class="callout callout-warn">
+        <strong>FFmpeg dependency:</strong> FFmpeg must be installed and available on the system <code>PATH</code>.
+        The worker uses <code>ffmpeg</code> and <code>ffprobe</code> as subprocess commands. There is no Python
+        FFmpeg wrapper library — all calls are raw <code>subprocess.run()</code> or <code>subprocess.Popen()</code>
+        invocations.
+      </div>
+    </section>
+
+    <!-- ── 6. Backend Routes ── -->
+    <section id="backend-routes">
+      <h2>6. Backend Routes</h2>
+
+      <h3 id="route-generate">Generation and status routes</h3>
+
+      <h4><span class="method-badge post">POST</span><code>/admin/articles/&lt;id&gt;/generate-narrated-video</code></h4>
+      <p>Starts a new narrated video generation run. Validates that no run is already in progress, then spawns <code>_narrated_video_worker</code> in a daemon thread.</p>
+      <p><strong>Request body (JSON):</strong></p>
+      <pre>{
+  "format":     "vertical",   // required
+  "voice":      "onyx",       // required
+  "tts_model":  "tts-1",      // required
+  "script_len": "medium",     // required
+  "kb_speed":   "medium",     // required
+  "crf":        23,           // required, integer 18–28
+  "fps":        25            // required, 25 or 30
+}</pre>
+      <p><strong>Response (JSON):</strong></p>
+      <pre>{ "ok": true }                       // generation started
+{ "error": "already running" }       // if status is non-null (concurrent guard)</pre>
+
+      <h4><span class="method-badge get">GET</span><code>/admin/articles/&lt;id&gt;/narrated-video-status</code></h4>
+      <p>Returns the current generation state. Polled by the frontend every ~2 seconds during generation.</p>
+      <p><strong>Response (JSON):</strong></p>
+      <pre>{
+  "status": "running:tts:3/10",    // or null when idle, or "error:…"
+  "runs":   [ /* run objects */ ],
+  "script": [ /* segment strings from latest run */ ]
+}</pre>
+
+      <h4><span class="method-badge post">POST</span><code>/admin/articles/&lt;id&gt;/cancel-narrated-video</code></h4>
+      <p>Signals cancellation by writing a special status value to the DB. The worker checks for this signal between steps and exits cleanly if detected.</p>
+      <pre>Response: { "ok": true }</pre>
+
+      <h4><span class="method-badge get">GET</span><code>/admin/articles/&lt;id&gt;/video-data</code></h4>
+      <p>Returns narrated video data for the article. Used for initial page load hydration and after-run refresh.</p>
+      <pre>Response: {
+  "narrated_runs":   [ /* run objects */ ],
+  "narrated_status": null,
+  "narrated_script": [ /* segments */ ]
+}</pre>
+
+      <h3 id="route-instagram">Instagram routes</h3>
+
+      <h4><span class="method-badge post">POST</span><code>/admin/articles/&lt;id&gt;/post-narrated-to-instagram</code></h4>
+      <p>Starts <code>_post_narrated_reel_worker</code> in a background thread for the specified run.</p>
+      <pre>Request body: { "video_url": "https://…", "caption": "…", "run_ts": 1741993020 }
+Response:     { "ok": true }</pre>
+
+      <h4><span class="method-badge get">GET</span><code>/admin/articles/&lt;id&gt;/narrated-ig-status?ts=&lt;run_ts&gt;</code></h4>
+      <p>Returns current Instagram posting status for a specific run (keyed by <code>run_ts</code>).</p>
+      <pre>Response: { "status": "posting…", "result": null }
+         or { "status": "done",    "result": "done:https://www.instagram.com/p/…" }</pre>
+
+      <h4><span class="method-badge post">POST</span><code>/admin/articles/&lt;id&gt;/check-narrated-post-live</code></h4>
+      <p>Polls Instagram to verify the post is publicly accessible. Uses the stored <code>media_id</code>.</p>
+      <pre>Request body: { "run_ts": 1741993020 }
+Response:     { "live": true, "permalink": "https://www.instagram.com/p/…" }
+          or  { "live": false, "reason": "not yet indexed" }</pre>
+
+      <h4><span class="method-badge post">POST</span><code>/admin/articles/&lt;id&gt;/archive-narrated-post</code></h4>
+      <p>Archives (hides from profile) the Instagram post for a specific run. Uses the stored <code>media_id</code>.</p>
+      <pre>Request body: { "run_ts": 1741993020 }
+Response:     { "ok": true }</pre>
+
+      <h4><span class="method-badge post">POST</span><code>/admin/articles/&lt;id&gt;/generate-ig-caption</code></h4>
+      <p>Generates an Instagram caption for the article using GPT-4.1-mini. The <code>component</code> field identifies the caller so the route can tailor the prompt.</p>
+      <pre>Request body: { "component": "narrated" }
+Response:     { "caption": "…generated text…" }</pre>
+
+      <h3 id="route-youtube">YouTube routes</h3>
+
+      <h4><span class="method-badge post">POST</span><code>/admin/articles/&lt;id&gt;/post-to-youtube</code></h4>
+      <p>Starts <code>_upload_to_youtube_worker</code> in a background thread for the specified run.</p>
+      <pre>Request body: {
+  "video_url":   "https://…",
+  "title":       "Article Title | Obelisk Stamps",
+  "description": "…video description…",
+  "run_ts":      1741993020
+}
+Response: { "ok": true }</pre>
+
+      <h4><span class="method-badge get">GET</span><code>/admin/articles/&lt;id&gt;/youtube-status?ts=&lt;run_ts&gt;</code></h4>
+      <p>Returns current YouTube upload status for a specific run.</p>
+      <pre>Response: { "status": "uploading…", "result": null }
+         or { "status": "done",       "result": "done:https://www.youtube.com/shorts/dQw4w9WgXcQ" }</pre>
+
+      <h4><span class="method-badge get">GET</span><code>/admin/youtube-connect</code></h4>
+      <p>Constructs the Google OAuth authorization URL with <code>https://www.googleapis.com/auth/youtube.upload</code> scope and redirects the browser to Google's consent page.</p>
+
+      <h4><span class="method-badge get">GET</span><code>/admin/youtube-oauth-callback</code></h4>
+      <p>Receives the authorization <code>code</code> query parameter, exchanges it for a refresh token via POST to <code>https://oauth2.googleapis.com/token</code>, and stores the refresh token in <code>site_settings</code> under the key <code>youtube_refresh_token</code>.</p>
+
+      <h3 id="route-misc">Miscellaneous</h3>
+      <div class="callout callout-info">
+        All routes under <code>/admin/…</code> require authentication via Flask-Login (<code>@login_required</code>)
+        and admin role (<code>@admin_required</code>). Unauthenticated requests receive a redirect to the login page.
+      </div>
+    </section>
+
+    <!-- ── 7. Worker Pipeline ── -->
+    <section id="worker">
+      <h2>7. Worker Pipeline</h2>
+      <p>
+        The worker function <code>_narrated_video_worker(article_id, params)</code> runs in a daemon thread.
+        It writes status updates to <code>video_narrated_status</code> between each step so the frontend
+        can display a progress bar. All temporary files are created in the system temp directory and
+        cleaned up after a successful GCS upload.
+      </p>
+
+      <div class="pipeline-step" id="step1">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Script generation — <code>running:script</code></h4>
+          <p>
+            The article's <code>title</code> and HTML <code>content</code> are fetched from the DB.
+            The HTML is stripped of tags and truncated to 8,000 characters to stay within GPT context limits.
+          </p>
+          <p>
+            A GPT-4.1-mini chat completion is requested with a system prompt that instructs it to produce
+            <strong>exactly 10 narration segments</strong>. The <code>script_len</code> parameter maps to a
+            target-sentences instruction in the prompt: short ≈ 3 sentences, medium ≈ 5, long ≈ 7.
+          </p>
+          <p>The response is parsed into a list of 10 strings and written to <code>video_narrated_script</code>.</p>
+          <pre># Example status during this step
+video_narrated_status = "running:script"
+
+# On completion
+video_narrated_script = '["Welcome to our deep dive into…", "The first issue…", …]'</pre>
+        </div>
+      </div>
+
+      <div class="pipeline-step" id="step2">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>TTS per segment — <code>running:tts:N/10</code></h4>
+          <p>
+            For each of the 10 segments (N = 1 through 10), the OpenAI TTS API is called with:
+          </p>
+          <ul>
+            <li><code>model</code> = <code>params["tts_model"]</code> (<code>tts-1</code> or <code>tts-1-hd</code>)</li>
+            <li><code>voice</code> = <code>params["voice"]</code></li>
+            <li><code>input</code> = segment text string</li>
+          </ul>
+          <p>
+            The response audio is written to a temporary MP3 file. The exact duration of the audio file
+            is then determined by running <code>ffprobe</code> and parsing the <code>duration</code> field
+            from the format metadata. This duration drives the video clip length in the next step.
+          </p>
+          <pre># Status format (N is 1-indexed)
+video_narrated_status = "running:tts:3/10"</pre>
+        </div>
+      </div>
+
+      <div class="pipeline-step" id="step3">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Frame rendering per segment — <code>running:clip:N/10</code></h4>
+          <p>
+            For each segment, the worker selects a visual source and renders a silent video clip
+            of the exact duration determined in Step 2.
+          </p>
+
+          <h4>Source selection logic</h4>
+          <p>
+            The worker checks <code>cinemagraph_slides[N]</code> from the article's cinemagraph data.
+            If a GCS URL is present for slot N, the <strong>cinemagraph branch</strong> is used.
+            Otherwise, the <strong>Ken Burns branch</strong> is used with the carousel image for slot N
+            (or the last available carousel image if slot N doesn't exist).
+          </p>
+
+          <h4>Cinemagraph branch</h4>
+          <p>The cinemagraph clip (a looping MP4 from GCS) is used as input with infinite loop enabled:</p>
+          <pre>ffmpeg -stream_loop -1 -i cinemagraph.mp4 \
+  -vf "scale=S:S,crop=W:H,fps=RENDER_FPS" \
+  -t DURATION \
+  -an segment_N_video.mp4</pre>
+          <p>
+            Where <code>S×S</code> is a square intermediate size, and <code>W×H</code> is the target output
+            resolution for the selected format. The <code>fps</code> filter is applied <em>before</em> the
+            scale filter to limit the number of frames being scaled.
+          </p>
+
+          <h4>Ken Burns branch</h4>
+          <p>A still image is animated with a slow zoom-and-pan (Ken Burns effect) using the FFmpeg
+          <code>zoompan</code> filter:</p>
+          <pre>ffmpeg -loop 1 -i carousel_image.jpg \
+  -vf "fps=RENDER_FPS,scale=W*2:H*2,zoompan=z='min(zoom+SPEED,1.5)':d=FRAMES:s=WxH" \
+  -t DURATION \
+  -an segment_N_video.mp4</pre>
+          <p>
+            Key ordering: <code>fps</code> filter is applied <strong>before</strong> <code>scale</code>
+            to reduce the number of frames that must pass through the expensive scale operation.
+            <code>RENDER_FPS = 12</code> (fixed), so the filter chain processes only 12 frames per second
+            regardless of the final output FPS.
+          </p>
+          <p>
+            <code>SPEED</code> is the Ken Burns zoom increment per frame, derived from <code>kb_speed</code>:
+          </p>
+          <table>
+            <tr><th><code>kb_speed</code></th><th>Zoom increment per frame</th></tr>
+            <tr><td><code>slow</code></td><td>0.0005</td></tr>
+            <tr><td><code>medium</code></td><td>0.001</td></tr>
+            <tr><td><code>fast</code></td><td>0.002</td></tr>
+          </table>
+
+          <pre># Status format
+video_narrated_status = "running:clip:5/10"</pre>
+        </div>
+      </div>
+
+      <div class="pipeline-step" id="step4">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>Mux audio + video per segment</h4>
+          <p>
+            Each silent segment video (from Step 3) is combined with its TTS audio (from Step 2) using
+            FFmpeg's <code>-shortest</code> flag to ensure they are exactly duration-matched:
+          </p>
+          <pre>ffmpeg -i segment_N_video.mp4 -i segment_N_audio.mp3 \
+  -c:v copy -c:a aac \
+  -shortest \
+  segment_N_muxed.mp4</pre>
+          <p>
+            The video stream is copied without re-encoding (<code>-c:v copy</code>) to avoid quality
+            loss and speed up this step. Audio is encoded to AAC for compatibility.
+          </p>
+        </div>
+      </div>
+
+      <div class="pipeline-step" id="step5">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h4>Concatenate all segments — <code>running:merge</code></h4>
+          <p>
+            A <code>concat.txt</code> file is written to the temp directory listing all 10 muxed
+            segment paths in order:
+          </p>
+          <pre>file '/tmp/narrated_42_1741993020/segment_0_muxed.mp4'
+file '/tmp/narrated_42_1741993020/segment_1_muxed.mp4'
+...
+file '/tmp/narrated_42_1741993020/segment_9_muxed.mp4'</pre>
+          <p>FFmpeg's concat demuxer joins them into a single MP4:</p>
+          <pre>ffmpeg -f concat -safe 0 -i concat.txt \
+  -c copy \
+  full_video.mp4</pre>
+          <p>Stream copy is used again — no re-encoding occurs at this step.</p>
+        </div>
+      </div>
+
+      <div class="pipeline-step" id="step6">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <h4>Speed-up 1.35× — <code>running:speed</code></h4>
+          <p>
+            The concatenated video is sped up using two FFmpeg filters applied simultaneously:
+          </p>
+          <pre>ffmpeg -i full_video.mp4 \
+  -vf "setpts=PTS/1.35" \
+  -af "atempo=1.35" \
+  -c:v libx264 -crf CRF -preset medium \
+  -c:a aac \
+  -r FPS \
+  final_sped_up.mp4</pre>
+          <p>
+            <code>setpts=PTS/1.35</code> speeds up the video stream by manipulating presentation timestamps.
+            <code>atempo=1.35</code> speeds up audio while preserving pitch (FFmpeg's built-in time-scale
+            modification). The video must be re-encoded at this step because PTS manipulation requires
+            a full encode pass. CRF and FPS from the user's parameters are applied here.
+          </p>
+          <p>After this step, all temporary files (per-segment video, audio, and muxed clips) are deleted.</p>
+        </div>
+      </div>
+
+      <div class="pipeline-step" id="step7">
+        <div class="step-num">7</div>
+        <div class="step-body">
+          <h4>Upload to GCS — <code>running:upload</code></h4>
+          <p>
+            The final MP4 is uploaded to GCS using the shared <code>upload_bytes_to_gcs()</code> helper.
+            The GCS object path is:
+          </p>
+          <pre>articles/{article_id}/video/narrated_{ts}.mp4</pre>
+          <p>
+            After successful upload, a run object is constructed (see schema in Section 3) and
+            <strong>prepended</strong> to the <code>video_narrated_runs</code> JSON array in the DB.
+            The <code>video_narrated_url</code> column is also updated to the new URL for backwards
+            compatibility. The status is set to <code>NULL</code> to signal completion.
+          </p>
+          <p>The local temp MP4 file is deleted after upload.</p>
+        </div>
+      </div>
+
+      <h3 id="status-strings">Status strings reference</h3>
+      <table>
+        <tr><th>Status value</th><th>Meaning</th><th>Progress %</th></tr>
+        <tr><td><code>null</code></td><td>Idle — no generation in progress</td><td>—</td></tr>
+        <tr><td><code>running:script</code></td><td>GPT-4.1-mini generating narration script</td><td>5%</td></tr>
+        <tr><td><code>running:tts:1/10</code> … <code>running:tts:10/10</code></td><td>TTS synthesis for segment N</td><td>10%–40%</td></tr>
+        <tr><td><code>running:clip:1/10</code> … <code>running:clip:10/10</code></td><td>Frame rendering for segment N</td><td>40%–75%</td></tr>
+        <tr><td><code>running:merge</code></td><td>Concatenating all 10 segments</td><td>80%</td></tr>
+        <tr><td><code>running:speed</code></td><td>Applying 1.35× speed-up</td><td>90%</td></tr>
+        <tr><td><code>running:upload</code></td><td>Uploading final MP4 to GCS</td><td>95%</td></tr>
+        <tr><td><code>error:…</code></td><td>Generation failed; remainder of string is error message</td><td>—</td></tr>
+        <tr><td><code>cancelled</code></td><td>Cancelled by user via cancel route</td><td>—</td></tr>
+      </table>
+
+      <div class="callout callout-warn">
+        <strong>Cancellation check:</strong> The worker checks for a <code>cancelled</code> status between
+        major steps (after script gen, after each TTS call, after each render). It does not interrupt
+        FFmpeg mid-execution. If a step is currently running, cancellation takes effect after that
+        step completes.
+      </div>
+    </section>
+
+    <!-- ── 8. Instagram Reels Flow ── -->
+    <section id="ig-flow">
+      <h2>8. Instagram Reels Flow</h2>
+      <p>
+        The function <code>_post_narrated_reel_worker(article_id, video_url, caption, run_ts)</code>
+        runs in a daemon thread and implements the full Instagram Graph API Reels publishing sequence.
+      </p>
+
+      <ol class="flow">
+        <li>
+          <strong>Create REELS container:</strong> POST to
+          <code>https://graph.facebook.com/v19.0/{ig_user_id}/media</code> with:
+          <ul>
+            <li><code>media_type=REELS</code></li>
+            <li><code>video_url</code> — must be the public GCS URL (Instagram fetches the video server-side)</li>
+            <li><code>caption</code> — the user-provided caption text</li>
+            <li><code>access_token</code> — from <code>IG_ACCESS_TOKEN</code> env var</li>
+          </ul>
+          Returns a <code>creation_id</code>.
+        </li>
+        <li>
+          <strong>Poll container status:</strong> GET
+          <code>https://graph.facebook.com/v19.0/{creation_id}?fields=status_code</code>
+          repeatedly with exponential back-off (initial 5s, max 30s).
+          Expected progression: <code>EXPIRED</code> → <code>IN_PROGRESS</code> → <code>FINISHED</code>.
+          If <code>status_code = ERROR</code>, log and abort.
+        </li>
+        <li>
+          <strong>Publish:</strong> POST to
+          <code>https://graph.facebook.com/v19.0/{ig_user_id}/media_publish</code> with
+          <code>creation_id</code> and <code>access_token</code>.
+          Returns a <code>media_id</code>.
+        </li>
+        <li>
+          <strong>Verify (on publish error):</strong> If the publish call returns an error, wait 10 seconds
+          then GET <code>/{ig_user_id}/media?limit=3</code> to check if the post actually went through
+          (Instagram sometimes errors even on success). If the most recent post matches, treat as success.
+        </li>
+        <li>
+          <strong>Fetch permalink:</strong> GET
+          <code>https://graph.facebook.com/v19.0/{media_id}?fields=permalink</code>
+          to obtain the public Instagram URL.
+        </li>
+        <li>
+          <strong>Persist result:</strong> Write
+          <code>narrated_ig_result_{id}_{ts} = "done:https://www.instagram.com/p/…"</code>
+          and <code>narrated_ig_media_id_{id}_{ts} = media_id</code> to <code>site_settings</code>.
+          Append an entry to <code>ig_activity_log_{article_id}</code> with <code>component="narrated"</code>.
+        </li>
+      </ol>
+
+      <div class="callout callout-warn">
+        <strong>Video URL requirement:</strong> Instagram's server must be able to fetch the video URL
+        directly. GCS URLs work as long as the bucket objects are publicly readable. Private or
+        signed URLs will cause the container to enter <code>ERROR</code> status.
+      </div>
+
+      <h3>IG status strings</h3>
+      <table>
+        <tr><th>Status value in site_settings</th><th>Meaning</th></tr>
+        <tr><td><code>creating container</code></td><td>POSTing to /media to create REELS container</td></tr>
+        <tr><td><code>waiting for instagram (queued)</code></td><td>Container exists, polling status_code = EXPIRED/IN_PROGRESS</td></tr>
+        <tr><td><code>publishing</code></td><td>Container FINISHED, POSTing to /media_publish</td></tr>
+        <tr><td><code>verifying</code></td><td>Checking recent media after a publish error</td></tr>
+        <tr><td><code>done</code></td><td>Result is set; final result stored in <code>narrated_ig_result_…</code></td></tr>
+        <tr><td><code>error</code></td><td>Fatal failure; error detail in <code>narrated_ig_result_…</code></td></tr>
+      </table>
+    </section>
+
+    <!-- ── 9. YouTube Shorts Flow ── -->
+    <section id="yt-flow">
+      <h2>9. YouTube Shorts Flow</h2>
+      <p>
+        The function <code>_upload_to_youtube_worker(article_id, video_url, title, description, run_ts)</code>
+        runs in a daemon thread and implements the YouTube Data API v3 resumable upload flow.
+      </p>
+
+      <ol class="flow">
+        <li>
+          <strong>Refresh access token:</strong> POST to
+          <code>https://oauth2.googleapis.com/token</code> with:
+          <ul>
+            <li><code>client_id</code>, <code>client_secret</code> from env vars</li>
+            <li><code>refresh_token</code> from <code>site_settings["youtube_refresh_token"]</code></li>
+            <li><code>grant_type=refresh_token</code></li>
+          </ul>
+          Returns a short-lived <code>access_token</code>.
+        </li>
+        <li>
+          <strong>Download video to temp file:</strong> Stream the GCS video URL to a local temp file
+          using <code>requests.get(video_url, stream=True)</code>. Required because the YouTube API
+          expects a seekable file object for resumable uploads.
+        </li>
+        <li>
+          <strong>Initiate resumable upload:</strong> POST to
+          <code>https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&amp;part=snippet,status</code>
+          with JSON body:
+          <pre>{
+  "snippet": {
+    "title":       "…",
+    "description": "…",
+    "tags":        ["stamps", "philately", "obelisk"],
+    "categoryId":  "26"    // Howto &amp; Style
+  },
+  "status": {
+    "privacyStatus": "public"
+  }
+}</pre>
+          Additional headers: <code>X-Upload-Content-Type: video/mp4</code>,
+          <code>X-Upload-Content-Length: {file_size}</code>.
+          Response header <code>Location</code> contains the resumable upload URL.
+        </li>
+        <li>
+          <strong>Upload file:</strong> PUT to the resumable upload URL with the file bytes.
+          Response body contains the created video resource including <code>id</code> (the video ID).
+        </li>
+        <li>
+          <strong>Persist result:</strong> Write
+          <code>yt_result_{id}_{ts} = "done:https://www.youtube.com/shorts/{video_id}"</code>
+          to <code>site_settings</code>. Delete the local temp file.
+        </li>
+      </ol>
+
+      <h3>YouTube OAuth flow</h3>
+      <ol class="flow">
+        <li><strong>/admin/youtube-connect:</strong> Build authorization URL with scope <code>https://www.googleapis.com/auth/youtube.upload</code> and <code>access_type=offline</code> (required for refresh token). Redirect browser to Google's consent page.</li>
+        <li><strong>User grants consent:</strong> Google redirects to <code>{SITE_URL}/admin/youtube-oauth-callback?code=…</code></li>
+        <li><strong>/admin/youtube-oauth-callback:</strong> Exchange the <code>code</code> for tokens via POST to <code>oauth2.googleapis.com/token</code>. Extract and store the <code>refresh_token</code> in <code>site_settings</code>. The refresh token persists until revoked — the OAuth flow only needs to be run once per YouTube account.</li>
+      </ol>
+
+      <div class="callout callout-warn">
+        <strong>YouTube quota:</strong> The YouTube Data API v3 has a daily quota of 10,000 units.
+        A single video upload costs approximately 1,600 units, allowing roughly 6 uploads per day
+        before the quota is exhausted. Quota resets at midnight Pacific Time.
+      </div>
+
+      <h3>YT status strings</h3>
+      <table>
+        <tr><th>Status value</th><th>Meaning</th></tr>
+        <tr><td><code>refreshing token</code></td><td>Obtaining fresh access token</td></tr>
+        <tr><td><code>downloading video</code></td><td>Streaming video from GCS to local temp file</td></tr>
+        <tr><td><code>initiating upload</code></td><td>Creating resumable upload session</td></tr>
+        <tr><td><code>uploading</code></td><td>PUT to resumable upload URL in progress</td></tr>
+        <tr><td><code>done</code></td><td>Upload complete; result stored in <code>yt_result_…</code></td></tr>
+        <tr><td><code>error</code></td><td>Fatal failure; error detail in <code>yt_result_…</code></td></tr>
+      </table>
+    </section>
+
+    <!-- ── 10. Frontend HTML ── -->
+    <section id="frontend-html">
+      <h2>10. Frontend HTML</h2>
+      <p>
+        All HTML for this component lives within a dedicated section in
+        <code>templates/admin/article_edit.html</code>. The structure is divided into four logical areas.
+      </p>
+
+      <h3 id="html-controls">Controls panel</h3>
+      <p>
+        A card containing the generation parameter form. All inputs are disabled during generation.
+      </p>
+      <pre>&lt;!-- Format select --&gt;
+&lt;select id="narrated-format"&gt;
+  &lt;option value="vertical"&gt;Vertical 9:16 (720×1280)&lt;/option&gt;
+  &lt;option value="square"&gt;Square 1:1 (1080×1080)&lt;/option&gt;
+  &lt;option value="landscape"&gt;Landscape 16:9 (1280×720)&lt;/option&gt;
+&lt;/select&gt;
+
+&lt;!-- Voice select --&gt;
+&lt;select id="narrated-voice"&gt;
+  &lt;option value="onyx"&gt;Onyx (deep)&lt;/option&gt;
+  &lt;option value="nova"&gt;Nova (warm)&lt;/option&gt;
+  &lt;option value="alloy"&gt;Alloy (neutral)&lt;/option&gt;
+  &lt;option value="echo"&gt;Echo (reserved)&lt;/option&gt;
+  &lt;option value="fable"&gt;Fable (expressive)&lt;/option&gt;
+  &lt;option value="shimmer"&gt;Shimmer (bright)&lt;/option&gt;
+&lt;/select&gt;
+
+&lt;!-- Generate button + kebab menu --&gt;
+&lt;button id="narrated-generate-btn"&gt;Generate Narrated Video&lt;/button&gt;
+&lt;div class="dropdown"&gt;
+  &lt;button id="narrated-kebab-btn" data-bs-toggle="dropdown"&gt;⋮&lt;/button&gt;
+  &lt;ul class="dropdown-menu"&gt;
+    &lt;li&gt;&lt;a class="dropdown-item" id="narrated-cancel-btn"&gt;Cancel generation&lt;/a&gt;&lt;/li&gt;
+  &lt;/ul&gt;
+&lt;/div&gt;</pre>
+
+      <h3 id="html-progress">Progress bar</h3>
+      <p>
+        Visible only during generation (<code>d-none</code> class toggled by JS). Contains a
+        Bootstrap progress bar and a discrete cancel button (×) inline at the right.
+      </p>
+      <pre>&lt;div id="narrated-progress-row" class="d-none"&gt;
+  &lt;div class="progress"&gt;
+    &lt;div id="narrated-progress-bar"
+         class="progress-bar progress-bar-striped progress-bar-animated"
+         style="width: 0%"&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+  &lt;span id="narrated-status-label"&gt;&lt;/span&gt;
+  &lt;button id="narrated-cancel-x-btn" title="Cancel generation"&gt;×&lt;/button&gt;
+&lt;/div&gt;</pre>
+
+      <h3 id="html-accordion">Runs accordion</h3>
+      <p>
+        A Bootstrap accordion container. Each run is injected as a new accordion item by the JS
+        <code>buildRunItem(run)</code> function. The accordion is empty on first load if no runs exist.
+      </p>
+      <pre>&lt;div id="narrated-runs-accordion" class="accordion"&gt;
+  &lt;!-- Populated dynamically by buildRunItem() --&gt;
+&lt;/div&gt;</pre>
+      <p>Each accordion item header displays:</p>
+      <ul>
+        <li>Run timestamp label (e.g., "14 March 2026 21:17")</li>
+        <li>Format badge (blue for vertical, gray for others)</li>
+        <li>Voice badge (color-coded per voice)</li>
+        <li>Speed badge (green, always "1.35×")</li>
+        <li>Cinemagraph badge (cyan, shown only if any cinemagraph slots were used)</li>
+      </ul>
+
+      <h3 id="html-ig-section">Instagram section (per run)</h3>
+      <p>
+        Rendered inside each accordion item body. Contains caption authoring, posting controls,
+        and status display.
+      </p>
+      <pre>&lt;!-- Caption area --&gt;
+&lt;textarea class="narrated-ig-caption" maxlength="2200"&gt;&lt;/textarea&gt;
+&lt;small&gt;&lt;span class="narrated-caption-count"&gt;0&lt;/span&gt;/2200&lt;/small&gt;
+&lt;a class="narrated-generate-caption-link" href="#"&gt;Generate caption (~$0.01)&lt;/a&gt;
+
+&lt;!-- Post button --&gt;
+&lt;button class="narrated-post-ig-btn"
+        data-video-url="https://…"
+        data-run-ts="1741993020"&gt;
+  Post to Instagram Reels
+&lt;/button&gt;
+
+&lt;!-- Status display (shown during/after posting) --&gt;
+&lt;div class="narrated-ig-status-row d-none"&gt;
+  &lt;div class="progress"&gt;…&lt;/div&gt;
+  &lt;span class="narrated-ig-status-label"&gt;&lt;/span&gt;
+&lt;/div&gt;
+
+&lt;!-- Success state --&gt;
+&lt;div class="narrated-ig-success-row d-none"&gt;
+  &lt;a class="narrated-ig-permalink" href="#" target="_blank"&gt;View on Instagram&lt;/a&gt;
+  &lt;button class="narrated-check-live-btn"&gt;Check if post is live&lt;/button&gt;
+  &lt;button class="narrated-archive-btn"&gt;Archive post&lt;/button&gt;
+&lt;/div&gt;</pre>
+
+      <h3 id="html-yt-section">YouTube section (per run)</h3>
+      <pre>&lt;!-- Title input (pre-filled) --&gt;
+&lt;input type="text" class="narrated-yt-title" value="{{ article.title }}"&gt;
+
+&lt;!-- Description textarea --&gt;
+&lt;textarea class="narrated-yt-description"&gt;&lt;/textarea&gt;
+
+&lt;!-- Post button (disabled if YT not connected) --&gt;
+&lt;button class="narrated-post-yt-btn"
+        data-video-url="https://…"
+        data-run-ts="1741993020"
+        {% if not yt_connected %}disabled title="Connect YouTube first"{% endif %}&gt;
+  Post to YouTube Shorts
+&lt;/button&gt;
+
+&lt;!-- Connect YouTube link (shown if not connected) --&gt;
+{% if not yt_connected %}
+&lt;a href="/admin/youtube-connect"&gt;Connect YouTube account&lt;/a&gt;
+{% endif %}
+
+&lt;!-- Status display --&gt;
+&lt;div class="narrated-yt-status-row d-none"&gt;…&lt;/div&gt;
+
+&lt;!-- Success state --&gt;
+&lt;div class="narrated-yt-success-row d-none"&gt;
+  &lt;a class="narrated-yt-result-link" href="#" target="_blank"&gt;View on YouTube&lt;/a&gt;
+&lt;/div&gt;</pre>
+
+      <div class="callout callout-info">
+        <strong>YouTube connection state:</strong> The template variable <code>yt_connected</code> is
+        set to <code>True</code> if <code>site_settings["youtube_refresh_token"]</code> is non-null.
+        It is injected by the article edit route before rendering the template.
+      </div>
+    </section>
+
+    <!-- ── 11. Frontend JavaScript ── -->
+    <section id="frontend-js">
+      <h2>11. Frontend JavaScript</h2>
+      <p>
+        All JavaScript for this component is embedded in a <code>&lt;script&gt;</code> block at the
+        bottom of <code>article_edit.html</code>. It uses no external JS libraries beyond Bootstrap 5.
+      </p>
+
+      <h3 id="js-polling">Status polling</h3>
+      <p>
+        When generation is active, the frontend polls <code>/admin/articles/{id}/narrated-video-status</code>
+        every 2 seconds. Polling is started by the generate button click handler and stopped when
+        <code>status === null</code> (idle) or <code>status.startsWith("error")</code>.
+      </p>
+      <pre>let _narratedPollTimer = null;
+
+function _narratedStartPolling() {
+  _narratedPollTimer = setInterval(async () => {
+    const data = await fetch(`/admin/articles/${ARTICLE_ID}/narrated-video-status`).then(r => r.json());
+    _narratedApplyStatus(data.status, data.runs, data.script);
+    if (data.status === null || data.status.startsWith("error")) {
+      clearInterval(_narratedPollTimer);
+      _narratedPollTimer = null;
+      _narratedSetIdle(data.status === null);
+    }
+  }, 2000);
+}</pre>
+
+      <h3 id="js-buildrun">buildRunItem(run)</h3>
+      <p>
+        Constructs the full Bootstrap accordion item HTML for a single run object and returns it as
+        a DOM element. Called both on initial page load (for each existing run) and after a new
+        run completes (the new run is prepended to the accordion).
+      </p>
+      <pre>function buildRunItem(run) {
+  const collapseId = `narrated-run-${run.ts}`;
+  const headerId   = `narrated-run-header-${run.ts}`;
+
+  // Build badge HTML
+  const badges = _narratedBuildBadges(run);
+
+  // Build narration script section
+  const scriptHtml = run.segments.map((seg, i) =>
+    `&lt;p&gt;&lt;strong&gt;Segment ${i + 1}:&lt;/strong&gt; ${escapeHtml(seg)}&lt;/p&gt;`
+  ).join("");
+
+  // Full accordion item HTML constructed here…
+  // Returns the assembled accordion item element
+}</pre>
+
+      <h3 id="js-badges">Run badges</h3>
+      <p>Each run header displays up to four badges constructed by <code>_narratedBuildBadges(run)</code>:</p>
+      <table>
+        <tr><th>Badge</th><th>Color</th><th>Condition</th><th>Value</th></tr>
+        <tr><td>Format</td><td>Blue (<code>bg-primary</code>) for vertical; gray for others</td><td>Always shown</td><td><code>run.params.format</code></td></tr>
+        <tr><td>Voice</td><td>Per voice: onyx=dark, nova=warning, alloy=secondary, echo=info, fable=success, shimmer=danger</td><td>Always shown</td><td><code>run.params.voice</code></td></tr>
+        <tr><td>Speed</td><td>Green (<code>bg-success</code>)</td><td>Always shown</td><td>"1.35×"</td></tr>
+        <tr><td>Cinemagraph</td><td>Cyan (<code>bg-cyan</code> / custom)</td><td>Only if <code>run.cinemagraph_slides</code> contains at least one non-null entry</td><td>"cine"</td></tr>
+      </table>
+
+      <h3 id="js-applystatus">_narratedApplyStatus(status, runs, script)</h3>
+      <p>
+        Maps the status string to a human-readable label and a progress percentage, then updates
+        the progress bar and status label in the DOM.
+      </p>
+      <pre>function _narratedApplyStatus(status, runs, script) {
+  if (!status) return;
+
+  let label = status;
+  let pct   = 0;
+
+  if (status === "running:script") {
+    label = "Generating narration script…"; pct = 5;
+
+  } else if (status.startsWith("running:tts:")) {
+    const n = parseInt(status.split(":")[2]);         // e.g. "3/10" → 3
+    const num = parseInt(n.toString().split("/")[0]);
+    label = `TTS synthesis — segment ${n}…`;
+    pct = 10 + (num / 10) * 30;   // 10% → 40%
+
+  } else if (status.startsWith("running:clip:")) {
+    const n   = status.split(":")[2];
+    const num = parseInt(n.split("/")[0]);
+    label = `Rendering video clip — segment ${n}…`;
+    pct = 40 + (num / 10) * 35;   // 40% → 75%
+
+  } else if (status === "running:merge") {
+    label = "Merging segments…"; pct = 80;
+
+  } else if (status === "running:speed") {
+    label = "Applying 1.35× speed-up…"; pct = 90;
+
+  } else if (status === "running:upload") {
+    label = "Uploading to GCS…"; pct = 95;
+
+  } else if (status.startsWith("error:")) {
+    label = "Error: " + status.slice(6); pct = 0;
+  }
+
+  document.getElementById("narrated-progress-bar").style.width = pct + "%";
+  document.getElementById("narrated-status-label").textContent = label;
+}</pre>
+
+      <h3 id="js-ig">Instagram JavaScript</h3>
+      <p>
+        Each accordion item's Instagram section is wired with event listeners after the item is inserted
+        into the DOM. Key behaviours:
+      </p>
+      <ul>
+        <li><strong>Caption character counter:</strong> <code>input</code> event on the textarea updates the counter span. Max 2,200 characters enforced by <code>maxlength</code> attribute.</li>
+        <li><strong>Generate caption link:</strong> <code>click</code> → POST <code>/generate-ig-caption</code> with <code>{component: "narrated"}</code>. Response caption is inserted into the textarea and counter updated.</li>
+        <li><strong>Post to Instagram button:</strong> Reads <code>data-video-url</code> and <code>data-run-ts</code> from the button's dataset. Disables button, shows progress row, POSTs to <code>/post-narrated-to-instagram</code>, then starts polling <code>/narrated-ig-status?ts={run_ts}</code> every 3 seconds.</li>
+        <li><strong>IG status polling:</strong> Stops when <code>result</code> is non-null. If <code>result.startsWith("done:")</code>, shows success row with permalink link. If <code>result.startsWith("error:")</code>, shows error message.</li>
+        <li><strong>Check if post is live:</strong> POSTs to <code>/check-narrated-post-live</code> and updates the button label with the result.</li>
+        <li><strong>Archive post:</strong> POSTs to <code>/archive-narrated-post</code> with confirmation dialog first.</li>
+      </ul>
+
+      <h3 id="js-yt">YouTube JavaScript</h3>
+      <ul>
+        <li><strong>Post to YouTube Shorts button:</strong> Reads <code>data-video-url</code> and <code>data-run-ts</code>. Collects title and description from the sibling inputs. Disables button, shows progress row, POSTs to <code>/post-to-youtube</code>.</li>
+        <li><strong>YT status polling:</strong> Polls <code>/youtube-status?ts={run_ts}</code> every 3 seconds. Stops when <code>result</code> is non-null. On <code>done:</code> result, extracts the YouTube URL and shows the success link.</li>
+        <li><strong>Title pre-fill:</strong> The title input is pre-filled from the article title (injected by Jinja2 template). The user may edit it before posting.</li>
+      </ul>
+
+      <div class="callout callout-info">
+        <strong>Narration script display:</strong> Each accordion item includes a collapsible section
+        showing the 10 narration segments as text. This section is collapsed by default. It is
+        populated from <code>run.segments</code> inside <code>buildRunItem()</code>.
+      </div>
+    </section>
+
+    <!-- ── 12. Logic Flows ── -->
+    <section id="logic-flows">
+      <h2>12. Logic Flows</h2>
+
+      <h3 id="flow-generate">A. Start generation</h3>
+      <ol class="flow">
+        <li>User configures parameters (format, voice, tts_model, script_len, kb_speed, crf, fps) in the controls panel.</li>
+        <li>User clicks <strong>Generate Narrated Video</strong>.</li>
+        <li>JS disables the generate button and all parameter inputs, shows the progress bar row.</li>
+        <li>JS POSTs to <code>/generate-narrated-video</code> with parameter JSON.</li>
+        <li>If response is <code>{"error": "already running"}</code>, JS shows an alert and re-enables controls.</li>
+        <li>If response is <code>{"ok": true}</code>, JS starts the 2-second polling loop.</li>
+        <li>Each poll updates the progress bar and status label via <code>_narratedApplyStatus()</code>.</li>
+        <li>When polling detects <code>status === null</code>, generation is complete:
+          <ol>
+            <li>JS stops polling.</li>
+            <li>JS calls <code>buildRunItem(runs[0])</code> for the newest run.</li>
+            <li>New accordion item is prepended to the runs accordion.</li>
+            <li>Accordion item is automatically expanded.</li>
+            <li>Progress bar row is hidden; controls are re-enabled.</li>
+          </ol>
+        </li>
+        <li>If polling detects <code>status.startsWith("error:")</code>:
+          <ol>
+            <li>JS stops polling.</li>
+            <li>Progress bar turns red; status label shows error message.</li>
+            <li>Controls are re-enabled.</li>
+          </ol>
+        </li>
+      </ol>
+
+      <h3 id="flow-cancel">B. Cancel generation</h3>
+      <ol class="flow">
+        <li>User clicks × (cancel) button in the progress bar row.</li>
+        <li>JS POSTs to <code>/cancel-narrated-video</code>.</li>
+        <li>Server writes <code>cancelled</code> to <code>video_narrated_status</code>.</li>
+        <li>Worker detects <code>cancelled</code> status at next step boundary, exits cleanly.</li>
+        <li>Worker sets status to <code>NULL</code> on exit.</li>
+        <li>Polling detects <code>null</code> and re-enables controls.</li>
+        <li>Any partially created temp files are left in the temp directory (cleaned at next generation start).</li>
+      </ol>
+
+      <h3 id="flow-ig">C. Post to Instagram Reels</h3>
+      <ol class="flow">
+        <li>User opens a run's accordion item.</li>
+        <li>(Optional) User clicks <strong>Generate caption</strong> and edits the auto-generated text.</li>
+        <li>User clicks <strong>Post to Instagram Reels</strong>.</li>
+        <li>JS disables the post button, shows the IG progress row.</li>
+        <li>JS POSTs <code>{video_url, caption, run_ts}</code> to <code>/post-narrated-to-instagram</code>.</li>
+        <li>JS starts polling <code>/narrated-ig-status?ts={run_ts}</code> every 3 seconds.</li>
+        <li>Progress bar animates while polling returns non-final status strings.</li>
+        <li>When <code>result</code> is non-null:
+          <ul>
+            <li>If <code>done:</code> — progress row hidden, success row shown with permalink link.</li>
+            <li>If <code>error:</code> — progress row shows error in red.</li>
+          </ul>
+        </li>
+        <li>(Optional) User clicks <strong>Check if post is live</strong> to verify public visibility.</li>
+        <li>(Optional) User clicks <strong>Archive post</strong> (with confirmation) to hide from profile.</li>
+      </ol>
+
+      <h3 id="flow-yt">D. Upload to YouTube Shorts</h3>
+      <ol class="flow">
+        <li>If YouTube is not connected, user clicks <strong>Connect YouTube account</strong> link.</li>
+        <li>Browser is redirected to <code>/admin/youtube-connect</code>.</li>
+        <li>Server redirects to Google's OAuth consent page.</li>
+        <li>User grants <code>youtube.upload</code> permission.</li>
+        <li>Google redirects to <code>/admin/youtube-oauth-callback</code> with authorization code.</li>
+        <li>Server exchanges code for refresh token, stores it, redirects back to article edit page.</li>
+        <li>User opens a run's accordion item, edits title/description as desired.</li>
+        <li>User clicks <strong>Post to YouTube Shorts</strong>.</li>
+        <li>JS disables button, shows YT progress row.</li>
+        <li>JS POSTs <code>{video_url, title, description, run_ts}</code> to <code>/post-to-youtube</code>.</li>
+        <li>JS starts polling <code>/youtube-status?ts={run_ts}</code> every 3 seconds.</li>
+        <li>When <code>result</code> is <code>done:https://…</code>: success row shown with YouTube Shorts link.</li>
+      </ol>
+    </section>
+
+    <!-- ── 13. Cost & Limits ── -->
+    <section id="cost-limits">
+      <h2>13. Cost &amp; Limits</h2>
+
+      <div class="callout callout-cost">
+        <strong>Per-run cost estimate (approximate):</strong> $0.08–0.20 per video depending on
+        <code>tts_model</code> and <code>script_len</code>. The dominant cost is TTS. GPT script
+        generation adds only ~$0.002–0.005.
+      </div>
+
+      <h3>API costs</h3>
+      <table>
+        <tr><th>Service</th><th>Unit</th><th>Cost</th><th>Per run estimate</th></tr>
+        <tr>
+          <td>GPT-4.1-mini (script)</td>
+          <td>Per 1M tokens</td>
+          <td>~$0.40 input / $1.60 output</td>
+          <td>~$0.002–0.005 (one call, ~8K article + 10-segment response)</td>
+        </tr>
+        <tr>
+          <td>OpenAI TTS tts-1</td>
+          <td>Per 1,000 characters</td>
+          <td>$0.015</td>
+          <td>~$0.07–0.10 (10 segments × ~500 chars average)</td>
+        </tr>
+        <tr>
+          <td>OpenAI TTS tts-1-hd</td>
+          <td>Per 1,000 characters</td>
+          <td>$0.030</td>
+          <td>~$0.14–0.20 (same volume as tts-1)</td>
+        </tr>
+        <tr>
+          <td>GPT-4.1-mini (caption)</td>
+          <td>Per call</td>
+          <td>~$0.01</td>
+          <td>~$0.01 per caption generation</td>
+        </tr>
+        <tr>
+          <td>FFmpeg rendering</td>
+          <td>Compute only</td>
+          <td>No API cost</td>
+          <td>Free (local/cloud CPU)</td>
+        </tr>
+        <tr>
+          <td>GCS storage</td>
+          <td>Per GB/month</td>
+          <td>$0.020/GB/month (Standard)</td>
+          <td>~$0.0003–0.0006/month per video (10–30 MB each)</td>
+        </tr>
+        <tr>
+          <td>Instagram Reels publish</td>
+          <td>Per post</td>
+          <td>Free</td>
+          <td>Free</td>
+        </tr>
+        <tr>
+          <td>YouTube upload</td>
+          <td>API quota units</td>
+          <td>Free (quota applies)</td>
+          <td>~1,600 units/upload; 10,000 units/day limit → ~6 uploads/day max</td>
+        </tr>
+      </table>
+
+      <h3>Output specifications</h3>
+      <table>
+        <tr><th>Parameter</th><th>Value / Range</th></tr>
+        <tr><td>Number of narration segments</td><td>10 (fixed)</td></tr>
+        <tr><td>Video duration (pre-speed-up)</td><td>~80–240 seconds (depends on script_len and TTS output)</td></tr>
+        <tr><td>Video duration (post-speed-up)</td><td>~60–180 seconds (1–3 minutes)</td></tr>
+        <tr><td>File size</td><td>~10–30 MB per video (depends on format, CRF, duration)</td></tr>
+        <tr><td>Output codec</td><td>H.264 (libx264) + AAC audio</td></tr>
+        <tr><td>Container format</td><td>MP4</td></tr>
+        <tr><td>Vertical resolution</td><td>720×1280 pixels</td></tr>
+        <tr><td>Square resolution</td><td>1080×1080 pixels</td></tr>
+        <tr><td>Landscape resolution</td><td>1280×720 pixels</td></tr>
+      </table>
+
+      <h3>Generation time</h3>
+      <table>
+        <tr><th>Step</th><th>Typical duration</th><th>Notes</th></tr>
+        <tr><td>Script generation (GPT)</td><td>5–15 seconds</td><td>Depends on API latency and script_len</td></tr>
+        <tr><td>TTS (10 segments)</td><td>20–60 seconds total</td><td>Sequential; tts-1-hd is slightly slower</td></tr>
+        <tr><td>Frame rendering (10 clips)</td><td>2–8 minutes total</td><td>Ken Burns is slower than cinemagraph; render_fps=12 helps significantly</td></tr>
+        <tr><td>Concat</td><td>5–15 seconds</td><td>Stream copy — very fast</td></tr>
+        <tr><td>Speed-up encode</td><td>30–120 seconds</td><td>Full re-encode; depends on format and hardware</td></tr>
+        <tr><td>GCS upload</td><td>5–30 seconds</td><td>Depends on video size and network</td></tr>
+        <tr><td><strong>Total (typical)</strong></td><td><strong>5–15 minutes</strong></td><td>Vertical format, medium script, tts-1</td></tr>
+      </table>
+
+      <h3>Platform limits</h3>
+      <table>
+        <tr><th>Platform</th><th>Limit</th><th>Notes</th></tr>
+        <tr><td>Instagram Reels</td><td>Max 15 minutes, max 4 GB</td><td>Narrated videos well within limits</td></tr>
+        <tr><td>Instagram Reels</td><td>Must be 9:16 aspect ratio for Reels feed</td><td>Vertical format recommended</td></tr>
+        <tr><td>YouTube Shorts</td><td>Max 60 seconds for Shorts classification</td><td>Shorter script_len recommended; Shorts = ≤60s vertical video</td></tr>
+        <tr><td>YouTube Data API</td><td>10,000 units/day quota</td><td>~6 uploads/day; request quota increase if needed</td></tr>
+        <tr><td>OpenAI TTS</td><td>Max 4,096 characters per API call</td><td>Individual segments are well within this limit</td></tr>
+      </table>
+
+      <div class="callout callout-warn">
+        <strong>YouTube Shorts duration:</strong> YouTube classifies vertical videos under 60 seconds as
+        Shorts. Longer videos are uploaded as standard YouTube videos (not Shorts), even if the URL
+        contains <code>/shorts/</code>. To reliably target Shorts, use <code>script_len=short</code>
+        to keep total duration under 60 seconds post-speed-up.
+      </div>
+
+      <div class="callout callout-tip">
+        <strong>Performance tip:</strong> The <code>render_fps=12</code> fixed setting is a deliberate
+        trade-off. Ken Burns zoompan at 25–30 fps is extremely CPU-intensive because FFmpeg must process
+        a full frame for every output frame. Reducing to 12 fps for the render pass and upsampling during
+        the final encode reduces total rendering time by approximately 50–60% with minimal perceptible
+        quality loss in the final 1.35×-sped-up output.
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // Highlight active TOC link based on scroll position
+  const sections = document.querySelectorAll("section[id]");
+  const tocLinks = document.querySelectorAll("#toc a");
+
+  function updateActiveToc() {
+    let current = "";
+    sections.forEach(sec => {
+      if (window.scrollY >= sec.offsetTop - 80) current = sec.id;
+    });
+    tocLinks.forEach(a => {
+      a.style.fontWeight = a.getAttribute("href") === "#" + current ? "600" : "";
+      a.style.color      = a.getAttribute("href") === "#" + current ? "var(--accent)" : "";
+    });
+  }
+
+  window.addEventListener("scroll", updateActiveToc, { passive: true });
+  updateActiveToc();
+</script>
+</body>
+</html>

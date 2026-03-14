@@ -186,25 +186,40 @@
       <a href="#database">3. Database Schema</a>
       <a class="toc-sub" href="#db-articles">articles (carousel columns)</a>
       <a class="toc-sub" href="#db-site-settings">site_settings</a>
+      <a class="toc-sub" href="#db-site-settings-ig">site_settings (IG posting keys)</a>
+      <a class="toc-sub" href="#db-site-settings-activity">site_settings (activity log)</a>
       <a href="#backend">4. Python Backend</a>
-      <a class="toc-sub" href="#be-constant">Constant</a>
+      <a class="toc-sub" href="#be-constant">Constants &amp; Env Vars</a>
       <a class="toc-sub" href="#be-helpers">Helper Functions</a>
       <a class="toc-sub" href="#be-init">Init Functions</a>
-      <a class="toc-sub" href="#be-routes">API Routes</a>
+      <a class="toc-sub" href="#be-routes">API Routes — Image Generation</a>
+      <a class="toc-sub" href="#be-routes-ig">API Routes — IG Posting</a>
+      <a class="toc-sub" href="#be-worker">Background Worker</a>
       <a href="#sse-protocol">5. SSE Event Protocol</a>
-      <a href="#frontend-html">6. Frontend — HTML Elements</a>
-      <a href="#frontend-js">7. Frontend — JavaScript</a>
+      <a href="#ig-posting">6. Instagram Posting</a>
+      <a class="toc-sub" href="#ig-caption-gen">Caption Generation</a>
+      <a class="toc-sub" href="#ig-polling">Polling Pattern</a>
+      <a class="toc-sub" href="#ig-status-values">Status Values</a>
+      <a class="toc-sub" href="#ig-result-values">Result Values</a>
+      <a class="toc-sub" href="#ig-snapshot">Post Snapshot</a>
+      <a class="toc-sub" href="#ig-check-live">Check if Live</a>
+      <a class="toc-sub" href="#ig-archive-post">Archive Post</a>
+      <a href="#activity-log">7. Activity Log</a>
+      <a href="#frontend-html">8. Frontend — HTML Elements</a>
+      <a href="#frontend-js">9. Frontend — JavaScript</a>
       <a class="toc-sub" href="#js-constants">Constants</a>
       <a class="toc-sub" href="#js-functions">Function Reference</a>
       <a class="toc-sub" href="#js-sse">SSE Streaming Pattern</a>
-      <a href="#flows">8. Logic Flows</a>
+      <a href="#flows">10. Logic Flows</a>
       <a class="toc-sub" href="#flow-full">A. Full Generation</a>
       <a class="toc-sub" href="#flow-partial">B. Partial Generation</a>
       <a class="toc-sub" href="#flow-rerun">C. Per-Image Re-run</a>
       <a class="toc-sub" href="#flow-archive">D. Archive All</a>
       <a class="toc-sub" href="#flow-style">E. Style Change</a>
-      <a href="#slot-convention">9. Slot Index Convention</a>
-      <a href="#cost-notes">10. Cost &amp; Limits</a>
+      <a class="toc-sub" href="#flow-ig-post">F. Instagram Post</a>
+      <a class="toc-sub" href="#flow-ig-archive">G. Archive IG Post</a>
+      <a href="#slot-convention">11. Slot Index Convention</a>
+      <a href="#cost-notes">12. Cost &amp; Limits</a>
     </nav>
   </nav>
 
@@ -215,7 +230,7 @@
     <div class="meta-bar">
       <span><strong>Project:</strong> Obelisk Stamps</span>
       <span><strong>File:</strong> Technical Reference</span>
-      <span><strong>Date:</strong> February 2026</span>
+      <span><strong>Date:</strong> March 2026</span>
     </div>
 
     <!-- ── 1. Overview ── -->
@@ -233,6 +248,18 @@
           suffix appended to every prompt.</li>
       </ol>
       <p>Results stream to the browser in real time via Server-Sent Events (SSE).</p>
+      <p>
+        Once images are generated, the tool supports <strong>posting the carousel directly to Instagram</strong>
+        via the Instagram Graph API. The posting flow composes each slide image (adding the punchline
+        as a text overlay), uploads the composed JPEGs to GCS, creates Instagram child containers,
+        polls until each container is ready, creates a carousel container, and publishes it.
+        A separate GPT-4.1-mini call can generate an optimised Instagram caption before posting.
+      </p>
+      <p>
+        All significant actions (caption generation, posting attempts, errors, archive operations,
+        live-checks) are written to a per-article <strong>activity log</strong> stored in
+        <code>site_settings</code>.
+      </p>
 
       <h3>Key capabilities</h3>
       <table>
@@ -241,9 +268,16 @@
         <tr><td>Partial generation</td><td>If some slots are already filled, only the empty slots are generated — GPT is asked for exactly N scenes where N = empty slot count.</td></tr>
         <tr><td>Per-image regeneration</td><td>Any current image can be replaced by editing its prompt/punchline and clicking Re-run. The old image is archived, not deleted.</td></tr>
         <tr><td>Archive All</td><td>Moves all current images to archived slots, clearing slots 0–9 for a fresh run.</td></tr>
-        <tr><td>Punchlines</td><td>Each image has a companion short caption used as an Instagram slide caption.</td></tr>
+        <tr><td>Punchlines</td><td>Each image has a companion short caption used as a slide overlay when composing for Instagram.</td></tr>
         <tr><td>Style customisation</td><td>A global "style suffix" is stored in <code>site_settings</code> and editable from the admin Settings tab. Each article also records the style used when its carousel was generated.</td></tr>
         <tr><td>Real-time streaming</td><td>Images appear in the UI one by one as they're generated, via SSE.</td></tr>
+        <tr><td>GCS upload</td><td>Generated PNG images are uploaded to Google Cloud Storage. The GCS public URL is stored in the DB. Local static files are used as fallback when GCS is not configured.</td></tr>
+        <tr><td>Instagram posting</td><td>Background worker composes slides, uploads to GCS, creates IG containers, polls, and publishes. Status and result are polled by the frontend every 5 seconds.</td></tr>
+        <tr><td>Caption generation</td><td>GPT-4.1-mini generates an Instagram caption from the article title and a short plain-text excerpt. Shared with the Cinemagraph component.</td></tr>
+        <tr><td>Post snapshot</td><td>After a successful publish, a snapshot (caption, image URLs, post type, timestamp) is saved to <code>site_settings</code> for display in the archive modal.</td></tr>
+        <tr><td>Check if live</td><td>Queries the Instagram Graph API with the stored <code>media_id</code> to verify the post is still accessible.</td></tr>
+        <tr><td>Archive post</td><td>Clears the active post keys and appends the snapshot to the article's post history array.</td></tr>
+        <tr><td>Activity log</td><td>A JSON array in <code>site_settings</code> records all significant events for an article across all components (carousel, cinemagraph, narrated video). Capped at 50 entries.</td></tr>
       </table>
     </section>
 
@@ -252,13 +286,22 @@
       <h2>2. File Structure</h2>
       <table>
         <tr><th>File / Path</th><th>Role</th></tr>
-        <tr><td><code>app.py</code></td><td>All backend routes, DB helpers, init functions, OpenAI calls</td></tr>
-        <tr><td><code>templates/article_edit.html</code></td><td>Admin article edit page — contains the full carousel UI (HTML + JavaScript)</td></tr>
+        <tr><td><code>app.py</code></td><td>All backend routes, DB helpers, init functions, OpenAI calls, Instagram Graph API worker</td></tr>
+        <tr><td><code>templates/article_edit.html</code></td><td>Admin article edit page — contains the full carousel UI (HTML + JavaScript) including the IG posting panel</td></tr>
         <tr><td><code>templates/admin.html</code></td><td>Admin panel — Settings tab for editing the global carousel style</td></tr>
-        <tr><td><code>static/articles/{id}/carousel/image_N.png</code></td><td>Generated image for slot N (1-based). Overwritten on re-generation of that slot from scratch.</td></tr>
+        <tr><td><code>static/articles/{id}/carousel/image_N.png</code></td><td>Generated image for slot N (1-based). Written to local disk; also uploaded to GCS. Overwritten on re-generation of that slot from scratch.</td></tr>
         <tr><td><code>static/articles/{id}/carousel/image_N_TIMESTAMP.png</code></td><td>Per-image re-run output. Timestamped filename so the old file (used by the Removed tab) is not overwritten.</td></tr>
+        <tr><td><code>static/articles/{id}/instagram/composed_{N}_{ts}.jpg</code></td><td>Composed slide JPEG (punchline overlay applied) created by the IG posting worker. Uploaded to GCS; not served from local static.</td></tr>
         <tr><td><code>static/tech_docs/carousel-generator.html</code></td><td>This document.</td></tr>
       </table>
+
+      <div class="callout callout-info">
+        <strong>GCS requirement for IG posting:</strong> The Instagram Graph API requires
+        all media URLs to be publicly accessible. The posting worker uploads composed slides
+        to GCS and uses the resulting public URL. If <code>GCS_BUCKET_NAME</code> is not set,
+        the posting worker will immediately fail with
+        <code>"error:GCS upload failed — GCS_BUCKET_NAME must be set"</code>.
+      </div>
     </section>
 
     <!-- ── 3. Database Schema ── -->
@@ -270,7 +313,7 @@
       <table>
         <tr><th>Column</th><th>Type</th><th>Purpose</th></tr>
         <tr><td><code>carousel_prompts</code></td><td>TEXT (JSON array)</td><td>DALL-E 3 prompts. Indices 0–9 = current; 10+ = archived.</td></tr>
-        <tr><td><code>carousel_images</code></td><td>TEXT (JSON array)</td><td>Relative file paths to generated images (<code>articles/{id}/carousel/image_N.png</code>). Same index convention.</td></tr>
+        <tr><td><code>carousel_images</code></td><td>TEXT (JSON array)</td><td>GCS public URLs (or relative file paths when GCS is not configured). Same index convention.</td></tr>
         <tr><td><code>carousel_punchlines</code></td><td>TEXT (JSON array)</td><td>Short Instagram captions (≤15 words). Same index convention.</td></tr>
         <tr><td><code>carousel_style</code></td><td>TEXT</td><td>The style suffix that was active when this article's carousel was last generated. Used by "View Style" modal.</td></tr>
       </table>
@@ -308,10 +351,63 @@
         <tr><td><code>updated_at</code></td><td>DATETIME</td><td>Auto-updated on every change via <code>ON UPDATE CURRENT_TIMESTAMP</code></td></tr>
       </table>
 
-      <h4>Carousel-relevant row</h4>
+      <h4>Carousel image-generation row</h4>
       <table>
         <tr><th>key</th><th>value</th><th>Notes</th></tr>
         <tr><td><code>carousel_style</code></td><td>Style suffix string</td><td>Seeded from <code>CAROUSEL_STYLE_SUFFIX</code> constant on first app startup via <code>INSERT IGNORE</code>. Editable from <code>/admin/settings</code>.</td></tr>
+      </table>
+
+      <h3 id="db-site-settings-ig">Instagram Posting Keys (per article)</h3>
+      <p>
+        All Instagram posting state is stored transiently in <code>site_settings</code>.
+        The helper function <code>_ig_keys(post_type, article_id)</code> returns a dict of
+        key names for a given article and post type (<code>"car"</code> for carousel,
+        <code>"cine"</code> for cinemagraph).
+      </p>
+      <table>
+        <tr><th>key pattern (post_type = "car")</th><th>Lifecycle</th><th>Value format</th></tr>
+        <tr>
+          <td><code>ig_car_post_status_{article_id}</code></td>
+          <td>Written by worker; deleted (<code>_clear_status()</code>) at end of every worker run (success or failure)</td>
+          <td>See <a href="#ig-status-values">Status Values</a> below</td>
+        </tr>
+        <tr>
+          <td><code>ig_car_post_result_{article_id}</code></td>
+          <td>Written by worker; cleared on archive; persists until next post attempt</td>
+          <td>See <a href="#ig-result-values">Result Values</a> below</td>
+        </tr>
+        <tr>
+          <td><code>ig_car_post_media_id_{article_id}</code></td>
+          <td>Written on successful publish; used by check-live and archive routes; cleared to <code>""</code> on archive</td>
+          <td>Instagram numeric media ID string, e.g. <code>"17854360229135492"</code></td>
+        </tr>
+        <tr>
+          <td><code>ig_car_post_snapshot_{article_id}</code></td>
+          <td>Written on successful publish; read by archive route; cleared to <code>""</code> on archive</td>
+          <td>JSON — see <a href="#ig-snapshot">Post Snapshot</a></td>
+        </tr>
+        <tr>
+          <td><code>ig_car_post_history_{article_id}</code></td>
+          <td>Appended to by archive route; never cleared</td>
+          <td>JSON array of archive entries — see <a href="#ig-archive-post">Archive Post</a></td>
+        </tr>
+      </table>
+
+      <div class="callout callout-info">
+        <strong>Key prefix naming:</strong> The prefix for carousel keys is <code>ig_car_post_</code>.
+        The cinemagraph component uses <code>ig_post_</code> as its prefix (no <code>car_</code> segment).
+        The <code>_ig_keys(post_type, article_id)</code> helper encapsulates this difference so all
+        routes and workers use the same dict-of-keys interface regardless of post type.
+      </div>
+
+      <h3 id="db-site-settings-activity">Activity Log Key</h3>
+      <table>
+        <tr><th>key pattern</th><th>Value</th><th>Notes</th></tr>
+        <tr>
+          <td><code>ig_activity_log_{article_id}</code></td>
+          <td>JSON array of log entry objects</td>
+          <td>Shared across all components for the same article. Capped at 50 entries (oldest entries discarded first). See <a href="#activity-log">Activity Log</a> section.</td>
+        </tr>
       </table>
     </section>
 
@@ -319,11 +415,12 @@
     <section id="backend">
       <h2>4. Python Backend (<code>app.py</code>)</h2>
 
-      <h3 id="be-constant">Constant</h3>
+      <h3 id="be-constant">Constants &amp; Environment Variables</h3>
+
+      <h4><code>CAROUSEL_STYLE_SUFFIX</code></h4>
       <p>
-        <code>CAROUSEL_STYLE_SUFFIX</code> (line ~79) is the hardcoded default style string.
-        It serves two purposes: it seeds the <code>site_settings</code> table on first run, and
-        it acts as the fallback value if the DB is unavailable.
+        The hardcoded default style string. Serves two purposes: seeds the <code>site_settings</code>
+        table on first run, and acts as the fallback value if the DB is unavailable.
       </p>
       <pre><code>CAROUSEL_STYLE_SUFFIX = (
     "Style: vintage editorial illustration, reminiscent of classic postage-stamp engravings "
@@ -333,6 +430,16 @@
     "Square 1:1 format for Instagram. No text, lettering, numbers, or watermarks in the image."
 )</code></pre>
 
+      <h4>Instagram Graph API Environment Variables</h4>
+      <table>
+        <tr><th>Variable</th><th>Purpose</th></tr>
+        <tr><td><code>IG_USER_ID</code></td><td>Instagram Business Account user ID — required for all Graph API calls</td></tr>
+        <tr><td><code>IG_ACCESS_TOKEN</code></td><td>Long-lived Instagram Graph API access token</td></tr>
+        <tr><td><code>GCS_BUCKET_NAME</code></td><td>Google Cloud Storage bucket name — required for IG posting (composed slides must be publicly accessible)</td></tr>
+        <tr><td><code>GCS_PATH_PREFIX</code></td><td>Optional prefix prepended to all GCS object names</td></tr>
+        <tr><td><code>SITE_URL</code></td><td>Base URL of the site — appended as a call-to-action link in generated captions</td></tr>
+      </table>
+
       <h3 id="be-helpers">Helper Functions</h3>
 
       <h4><code>get_setting(key, default=None)</code></h4>
@@ -341,6 +448,41 @@
     """Return a value from site_settings, or default if not found."""
     row = query_one("SELECT value FROM site_settings WHERE `key` = %s", (key,))
     return row[0] if row else default</code></pre>
+
+      <h4><code>upload_bytes_to_gcs(data, object_name, content_type=None)</code></h4>
+      <p>
+        Uploads raw bytes to GCS and returns the public HTTPS URL. Returns <code>None</code>
+        if <code>_gcs_bucket</code> is not initialised (i.e., <code>GCS_BUCKET_NAME</code> is not set).
+        The object name is prefixed with <code>GCS_PATH_PREFIX</code> if configured.
+      </p>
+
+      <h4><code>_ig_keys(post_type, article_id)</code></h4>
+      <p>
+        Returns a dict of <code>site_settings</code> key names for the given
+        <code>post_type</code> (<code>"car"</code> or <code>"cine"</code>) and article ID.
+      </p>
+      <pre><code>def _ig_keys(post_type, article_id):
+    prefix = "ig_car_post_" if post_type == "car" else "ig_post_"
+    return {
+        "status":   f"{prefix}status_{article_id}",
+        "result":   f"{prefix}result_{article_id}",
+        "media_id": f"{prefix}media_id_{article_id}",
+        "history":  f"{prefix}history_{article_id}",
+        "snapshot": f"{prefix}snapshot_{article_id}",
+    }</code></pre>
+
+      <h4><code>_ig_api_call(method, url, **kwargs)</code></h4>
+      <p>
+        Wrapper around <code>requests</code> that performs one automatic retry on rate-limit.
+        If the response JSON contains an error message with <code>"request limit"</code>,
+        the function waits 30 seconds and retries once before returning.
+      </p>
+
+      <h4><code>_add_activity_log(article_id, title, content, component=None)</code></h4>
+      <p>
+        Appends a log entry to the article's activity log in <code>site_settings</code>.
+        See <a href="#activity-log">Section 7 — Activity Log</a> for full details.
+      </p>
 
       <h3 id="be-init">Init Functions</h3>
 
@@ -375,7 +517,7 @@
     cur.close()
     conn.close()</code></pre>
 
-      <h3 id="be-routes">API Routes</h3>
+      <h3 id="be-routes">API Routes — Image Generation</h3>
       <p>All routes require <code>@login_required</code> and <code>@admin_required</code> decorators.</p>
 
       <table>
@@ -421,8 +563,9 @@
       <h4>Route detail: <code>GET carousel-images</code></h4>
       <p>
         Reads <code>carousel_prompts</code>, <code>carousel_images</code>, <code>carousel_punchlines</code>
-        from the articles row. Converts relative image paths to full static URLs via
-        <code>url_for("static", filename=...)</code>. Returns arrays for all three; <code>null</code>
+        from the articles row. For local paths, converts relative image paths to full static URLs via
+        <code>url_for("static", filename=...)</code>. GCS URLs are returned as-is (they are already
+        absolute public URLs). Returns arrays for all three; <code>null</code>
         entries in the arrays indicate empty slots.
       </p>
 
@@ -438,6 +581,11 @@
         <li>Computes <code>empty_slots</code> = list of 0-based indices where the image is <code>None</code>/<code>null</code>.</li>
         <li><code>N = len(empty_slots)</code>. If <code>N == 0</code>, yields <code>done</code> immediately and returns.</li>
       </ul>
+      <p>
+        After each DALL-E call, the image bytes are saved to the local filesystem AND uploaded to GCS via
+        <code>upload_bytes_to_gcs()</code>. If GCS is configured, the returned public URL replaces the
+        local relative path in the DB; if not, the local relative path is stored.
+      </p>
 
       <h4>Route detail: <code>POST archive-carousel</code></h4>
       <p>
@@ -455,9 +603,11 @@
       <ul>
         <li>Only indices 0–9 are valid (active slots).</li>
         <li>New image saved as <code>image_{index+1}_{timestamp}.png</code> to preserve the old file.</li>
+        <li>Image bytes uploaded to GCS. GCS URL stored in DB if upload succeeds; local relative path used as fallback.</li>
         <li>Old <code>prompt/image/punchline</code> at that index are appended to the end of the arrays (archived).</li>
         <li>The slot is updated in-place with the new values.</li>
         <li>Also saves <code>carousel_style = active_style</code> to the article row.</li>
+        <li>Writes to the activity log on both success and failure.</li>
       </ul>
 
       <h4>Route detail: <code>POST /admin/settings/save</code></h4>
@@ -465,6 +615,103 @@
         Accepts <code>{"carousel_style": "..."}</code>. Uses MySQL upsert pattern:
         <code>INSERT INTO ... ON DUPLICATE KEY UPDATE value = %s</code>.
         Validates that the value is non-empty before writing.
+      </p>
+
+      <h3 id="be-routes-ig">API Routes — Instagram Posting</h3>
+
+      <table>
+        <tr><th>Method</th><th>URL</th><th>Body / Params</th><th>Returns</th></tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/post-to-instagram</code></td>
+          <td><code>{caption, type: "car"}</code></td>
+          <td>JSON: <code>{started: true, n_media, type}</code> or <code>{error: "..."}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge get">GET</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/ig-post-status</code></td>
+          <td><code>?type=car</code></td>
+          <td>JSON: <code>{status, result, media_id, history}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge get">GET</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/check-instagram-post</code></td>
+          <td><code>?type=car</code></td>
+          <td>JSON: <code>{live: bool, permalink?}</code> or <code>{error}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/archive-ig-post</code></td>
+          <td><code>{type: "car"}</code></td>
+          <td>JSON: <code>{ok: true, history: [...]}</code> or <code>{error}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/generate-ig-caption</code></td>
+          <td><code>{component: "carousel"}</code> (optional)</td>
+          <td>JSON: <code>{caption: "..."}</code> or <code>{error}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/edit-instagram-caption</code></td>
+          <td><code>{caption, type: "car"}</code></td>
+          <td>JSON: <code>{ok: true}</code> or <code>{error}</code></td>
+        </tr>
+      </table>
+
+      <h4>Route detail: <code>POST post-to-instagram</code></h4>
+      <p>Pre-flight checks before spawning the background thread:</p>
+      <ul>
+        <li>Returns <code>400</code> if <code>IG_USER_ID</code> or <code>IG_ACCESS_TOKEN</code> env vars are not set.</li>
+        <li>Returns <code>409 {error: "already_running"}</code> if <code>ig_car_post_status_{id}</code> already starts with <code>"running"</code>.</li>
+        <li>For <code>post_type = "car"</code>: loads <code>carousel_images[:10]</code> and returns <code>400</code> if fewer than 2 non-null images exist.</li>
+        <li>Clears the stale result key, seeds status to <code>"running:starting"</code>, then launches <code>_post_to_instagram_worker</code> in a daemon thread.</li>
+        <li>Caption is trimmed to 2200 characters (Instagram limit).</li>
+      </ul>
+
+      <h4>Route detail: <code>GET ig-post-status</code></h4>
+      <p>
+        Returns the current values of all four keys for the given post type: status, result, media_id,
+        and history (JSON-decoded). The frontend polls this endpoint every 5 seconds while a post
+        is in progress, and also on page load to restore any previously posted state.
+      </p>
+
+      <h4>Route detail: <code>GET check-instagram-post</code></h4>
+      <p>
+        Reads <code>ig_car_post_media_id_{id}</code> and calls the Instagram Graph API
+        (<code>GET /{media_id}?fields=id,permalink</code>). If the API returns an <code>id</code>
+        field, the post is considered live. A back-fill path handles older posts that stored the
+        permalink in the result key before <code>media_id</code> was saved separately — the numeric
+        ID is extracted from the permalink URL and persisted to the <code>media_id</code> key for
+        future calls.
+      </p>
+
+      <h4>Route detail: <code>POST archive-ig-post</code></h4>
+      <p>
+        Reads the current <code>media_id</code>, <code>result</code>, and <code>snapshot</code> keys.
+        Appends a new entry to the history array. Clears <code>media_id</code>, <code>result</code>,
+        and <code>snapshot</code> keys (set to empty string). Returns the full updated history array.
+      </p>
+
+      <h4>Route detail: <code>POST edit-instagram-caption</code></h4>
+      <p>
+        Updates the caption of the most recently published post. Uses
+        <code>POST /{media_id}</code> with <code>{caption, access_token}</code>.
+        Requires <code>media_id</code> to be stored — will attempt the same back-fill from
+        the result URL as the check-live route.
+      </p>
+
+      <h3 id="be-worker">Background Worker: <code>_post_to_instagram_worker</code></h3>
+      <p>
+        Runs in a daemon thread. Handles both <code>post_type="car"</code> (static carousel images)
+        and <code>post_type="cine"</code> (cinemagraph video clips). This section focuses on the
+        <code>car</code> path; see the Cinemagraph technical document for the <code>cine</code> path.
+      </p>
+      <p>
+        The worker uses three internal helpers that write directly to <code>site_settings</code>:
+        <code>_set_status(s)</code>, <code>_set_result(s)</code>, and <code>_clear_status()</code>.
+        Status is always cleared at the end of every code path (success, failure, or exception);
+        result persists until the next run or archive.
       </p>
     </section>
 
@@ -490,7 +737,7 @@ data: &lt;JSON string&gt;
         <tr>
           <td><code>image</code></td>
           <td><code>{index, seq, of, url, prompt, punchline}</code></td>
-          <td>After each DALL-E image is downloaded and saved to disk. <code>index</code> = 1-based slot number; <code>seq</code> = position in current generation sequence; <code>of</code> = total images being generated (N).</td>
+          <td>After each DALL-E image is downloaded, saved to disk, and uploaded to GCS. <code>index</code> = 1-based slot number; <code>seq</code> = position in current generation sequence; <code>of</code> = total images being generated (N). <code>url</code> is the GCS public URL if GCS is configured, otherwise a static file URL.</td>
         </tr>
         <tr>
           <td><code>error</code></td>
@@ -518,15 +765,283 @@ progressBar.style.width = pct + '%';
 statusText.textContent = 'Generated ' + (p.seq || p.index) + ' of ' + (p.of || 10) + '…';</code></pre>
     </section>
 
-    <!-- ── 6. Frontend HTML ── -->
+    <!-- ── 6. Instagram Posting ── -->
+    <section id="ig-posting">
+      <h2>6. Instagram Posting</h2>
+      <p>
+        The Instagram posting panel in the article edit UI allows an admin to compose a caption
+        and post the carousel images as an Instagram carousel post. The entire posting operation
+        runs in a background thread. The frontend polls for status every 5 seconds.
+      </p>
+
+      <h3 id="ig-caption-gen">Caption Generation</h3>
+      <p>
+        The <code>POST /admin/articles/&lt;id&gt;/generate-ig-caption</code> endpoint generates
+        an Instagram caption using GPT-4.1-mini. It is <strong>shared between the Carousel
+        and Cinemagraph components</strong> — the optional <code>component</code> field in the
+        request body controls which component name is recorded in the activity log.
+      </p>
+      <p>The caption generation process:</p>
+      <ol class="flow">
+        <li>Loads <code>title</code>, <code>content</code>, and <code>slug</code> from the article row.</li>
+        <li>Strips HTML tags from <code>content</code> and truncates plain text to 500 characters.</li>
+        <li>Reads the system prompt from <code>site_settings</code>: first checks
+          <code>ig_caption_prompt_{article_id}</code> (per-article override), then
+          <code>ig_caption_prompt</code> (global override), then falls back to the
+          hardcoded <code>_IG_CAPTION_DEFAULT_PROMPT</code> constant.</li>
+        <li>Calls GPT-4.1-mini with <code>max_tokens=600</code>.</li>
+        <li>If <code>SITE_URL</code> and <code>slug</code> are available, appends a call-to-action
+          line: <code>"Want to read the full article? Access the following link:\n{url}"</code>.</li>
+        <li>Logs the action and returns <code>{caption: "..."}</code>.</li>
+      </ol>
+
+      <div class="callout callout-key">
+        <strong>Caption prompt customisation:</strong> The system prompt can be overridden at two
+        levels. A global override in <code>site_settings</code> under the key <code>ig_caption_prompt</code>
+        applies to all articles. A per-article override under <code>ig_caption_prompt_{article_id}</code>
+        takes the highest priority. If neither is set, the built-in default prompt is used.
+      </div>
+
+      <h3 id="ig-polling">Polling Pattern</h3>
+      <p>
+        Because the Instagram posting worker runs in a background thread (and may take several
+        minutes), the frontend uses a <strong>polling loop</strong> rather than SSE.
+      </p>
+      <pre><code>// Frontend JS — polling loop (simplified)
+let igPollTimer = null;
+
+function startIgPolling() {
+    igPollTimer = setInterval(async () =&gt; {
+        const r = await fetch(`/admin/articles/${ARTICLE_ID}/ig-post-status?type=car`);
+        const d = await r.json();
+        handleIgStatus(d.status, d.result, d.media_id);
+        if (!d.status || !d.status.startsWith('running')) {
+            clearInterval(igPollTimer);
+            igPollTimer = null;
+        }
+    }, 5000);
+}
+
+function handleIgStatus(status, result, media_id) {
+    if (!status || !status.startsWith('running')) {
+        // Update UI based on result
+        if (result &amp;&amp; result.startsWith('done:')) {
+            showIgSuccess(result.slice(5), media_id);  // permalink
+        } else if (result &amp;&amp; result.startsWith('error:')) {
+            showIgError(result.slice(6));
+        } else if (result &amp;&amp; result.startsWith('warn:')) {
+            showIgWarning(result.slice(5));
+        }
+        return;
+    }
+    // Show progress label from status string
+    showIgProgress(status);
+}</code></pre>
+
+      <h3 id="ig-status-values">Status Key Values</h3>
+      <p>
+        The <code>ig_car_post_status_{id}</code> key is set by the worker to reflect the
+        current phase of the posting operation. The frontend converts these to human-readable
+        progress labels.
+      </p>
+      <table>
+        <tr><th>Status value</th><th>Phase</th></tr>
+        <tr><td><code>running:starting</code></td><td>Thread spawned; not yet reached the worker body</td></tr>
+        <tr><td><code>running:compose:{i}/{n}</code></td><td>Composing slide <em>i</em> of <em>n</em> (downloading image, applying punchline overlay, uploading to GCS) — image-carousel path only</td></tr>
+        <tr><td><code>running:containers:{i}/{n}</code></td><td>Creating Instagram child container <em>i</em> of <em>n</em> via the Graph API</td></tr>
+        <tr><td><code>running:poll:{i}/{n}</code></td><td>Polling child container <em>i</em> of <em>n</em> until its <code>status_code</code> is <code>FINISHED</code></td></tr>
+        <tr><td><code>running:carousel</code></td><td>Creating the top-level carousel container</td></tr>
+        <tr><td><code>running:carousel_poll</code></td><td>Polling the carousel container until <code>FINISHED</code></td></tr>
+        <tr><td><code>running:publish</code></td><td>Calling <code>media_publish</code> on the carousel container ID</td></tr>
+        <tr><td><code>running:publish_verify</code></td><td>Publish returned an error; checking recent media to see if the post went through anyway</td></tr>
+        <tr><td><em>(key absent / empty)</em></td><td>Idle — no posting operation in progress</td></tr>
+      </table>
+
+      <div class="callout callout-info">
+        <strong>Status key lifecycle:</strong> The status key is deleted (<code>DELETE FROM site_settings WHERE key = ...</code>)
+        at the end of every worker run — whether successful, failed, or an unhandled exception.
+        This ensures that the absence of the status key (or a non-<code>running</code> value)
+        is always a reliable indicator that the worker has finished.
+      </div>
+
+      <h3 id="ig-result-values">Result Key Values</h3>
+      <table>
+        <tr><th>Result prefix</th><th>Meaning</th><th>Frontend action</th></tr>
+        <tr>
+          <td><code>done:{permalink}</code></td>
+          <td>Post published successfully. The value after the colon is the Instagram permalink URL.</td>
+          <td>Show success panel with "View on Instagram" link, "Check if live" button, "Archive post" button</td>
+        </tr>
+        <tr>
+          <td><code>error:{message}</code></td>
+          <td>Posting failed. The value after the colon is a human-readable error message.</td>
+          <td>Show error alert with the message</td>
+        </tr>
+        <tr>
+          <td><code>warn:{message}</code></td>
+          <td>Rate-limit ambiguity: the publish API call returned a rate-limit error, but the post may have gone through. The carousel container ID was saved.</td>
+          <td>Show warning alert; show "Check if live" and "Archive post" buttons</td>
+        </tr>
+        <tr>
+          <td><em>(key absent / empty)</em></td>
+          <td>No previous result for this article.</td>
+          <td>Show only the caption textarea and "Post to Instagram" button</td>
+        </tr>
+      </table>
+
+      <h3 id="ig-snapshot">Post Snapshot</h3>
+      <p>
+        After a successful publish (and also in the rate-limit <code>warn</code> case), the worker
+        saves a snapshot of what was posted to <code>ig_car_post_snapshot_{id}</code>. The snapshot
+        is a JSON object:
+      </p>
+      <pre><code>{
+    "caption":    "The full Instagram caption text",
+    "image_urls": ["https://storage.googleapis.com/…/image_1.png", …],  // static carousel path
+    "video_urls": [],             // empty for car post_type
+    "post_type":  "car",
+    "posted_at":  "2026-03-14T10:30:00Z"   // UTC ISO 8601
+}</code></pre>
+      <p>
+        The snapshot is read by the archive route to populate the history entry.
+        It is cleared (set to <code>""</code>) when the post is archived.
+      </p>
+
+      <h3 id="ig-check-live">Check if Live</h3>
+      <p>
+        The <code>GET /admin/articles/&lt;id&gt;/check-instagram-post?type=car</code> route
+        queries the Instagram Graph API to verify the post still exists:
+      </p>
+      <pre><code>GET https://graph.instagram.com/v22.0/{media_id}
+    ?fields=id,permalink
+    &amp;access_token={IG_ACCESS_TOKEN}</code></pre>
+      <p>
+        If the response contains an <code>id</code> field, the route returns
+        <code>{live: true, permalink: "https://www.instagram.com/p/..."}</code>.
+        Otherwise it returns <code>{live: false, api_error: "..."}</code> with the cleaned-up
+        Graph API error message (the boilerplate "Please read the Graph API documentation at …"
+        suffix is stripped).
+      </p>
+      <p>
+        Both outcomes are written to the activity log with title
+        <code>"Check Post Live (car)"</code> and component <code>"carousel"</code>.
+      </p>
+      <div class="callout callout-warn">
+        <strong>Back-fill logic:</strong> Older posts that were published before the
+        <code>media_id</code> key was introduced stored only a permalink in the result key.
+        Both the check-live and archive routes include a back-fill path: they extract the
+        numeric ID from <code>instagram.com/p/{numeric_id}/</code> in the result URL and
+        persist it to the <code>media_id</code> key for future calls.
+      </div>
+
+      <h3 id="ig-archive-post">Archive Post</h3>
+      <p>
+        The <code>POST /admin/articles/&lt;id&gt;/archive-ig-post</code> route clears the
+        current post's active keys and appends a history entry. The history is persisted in
+        <code>ig_car_post_history_{id}</code> and grows indefinitely (it is never cleared or
+        capped). Each history entry contains:
+      </p>
+      <pre><code>{
+    "media_id":    "17854360229135492",
+    "permalink":   "https://www.instagram.com/p/CxYZ1234567/",
+    "archived_at": "2026-03-14T11:00:00Z",
+    "caption":     "Caption text from snapshot…",
+    "image_urls":  ["https://storage.googleapis.com/…"],
+    "video_urls":  [],
+    "post_type":   "car",
+    "posted_at":   "2026-03-14T10:30:00Z"
+}</code></pre>
+      <p>
+        After archiving, the following keys are set to empty strings (not deleted):
+        <code>ig_car_post_result_{id}</code>, <code>ig_car_post_media_id_{id}</code>,
+        <code>ig_car_post_snapshot_{id}</code>.
+        The status key is not touched (it will be absent if no worker is running).
+        The frontend resets its UI to the "not posted" state after a successful archive.
+      </p>
+    </section>
+
+    <!-- ── 7. Activity Log ── -->
+    <section id="activity-log">
+      <h2>7. Activity Log</h2>
+      <p>
+        Every significant event for an article is recorded in a per-article activity log stored
+        in <code>site_settings</code> under the key <code>ig_activity_log_{article_id}</code>.
+        The log is shared across all components (carousel image generation, Instagram posting,
+        cinemagraph generation, narrated video, YouTube upload).
+      </p>
+
+      <h4><code>_add_activity_log(article_id, title, content, component=None)</code></h4>
+      <p>
+        Appends a single entry to the log. Reads the existing JSON array, appends the new entry,
+        caps the array at <strong>50 entries</strong> (oldest discarded first), and upserts the
+        full JSON back into <code>site_settings</code>.
+      </p>
+      <pre><code>def _add_activity_log(article_id, title, content, component=None):
+    key = f"ig_activity_log_{article_id}"
+    raw = get_setting(key)
+    entries = json.loads(raw) if raw else []
+    if len(content) &gt; 4000:
+        content = content[:4000] + "\n… (truncated)"
+    entry = {
+        "title":     title,
+        "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "content":   content,
+    }
+    if component:
+        entry["component"] = component
+    entries.append(entry)
+    entries = entries[-50:]  # keep last 50
+    val = json.dumps(entries)
+    execute(
+        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+        "ON DUPLICATE KEY UPDATE value = %s",
+        (key, val, val),
+    )</code></pre>
+
+      <h4>Entry schema</h4>
+      <table>
+        <tr><th>Field</th><th>Type</th><th>Always present</th><th>Description</th></tr>
+        <tr><td><code>title</code></td><td>string</td><td>Yes</td><td>Short event title, e.g. <code>"Posted to Instagram (car)"</code></td></tr>
+        <tr><td><code>timestamp</code></td><td>string (ISO 8601 UTC)</td><td>Yes</td><td>UTC datetime when the entry was written</td></tr>
+        <tr><td><code>content</code></td><td>string</td><td>Yes</td><td>Detailed description; capped at 4000 characters. May contain newlines.</td></tr>
+        <tr><td><code>component</code></td><td>string</td><td>No</td><td>Source component: <code>"carousel"</code>, <code>"cinemagraph"</code>, <code>"narrated"</code>, etc.</td></tr>
+      </table>
+
+      <h4>Carousel-specific log entries</h4>
+      <table>
+        <tr><th>title</th><th>component</th><th>When written</th></tr>
+        <tr><td><code>Carousel generation</code></td><td><code>carousel</code></td><td>After a full or partial carousel generation completes</td></tr>
+        <tr><td><code>Carousel re-run slide N</code></td><td><code>carousel</code></td><td>After a successful per-image re-run</td></tr>
+        <tr><td><code>Carousel re-run slide N failed</code></td><td><code>carousel</code></td><td>On DALL-E failure during per-image re-run (content policy, API error, or GCS failure)</td></tr>
+        <tr><td><code>Instagram Post Failed (car)</code></td><td><code>carousel</code></td><td>On any failure in <code>_post_to_instagram_worker</code></td></tr>
+        <tr><td><code>Instagram Rate Limit (car)</code></td><td><code>carousel</code></td><td>When publish returns rate-limit after automatic retry</td></tr>
+        <tr><td><code>Posted to Instagram (car)</code></td><td><code>carousel</code></td><td>On successful publish</td></tr>
+        <tr><td><code>Check Post Live (car)</code></td><td><code>carousel</code></td><td>After every check-live call (both live and not-live outcomes)</td></tr>
+        <tr><td><code>Check Post Live Failed (car)</code></td><td><code>carousel</code></td><td>When the check-live API call throws an exception</td></tr>
+        <tr><td><code>Caption Edited on Instagram (car)</code></td><td><code>carousel</code></td><td>After a successful caption edit</td></tr>
+        <tr><td><code>Caption Edit Failed (car)</code></td><td><code>carousel</code></td><td>When the caption edit API call fails</td></tr>
+        <tr><td><code>Post Archived (car)</code></td><td><code>carousel</code></td><td>After a successful archive operation</td></tr>
+        <tr><td><code>Caption Generated (OpenAI)</code></td><td><code>carousel</code></td><td>After successful GPT caption generation</td></tr>
+        <tr><td><code>Caption Generation Failed</code></td><td><code>carousel</code></td><td>When the GPT caption generation call throws an exception</td></tr>
+      </table>
+
+      <div class="callout callout-warn">
+        <strong>Content size:</strong> Individual content strings are capped at 4000 characters
+        before being stored, with a <code>"\n… (truncated)"</code> suffix appended if truncation
+        occurs. This prevents very long error messages or stack traces from overflowing the
+        <code>site_settings.value</code> TEXT column.
+      </div>
+    </section>
+
+    <!-- ── 8. Frontend HTML ── -->
     <section id="frontend-html">
-      <h2>6. Frontend — HTML Elements (<code>article_edit.html</code>)</h2>
+      <h2>8. Frontend — HTML Elements (<code>article_edit.html</code>)</h2>
       <p>
         The carousel UI lives inside a Bootstrap card within the article edit form,
         rendered only when <code>article</code> is truthy (i.e., existing articles; not the new-article form).
       </p>
 
-      <h3>Card header buttons</h3>
+      <h3>Card header buttons — image generation</h3>
       <table>
         <tr><th>Element ID</th><th>Type</th><th>Default state</th><th>Purpose</th></tr>
         <tr><td><code>carousel-btn</code></td><td><code>&lt;button&gt;</code></td><td>Hidden (<code>d-none</code>)</td><td>"Generate Carousel" — shown by <code>updateCarouselTabCounts()</code> when empty slots exist</td></tr>
@@ -537,11 +1052,11 @@ statusText.textContent = 'Generated ' + (p.seq || p.index) + ' of ' + (p.of || 1
       </table>
 
       <p>
-        The kebab menu (⋮ three-dots, top-right of card header) also contains a "View Style"
+        The kebab menu (three-dots, top-right of card header) also contains a "View Style"
         item that opens the read-only style modal.
       </p>
 
-      <h3>Status / progress bar</h3>
+      <h3>Status / progress bar — image generation</h3>
       <table>
         <tr><th>ID</th><th>Purpose</th></tr>
         <tr><td><code>carousel-status</code></td><td>Wrapper — hidden when idle, shown during generation</td></tr>
@@ -569,6 +1084,24 @@ statusText.textContent = 'Generated ' + (p.seq || p.index) + ' of ' + (p.of || 1
       </ul>
       <p>Loading placeholders use <code>id="cph-{N}"</code> and are removed when the image arrives or generation ends.</p>
 
+      <h3>Instagram Posting Panel</h3>
+      <p>
+        Below the image grid, a separate panel handles the Instagram posting workflow.
+        It is rendered only when <code>article</code> is truthy.
+      </p>
+      <table>
+        <tr><th>Element ID</th><th>Purpose</th></tr>
+        <tr><td><code>ig-caption-textarea</code></td><td>Caption textarea — editable; max 2200 chars; populated by "Generate Caption" button</td></tr>
+        <tr><td><code>ig-generate-caption-btn</code></td><td>"Generate Caption" — calls <code>generateIgCaption()</code></td></tr>
+        <tr><td><code>ig-post-btn</code></td><td>"Post to Instagram" — calls <code>postToInstagram()</code></td></tr>
+        <tr><td><code>ig-status-area</code></td><td>Status/progress wrapper — shows spinner + status text while worker runs</td></tr>
+        <tr><td><code>ig-status-text</code></td><td>Human-readable status label derived from the <code>ig_car_post_status_*</code> key value</td></tr>
+        <tr><td><code>ig-result-area</code></td><td>Success/error/warning result panel, shown when the worker completes</td></tr>
+        <tr><td><code>ig-permalink-link</code></td><td>"View on Instagram" anchor; <code>href</code> set to permalink on success</td></tr>
+        <tr><td><code>ig-check-live-btn</code></td><td>"Check if live" — calls <code>checkIgPostLive()</code></td></tr>
+        <tr><td><code>ig-archive-post-btn</code></td><td>"Archive post" — calls <code>archiveIgPost()</code>; shown after any successful/warn result</td></tr>
+      </table>
+
       <h3>Modals</h3>
       <table>
         <tr><th>Modal ID</th><th>Purpose</th><th>Opened by</th></tr>
@@ -578,9 +1111,9 @@ statusText.textContent = 'Generated ' + (p.seq || p.index) + ' of ' + (p.of || 1
       </table>
     </section>
 
-    <!-- ── 7. Frontend JS ── -->
+    <!-- ── 9. Frontend JS ── -->
     <section id="frontend-js">
-      <h2>7. Frontend — JavaScript (<code>article_edit.html</code>)</h2>
+      <h2>9. Frontend — JavaScript (<code>article_edit.html</code>)</h2>
 
       <h3 id="js-constants">Constants (injected via Jinja2)</h3>
       <pre><code>const ARTICLE_ID = parseInt(document.getElementById('article-form').dataset.articleId) || null;
@@ -593,6 +1126,8 @@ const CAROUSEL_STYLE = {{ carousel_style | tojson }};  // Python → JS via tojs
       </table>
 
       <h3 id="js-functions">Function Reference</h3>
+
+      <h4>Image Generation Functions</h4>
       <table>
         <tr><th>Function</th><th>Parameters</th><th>Purpose</th></tr>
         <tr>
@@ -608,7 +1143,7 @@ const CAROUSEL_STYLE = {{ carousel_style | tojson }};  // Python → JS via tojs
         <tr>
           <td><code>addCarouselImage(i, url, initial, prompt, punchline)</code></td>
           <td><code>i</code>: 1–10; <code>initial</code>: bool (skip cache-bust if true)</td>
-          <td>Creates or replaces <code>div#cimg-{i}</code> with thumbnail + info button. Removes any existing placeholder or old image tile with the same id.</td>
+          <td>Creates or replaces <code>div#cimg-{i}</code> with thumbnail + info button. Removes any existing placeholder or old image tile with the same id. For GCS URLs (absolute https), no cache-bust query string is added.</td>
         </tr>
         <tr>
           <td><code>startCarousel()</code></td>
@@ -677,6 +1212,61 @@ const CAROUSEL_STYLE = {{ carousel_style | tojson }};  // Python → JS via tojs
         </tr>
       </table>
 
+      <h4>Instagram Posting Functions</h4>
+      <table>
+        <tr><th>Function</th><th>Parameters</th><th>Purpose</th></tr>
+        <tr>
+          <td><code>loadIgStatus()</code></td>
+          <td><em>none (IIFE)</em></td>
+          <td>Runs on page load. Fetches <code>GET ig-post-status?type=car</code>. If a result exists (done/error/warn), restores the result UI. If status is "running", starts the polling loop to resume progress tracking.</td>
+        </tr>
+        <tr>
+          <td><code>generateIgCaption()</code></td>
+          <td><em>none</em></td>
+          <td>POSTs to <code>generate-ig-caption</code> with <code>{component: "carousel"}</code>. On success: populates <code>#ig-caption-textarea</code> with the returned caption. Shows spinner on the button during the request.</td>
+        </tr>
+        <tr>
+          <td><code>postToInstagram()</code></td>
+          <td><em>none</em></td>
+          <td>Reads caption from <code>#ig-caption-textarea</code>. POSTs <code>{caption, type: "car"}</code> to <code>post-to-instagram</code>. On <code>started: true</code>: disables the Post button, shows status area, starts polling loop.</td>
+        </tr>
+        <tr>
+          <td><code>startIgPolling()</code></td>
+          <td><em>none</em></td>
+          <td>Sets an interval that calls <code>ig-post-status?type=car</code> every 5 seconds. Stops when status is no longer <code>"running:*"</code>.</td>
+        </tr>
+        <tr>
+          <td><code>handleIgStatus(status, result, media_id)</code></td>
+          <td>All three values from the poll response</td>
+          <td>Updates the status text label when running. When the worker finishes, calls the appropriate display function: <code>showIgSuccess()</code>, <code>showIgError()</code>, or <code>showIgWarning()</code>.</td>
+        </tr>
+        <tr>
+          <td><code>showIgSuccess(permalink, media_id)</code></td>
+          <td><code>permalink</code>: URL string; <code>media_id</code>: string</td>
+          <td>Populates and shows the success panel. Sets <code>#ig-permalink-link</code> href to the permalink. Shows "Check if live" and "Archive post" buttons.</td>
+        </tr>
+        <tr>
+          <td><code>showIgError(message)</code></td>
+          <td><code>message</code>: string</td>
+          <td>Shows the error alert. Re-enables the "Post to Instagram" button.</td>
+        </tr>
+        <tr>
+          <td><code>showIgWarning(message)</code></td>
+          <td><code>message</code>: string</td>
+          <td>Shows the warning alert (rate-limit ambiguity). Shows "Check if live" and "Archive post" buttons so the user can verify and archive if the post went through.</td>
+        </tr>
+        <tr>
+          <td><code>checkIgPostLive()</code></td>
+          <td><em>none</em></td>
+          <td>Calls <code>GET check-instagram-post?type=car</code>. Shows a brief success or error alert with the result. Updates the permalink link if a new permalink is returned.</td>
+        </tr>
+        <tr>
+          <td><code>archiveIgPost()</code></td>
+          <td><em>none</em></td>
+          <td>POSTs <code>{type: "car"}</code> to <code>archive-ig-post</code>. On success: hides the result panel, resets the UI to the "not posted" state (caption textarea + Post button visible), clears any stored media_id.</td>
+        </tr>
+      </table>
+
       <h3 id="js-sse">SSE Streaming Pattern</h3>
       <p>
         Because <code>EventSource</code> only supports GET, the frontend uses
@@ -717,11 +1307,18 @@ fetch('/admin/articles/' + ARTICLE_ID + '/generate-carousel', {
     if (err.name === 'AbortError') { carouselStopped(); }
     else { /* show error, re-enable buttons */ }
 });</code></pre>
+
+      <div class="callout callout-info">
+        <strong>IG posting uses polling, not SSE.</strong> The <code>post-to-instagram</code>
+        endpoint returns immediately after spawning the background thread. Progress is tracked
+        by polling <code>ig-post-status?type=car</code> every 5 seconds. This is the correct
+        approach for long-running operations that outlast a typical HTTP request timeout.
+      </div>
     </section>
 
-    <!-- ── 8. Logic Flows ── -->
+    <!-- ── 10. Logic Flows ── -->
     <section id="flows">
-      <h2>8. End-to-End Logic Flows</h2>
+      <h2>10. End-to-End Logic Flows</h2>
 
       <h3 id="flow-full">A. Full Generation (all 10 slots empty)</h3>
       <ol class="flow">
@@ -731,10 +1328,10 @@ fetch('/admin/articles/' + ARTICLE_ID + '/generate-carousel', {
         <li>Backend: reads <code>active_style</code> from <code>site_settings</code>. Loads existing arrays from DB (all null / empty → <code>empty_slots = [0,1,...,9]</code>, <code>N = 10</code>).</li>
         <li>Backend: GPT-4.1-mini call — system prompt instructs it to generate exactly 10 <code>{prompt, punchline}</code> objects as a JSON array.</li>
         <li>Backend: yields <code>event: prompts</code>. Frontend updates status to "Generating images…".</li>
-        <li>Backend: for each of the 10 slots — calls DALL-E 3 with <code>"{prompt}. {active_style}"</code>; downloads the image; saves to <code>static/articles/{id}/carousel/image_{N}.png</code>.</li>
-        <li>Backend: yields <code>event: image {index, seq, of=10, url, prompt, punchline}</code>. Frontend: replaces placeholder with image tile, advances progress bar.</li>
+        <li>Backend: for each of the 10 slots — calls DALL-E 3 with <code>"{prompt}. {active_style}"</code>; downloads the image bytes; saves to local disk as <code>static/articles/{id}/carousel/image_{N}.png</code>; uploads to GCS via <code>upload_bytes_to_gcs()</code>.</li>
+        <li>Backend: yields <code>event: image {index, seq, of=10, url, prompt, punchline}</code> where <code>url</code> is the GCS public URL (or local static URL if GCS not configured). Frontend: replaces placeholder with image tile, advances progress bar.</li>
         <li>After all slots: backend yields <code>event: done {count}</code>.</li>
-        <li>Backend: UPDATE articles — writes <code>carousel_prompts</code>, <code>carousel_punchlines</code>, <code>carousel_images</code>, <code>carousel_style</code>.</li>
+        <li>Backend: UPDATE articles — writes <code>carousel_prompts</code>, <code>carousel_punchlines</code>, <code>carousel_images</code> (GCS URLs), <code>carousel_style</code>. Writes to activity log.</li>
         <li>Frontend: <code>carouselDone(count)</code> — cleans up, re-enables buttons, calls <code>updateCarouselTabCounts()</code> which hides Generate button (all 10 slots now filled).</li>
       </ol>
 
@@ -754,8 +1351,8 @@ fetch('/admin/articles/' + ARTICLE_ID + '/generate-carousel', {
         <li>User edits prompt and/or punchline and clicks "Re-run this prompt".</li>
         <li><code>rerunCarouselImage()</code> POSTs <code>{index: 0–9, prompt, punchline}</code> to <code>regenerate-carousel-image</code>.</li>
         <li>Backend validates index is 0–9. Reads existing arrays. Saves the old <code>prompt/image/punchline</code> at that index.</li>
-        <li>Backend calls DALL-E 3. Saves new image as <code>image_{index+1}_{timestamp}.png</code> (timestamped to preserve old file for the Removed tab).</li>
-        <li>Backend: updates the slot with new values; appends old values to the end of the arrays (slot 10+). Saves to DB.</li>
+        <li>Backend calls DALL-E 3. Saves new image as <code>image_{index+1}_{timestamp}.png</code> (timestamped to preserve old file). Uploads to GCS.</li>
+        <li>Backend: updates the slot with new values (GCS URL if upload succeeded); appends old values to the end of the arrays (slot 10+). Saves to DB. Writes to activity log.</li>
         <li>Frontend: <code>addRemovedImage(oldTile)</code> moves the old tile to the Removed grid. <code>addCarouselImage()</code> adds the new tile. Modal closes. <code>updateCarouselTabCounts()</code> runs.</li>
       </ol>
 
@@ -776,11 +1373,36 @@ fetch('/admin/articles/' + ARTICLE_ID + '/generate-carousel', {
         <li>From the next carousel generation onwards, the new style is used. The article's <code>carousel_style</code> column is updated to record which style produced its images.</li>
         <li>Existing articles' "View Style" modals show their own saved <code>carousel_style</code> value, not the new site setting.</li>
       </ol>
+
+      <h3 id="flow-ig-post">F. Instagram Posting (carousel)</h3>
+      <ol class="flow">
+        <li>User optionally clicks "Generate Caption" — <code>generateIgCaption()</code> POSTs to <code>generate-ig-caption</code> with <code>{component: "carousel"}</code>. GPT-4.1-mini returns a caption (up to 600 tokens); the frontend populates the caption textarea.</li>
+        <li>User reviews/edits the caption (up to 2200 characters) and clicks "Post to Instagram".</li>
+        <li><code>postToInstagram()</code> POSTs <code>{caption, type: "car"}</code> to <code>post-to-instagram</code>. Backend validates credentials, checks for in-progress worker, validates image count (≥2), seeds <code>ig_car_post_status_{id} = "running:starting"</code>, spawns daemon thread, returns <code>{started: true}</code>.</li>
+        <li>Frontend disables Post button and starts polling loop (every 5 seconds).</li>
+        <li><strong>Worker — compose phase</strong> (<code>running:compose:{i}/{n}</code>): for each carousel image, download bytes (from GCS URL or local path), apply punchline overlay via <code>compose_carousel_slide()</code>, encode as JPEG, upload composed JPEG to GCS as <code>articles/{id}/instagram/composed_{i}_{ts}.jpg</code>. Fails immediately if any upload fails (GCS required).</li>
+        <li><strong>Worker — child containers</strong> (<code>running:containers:{i}/{n}</code>): POST each composed GCS URL to the Instagram Graph API as a carousel item (<code>is_carousel_item=true</code>). Fails immediately if any container creation fails.</li>
+        <li><strong>Worker — poll children</strong> (<code>running:poll:{i}/{n}</code>): poll each child container's <code>status_code</code> until <code>FINISHED</code> or <code>ERROR</code>. Polls with exponential back-off up to 30s; 5-minute timeout per container.</li>
+        <li><strong>Worker — carousel container</strong> (<code>running:carousel</code>): POST <code>media_type=CAROUSEL</code> with all child IDs and the caption.</li>
+        <li><strong>Worker — poll carousel</strong> (<code>running:carousel_poll</code>): poll the carousel container until <code>FINISHED</code>. Same timeout and back-off as child polling.</li>
+        <li><strong>Worker — publish</strong> (<code>running:publish</code>): POST to <code>/{ig_user_id}/media_publish</code> with the carousel container ID.</li>
+        <li><strong>Worker — verify</strong> (<code>running:publish_verify</code>, conditional): if publish returns an error, wait 10s and check the account's most recent 3 posts. If any post is less than 2 minutes old, treat it as a successful publish despite the error response (Instagram sometimes returns rate-limit/Fatal but publishes anyway).</li>
+        <li><strong>Worker — success path</strong>: fetch the real permalink via <code>GET /{post_id}?fields=permalink</code>. Write <code>ig_car_post_result_{id} = "done:{permalink}"</code>. Save <code>media_id</code>. Save post snapshot JSON. Write to activity log. Delete status key.</li>
+        <li>Frontend polling detects non-running status → calls <code>showIgSuccess(permalink, media_id)</code>. UI shows "View on Instagram" link, "Check if live", and "Archive post" buttons.</li>
+      </ol>
+
+      <h3 id="flow-ig-archive">G. Archive Instagram Post</h3>
+      <ol class="flow">
+        <li>User clicks "Archive post" button (visible after a done or warn result).</li>
+        <li><code>archiveIgPost()</code> POSTs <code>{type: "car"}</code> to <code>archive-ig-post</code>.</li>
+        <li>Backend reads <code>media_id</code>, <code>result</code> (for permalink), and <code>snapshot</code>. Appends history entry with all fields. Persists updated history to <code>ig_car_post_history_{id}</code>. Sets <code>result</code>, <code>media_id</code>, and <code>snapshot</code> keys to empty strings. Writes to activity log.</li>
+        <li>Frontend: hides result panel, re-shows caption textarea and Post button. UI is ready for a new post.</li>
+      </ol>
     </section>
 
-    <!-- ── 9. Slot Convention ── -->
+    <!-- ── 11. Slot Convention ── -->
     <section id="slot-convention">
-      <h2>9. Slot Index Convention</h2>
+      <h2>11. Slot Index Convention</h2>
       <p>
         All three carousel arrays (<code>carousel_prompts</code>, <code>carousel_images</code>,
         <code>carousel_punchlines</code>) share the same index convention:
@@ -813,22 +1435,42 @@ final_p  = [None] * 10 + already_archived_p  + new_archived_p
 final_i  = [None] * 10 + already_archived_i  + new_archived_i
 final_pl = [None] * 10 + already_archived_pl + new_archived_pl
 # So existing[10:] == already_archived + new_archived  ✓</code></pre>
+
+      <h4>IG posting uses only active slots</h4>
+      <p>
+        The Instagram posting worker reads <code>carousel_images[:10]</code> and filters out
+        <code>None</code> values: <code>[x for x in images[:10] if x]</code>. Only non-null
+        images from the active slots are posted. Archived images (slots 10+) are never included.
+      </p>
     </section>
 
-    <!-- ── 10. Cost & Limits ── -->
+    <!-- ── 12. Cost & Limits ── -->
     <section id="cost-notes">
-      <h2>10. Cost &amp; Limits</h2>
+      <h2>12. Cost &amp; Limits</h2>
       <table>
         <tr><th>Item</th><th>Detail</th></tr>
         <tr><td>DALL-E 3 model</td><td><code>dall-e-3</code>, <code>1024×1024</code>, <code>quality: standard</code>, <code>style: vivid</code></td></tr>
-        <tr><td>Approximate cost per full run</td><td>~$0.40 (10 × $0.04 per standard 1024×1024 image)</td></tr>
-        <tr><td>Approximate time per full run</td><td>60–90 seconds</td></tr>
-        <tr><td>GPT model</td><td><code>gpt-4.1-mini</code>, <code>max_tokens: 3000</code></td></tr>
-        <tr><td>Article text fed to GPT</td><td>HTML stripped, whitespace normalised, truncated to 6000 characters</td></tr>
+        <tr><td>Approximate cost per full generation run</td><td>~$0.40 (10 × $0.04 per standard 1024×1024 image)</td></tr>
+        <tr><td>Approximate time per full generation run</td><td>60–90 seconds</td></tr>
+        <tr><td>GPT model (scene descriptions)</td><td><code>gpt-4.1-mini</code>, <code>max_tokens: 3000</code></td></tr>
+        <tr><td>GPT model (caption generation)</td><td><code>gpt-4.1-mini</code>, <code>max_tokens: 600</code></td></tr>
+        <tr><td>Approximate cost per caption generation</td><td>&lt;$0.001 (very short prompt + 600-token output with gpt-4.1-mini pricing)</td></tr>
+        <tr><td>Article text fed to GPT (scene descriptions)</td><td>HTML stripped, whitespace normalised, truncated to 6000 characters</td></tr>
+        <tr><td>Article text fed to GPT (caption)</td><td>HTML stripped, whitespace normalised, truncated to 500 characters</td></tr>
         <tr><td>Max active images</td><td>10 (slots 0–9)</td></tr>
         <tr><td>Max archived images</td><td>Unlimited (appended to the JSON array beyond index 9)</td></tr>
         <tr><td>Punchline max length</td><td>15 words (instructed in GPT system prompt; not enforced server-side)</td></tr>
-        <tr><td>Error handling</td><td>Content policy rejections and rate limits are caught per-image; generation continues for remaining slots. Errors shown in the "View N error(s)" button after generation.</td></tr>
+        <tr><td>Caption max length</td><td>2200 characters (Instagram limit; enforced server-side by slice)</td></tr>
+        <tr><td>Min images for IG posting</td><td>2 (Instagram carousel minimum; validated before spawning worker)</td></tr>
+        <tr><td>Max images per IG carousel</td><td>10 (active slots 0–9, filtered for non-null)</td></tr>
+        <tr><td>IG container poll timeout</td><td>5 minutes per container (child containers and the carousel container each have independent 5-minute deadlines)</td></tr>
+        <tr><td>IG container poll back-off</td><td>5s, 10s, 15s … up to 30s max between polls (<code>min(5 + n * 5, 30)</code>)</td></tr>
+        <tr><td>IG rate-limit retry</td><td>One automatic 30-second wait + retry in <code>_ig_api_call()</code>; if rate-limited again on publish, saves the carousel ID and emits a <code>warn:</code> result</td></tr>
+        <tr><td>Activity log cap</td><td>50 entries per article (oldest entries are discarded when the cap is exceeded)</td></tr>
+        <tr><td>Activity log content max</td><td>4000 characters per entry</td></tr>
+        <tr><td>Error handling (image generation)</td><td>Content policy rejections and rate limits are caught per-image; generation continues for remaining slots. Errors shown in the "View N error(s)" button after generation.</td></tr>
+        <tr><td>Error handling (IG posting)</td><td>Any failure in the worker stops the entire posting operation and writes an <code>error:</code> result. Each failure is also written to the activity log.</td></tr>
+        <tr><td>GCS requirement</td><td>GCS is optional for image generation (local storage used as fallback) but <strong>required</strong> for Instagram posting (Instagram Graph API requires publicly accessible URLs)</td></tr>
       </table>
     </section>
 

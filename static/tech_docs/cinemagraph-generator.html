@@ -1,0 +1,1493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cinemagraph Generator — Technical Documentation</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --sidebar-width: 270px;
+      --code-bg: #f3f4f6;
+      --border-color: #dee2e6;
+      --accent: #0d6efd;
+    }
+
+    body {
+      font-size: 0.94rem;
+      color: #212529;
+      background: #fff;
+    }
+
+    /* ── Layout ── */
+    #wrapper {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    #sidebar {
+      width: var(--sidebar-width);
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--border-color);
+      padding: 1.5rem 1rem;
+      background: #f8f9fa;
+    }
+
+    #main {
+      flex: 1;
+      padding: 2rem 3rem 4rem 3rem;
+      max-width: 940px;
+    }
+
+    /* ── TOC ── */
+    #toc-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6c757d;
+      margin-bottom: 0.75rem;
+    }
+
+    #toc a {
+      display: block;
+      color: #495057;
+      text-decoration: none;
+      font-size: 0.85rem;
+      padding: 0.2rem 0;
+      line-height: 1.4;
+    }
+
+    #toc a:hover { color: var(--accent); }
+
+    #toc .toc-sub {
+      padding-left: 0.9rem;
+      font-size: 0.8rem;
+      color: #6c757d;
+    }
+
+    #toc .toc-sub:hover { color: var(--accent); }
+
+    /* ── Headings ── */
+    h1 { font-size: 1.65rem; font-weight: 700; }
+    h2 { font-size: 1.25rem; font-weight: 700; margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); }
+    h3 { font-size: 1.05rem; font-weight: 600; margin-top: 1.6rem; }
+    h4 { font-size: 0.95rem; font-weight: 600; margin-top: 1.2rem; color: #343a40; }
+
+    /* ── Meta bar ── */
+    .meta-bar {
+      font-size: 0.82rem;
+      color: #6c757d;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .meta-bar span { margin-right: 1.5rem; }
+
+    /* ── Code ── */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid #e2e4e7;
+      border-radius: 6px;
+      padding: 1rem 1.1rem;
+      font-size: 0.82rem;
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.85em;
+    }
+
+    p code, li code, td code {
+      background: var(--code-bg);
+      padding: 0.1em 0.4em;
+      border-radius: 3px;
+      color: #d63384;
+    }
+
+    /* ── Tables ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      margin: 1rem 0 1.5rem;
+    }
+
+    th {
+      background: #f0f1f3;
+      font-weight: 600;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border-color);
+      text-align: left;
+    }
+
+    td {
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border-color);
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td { background: #fafafa; }
+
+    /* ── Callout boxes ── */
+    .callout {
+      border-left: 4px solid;
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1rem 0;
+      font-size: 0.875rem;
+    }
+
+    .callout-info  { border-color: #0dcaf0; background: #f0fbff; }
+    .callout-warn  { border-color: #ffc107; background: #fffbf0; }
+    .callout-key   { border-color: #0d6efd; background: #f0f5ff; }
+    .callout-danger { border-color: #dc3545; background: #fff5f5; }
+
+    /* ── Flow steps ── */
+    ol.flow li {
+      margin-bottom: 0.4rem;
+      padding-left: 0.25rem;
+    }
+
+    /* ── Badge-like labels ── */
+    .method-badge {
+      display: inline-block;
+      padding: 0.15em 0.5em;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-family: monospace;
+      margin-right: 0.35rem;
+    }
+    .get    { background: #d1e7dd; color: #0a3622; }
+    .post   { background: #cfe2ff; color: #082a6a; }
+    .delete { background: #f8d7da; color: #58151c; }
+
+    @media print {
+      #sidebar { display: none; }
+      #main { max-width: 100%; padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+<div id="wrapper">
+
+  <!-- ── Sidebar TOC ── -->
+  <nav id="sidebar">
+    <div id="toc-title">Contents</div>
+    <nav id="toc">
+      <a href="#overview">1. Overview</a>
+      <a href="#file-structure">2. File Structure</a>
+      <a href="#database">3. Database Schema</a>
+      <a class="toc-sub" href="#db-articles">articles (cinemagraph columns)</a>
+      <a class="toc-sub" href="#db-site-settings">site_settings keys</a>
+      <a href="#backend">4. Python Backend</a>
+      <a class="toc-sub" href="#be-client">Luma AI Client Init</a>
+      <a class="toc-sub" href="#be-helpers">Helper Functions</a>
+      <a class="toc-sub" href="#be-routes">API Routes</a>
+      <a href="#worker">5. Worker Detail</a>
+      <a class="toc-sub" href="#worker-args">Arguments</a>
+      <a class="toc-sub" href="#worker-flow">Execution Flow</a>
+      <a class="toc-sub" href="#worker-polling">Luma Polling Pattern</a>
+      <a class="toc-sub" href="#worker-storage">File Storage</a>
+      <a class="toc-sub" href="#worker-cancel">Cancel Support</a>
+      <a class="toc-sub" href="#worker-log">Log Flushing</a>
+      <a href="#slide-worker">6. Single-Slide Worker</a>
+      <a href="#instagram">7. Instagram Posting Flow</a>
+      <a class="toc-sub" href="#ig-routes">IG Routes</a>
+      <a class="toc-sub" href="#ig-flow">Posting Sequence</a>
+      <a class="toc-sub" href="#ig-status">Status Keys</a>
+      <a href="#frontend-html">8. Frontend — HTML</a>
+      <a class="toc-sub" href="#html-card">Card Structure</a>
+      <a class="toc-sub" href="#html-status">Status / Progress Bar</a>
+      <a class="toc-sub" href="#html-grids">Grids &amp; Tabs</a>
+      <a class="toc-sub" href="#html-modals">Modals</a>
+      <a class="toc-sub" href="#html-ig">Instagram Section</a>
+      <a href="#frontend-js">9. Frontend — JavaScript</a>
+      <a class="toc-sub" href="#js-vars">State Variables</a>
+      <a class="toc-sub" href="#js-functions">Function Reference</a>
+      <a class="toc-sub" href="#js-polling">Polling Pattern</a>
+      <a class="toc-sub" href="#js-status-map">Status String Mapping</a>
+      <a href="#flows">10. Logic Flows</a>
+      <a class="toc-sub" href="#flow-full">A. Full Generation</a>
+      <a class="toc-sub" href="#flow-partial">B. Partial Generation</a>
+      <a class="toc-sub" href="#flow-rerun">C. Single-Slide Re-run</a>
+      <a class="toc-sub" href="#flow-archive-slide">D. Archive Single Clip</a>
+      <a class="toc-sub" href="#flow-archive-all">E. Archive All</a>
+      <a class="toc-sub" href="#flow-restore">F. Restore Archived Clip</a>
+      <a class="toc-sub" href="#flow-rerun-all">G. Re-run All</a>
+      <a class="toc-sub" href="#flow-prompt">H. Save Default Prompt</a>
+      <a href="#cost-limits">11. Cost &amp; Limits</a>
+    </nav>
+  </nav>
+
+  <!-- ── Main content ── -->
+  <main id="main">
+
+    <h1>Cinemagraph Generator</h1>
+    <div class="meta-bar">
+      <span><strong>Project:</strong> Obelisk Stamps</span>
+      <span><strong>Component:</strong> D — article_edit.html</span>
+      <span><strong>Date:</strong> March 2026</span>
+    </div>
+
+    <!-- ── 1. Overview ── -->
+    <section id="overview">
+      <h2>1. Overview</h2>
+      <p>
+        The Cinemagraph Generator is <strong>Component D</strong> of the article edit admin page.
+        It animates each carousel image into a <strong>5-second looping MP4 video clip</strong>
+        using <strong>Luma AI Ray-2</strong> image-to-video generation. Up to
+        <strong>10 clips</strong> can be generated, one per carousel slide.
+      </p>
+      <p>The generated clips serve two downstream purposes:</p>
+      <ol>
+        <li><strong>Instagram carousel posts</strong> — each clip becomes a video slide in a multi-video
+          carousel posted via the Instagram Graph API.</li>
+        <li><strong>Narrated Video (Component E)</strong> — clips replace the static Ken Burns effect
+          as the visual layer when a narrated video is assembled via FFmpeg.</li>
+      </ol>
+
+      <h3>Key capabilities</h3>
+      <table>
+        <tr><th>Capability</th><th>Description</th></tr>
+        <tr><td>Slot-based storage</td><td>10 active slots (indices 0–9) backed by a JSON array column. Each slot maps 1:1 to its carousel image. <code>null</code> = slot is empty and eligible for generation.</td></tr>
+        <tr><td>Partial generation</td><td>Only empty slots are generated. Existing clips in filled slots are untouched and preserved in the DB merge.</td></tr>
+        <tr><td>Per-slide re-run</td><td>Any individual clip can be replaced with a new Luma generation using a custom per-slide prompt. The old clip is moved to the Archived tab.</td></tr>
+        <tr><td>Re-run All</td><td>Bulk re-generation with an optional global prompt override. Archives all existing clips then regenerates all 10 (or however many carousel images exist).</td></tr>
+        <tr><td>Archive / Restore</td><td>Clips can be individually archived out of an active slot. Archived clips can be restored back into any empty or occupied slot.</td></tr>
+        <tr><td>Cancel support</td><td>User can cancel a running generation. The worker checks a <code>site_settings</code> cancel key between each slide and stops cleanly.</td></tr>
+        <tr><td>Default prompt</td><td>A per-article prompt override can be saved (stored in <code>site_settings</code>). Falls back to a site-wide global default.</td></tr>
+        <tr><td>Polling UI</td><td>No SSE stream — the frontend polls <code>/video-data</code> every 20 seconds and renders newly completed clips as they arrive.</td></tr>
+        <tr><td>Log capture</td><td>The worker writes timestamped log lines to <code>carousel_cinemagraph_log</code> (flushed periodically). Viewable from a "View Logs" button.</td></tr>
+      </table>
+
+      <div class="callout callout-key">
+        <strong>Prerequisite:</strong> Cinemagraph generation requires an existing carousel (Component B).
+        The <strong>Generate Cinemagraph</strong> button is locked until at least one
+        <code>carousel_images</code> slot is filled. The lock is lifted by
+        <code>cinemagraphUnlock()</code>, which is called when carousel images are loaded.
+      </div>
+    </section>
+
+    <!-- ── 2. File Structure ── -->
+    <section id="file-structure">
+      <h2>2. File Structure</h2>
+      <table>
+        <tr><th>File / Path</th><th>Role</th></tr>
+        <tr><td><code>app.py</code></td><td>All backend routes, Luma AI client init, worker threads, DB helpers</td></tr>
+        <tr><td><code>templates/article_edit.html</code></td><td>Admin article edit page — full cinemagraph UI (HTML + JS), Component D section</td></tr>
+        <tr><td><code>static/articles/{id}/cinemagraph/slide_N_TIMESTAMP.mp4</code></td><td>Generated video clip for slot N. Local fallback path when GCS is not configured.</td></tr>
+        <tr><td><code>static/articles/{id}/cinemagraph/run_TIMESTAMP.log</code></td><td>Log file archived to GCS after each full generation run (when GCS is configured).</td></tr>
+        <tr><td><code>static/articles/{id}/temp/slide_N_TIMESTAMP.jpg</code></td><td>Temporary upload path for local carousel images that need to be staged to GCS before Luma can access them.</td></tr>
+        <tr><td><code>static/tech_docs/cinemagraph-generator.html</code></td><td>This document.</td></tr>
+      </table>
+
+      <div class="callout callout-info">
+        <strong>GCS vs local:</strong> When <code>GCS_BUCKET_NAME</code> is set, generated clips are
+        uploaded to GCS and the local file is deleted. The saved URL is a public
+        <code>https://storage.googleapis.com/...</code> URL. Without GCS, the URL is a local
+        <code>/static/articles/{id}/cinemagraph/...</code> path.
+      </div>
+    </section>
+
+    <!-- ── 3. Database Schema ── -->
+    <section id="database">
+      <h2>3. Database Schema</h2>
+
+      <h3 id="db-articles">Table: <code>articles</code> — cinemagraph columns</h3>
+      <p>
+        Five TEXT columns are added to the existing <code>articles</code> table. All are
+        added via idempotent <code>ALTER TABLE … ADD COLUMN</code> calls at startup, wrapped
+        in <code>try/except</code> to silently skip if the column already exists.
+      </p>
+      <table>
+        <tr><th>Column</th><th>Type</th><th>Purpose</th></tr>
+        <tr>
+          <td><code>carousel_cinemagraphs</code></td>
+          <td>TEXT (JSON array)</td>
+          <td>Array of 10 GCS or local URLs for active clip slots. <code>null</code> entries mean that slot is empty. Index 0 = slide 1.</td>
+        </tr>
+        <tr>
+          <td><code>carousel_cinemagraph_log</code></td>
+          <td>TEXT</td>
+          <td>Free-text generation log. Flushed periodically by the worker during a run. Shown in the "View Logs" modal. Capped at 65,000 characters to stay within MySQL TEXT limits.</td>
+        </tr>
+        <tr>
+          <td><code>carousel_cinemagraph_prompts</code></td>
+          <td>TEXT (JSON array)</td>
+          <td>Array of 10 per-slide Luma prompts. Written by the route before the worker starts, so the worker always reads its prompts from this array. Re-run also patches this column.</td>
+        </tr>
+        <tr>
+          <td><code>carousel_cinemagraph_archived</code></td>
+          <td>TEXT (JSON array)</td>
+          <td>Array of archived clip objects. Each object: <code>{url, prompt, created_at, archived_at, slot_source}</code>. See below.</td>
+        </tr>
+        <tr>
+          <td><code>carousel_cinemagraph_created_at</code></td>
+          <td>TEXT (JSON array)</td>
+          <td>Array of 10 ISO 8601 UTC timestamps (e.g. <code>"2026-03-14T10:30:00Z"</code>) recording when each active clip was generated. <code>null</code> = no clip in that slot.</td>
+        </tr>
+      </table>
+
+      <div class="callout callout-key">
+        <strong>Slot convention:</strong> All five columns share the same index space.
+        Indices <strong>0–9</strong> are the 10 active slots corresponding to carousel slides 1–10.
+        The <code>carousel_cinemagraph_archived</code> column is a separate array (not indexed by slot) —
+        it grows unboundedly as clips are archived.
+      </div>
+
+      <h4>Archived clip object schema</h4>
+      <pre><code>{
+  "url":         "https://storage.googleapis.com/.../slide_3_1710000000.mp4",
+  "prompt":      "Gentle breeze through autumn leaves...",
+  "created_at":  "2026-03-14T10:30:00Z",   // when the clip was originally generated
+  "archived_at": "2026-03-14T11:00:00Z",   // when it was moved to archive (ISO 8601)
+  "slot_source": 3                          // 1-based slot it came from
+}</code></pre>
+
+      <h4>Migration snippet (app.py — <code>init_articles_table()</code>)</h4>
+      <pre><code>for col in (
+    "carousel_cinemagraphs TEXT",
+    "carousel_cinemagraph_log TEXT",
+    "carousel_cinemagraph_prompts TEXT",
+    "carousel_cinemagraph_archived TEXT",
+    "carousel_cinemagraph_created_at TEXT",
+):
+    try:
+        cur.execute(f"ALTER TABLE articles ADD COLUMN {col}")
+    except Exception:
+        pass  # column already exists</code></pre>
+
+      <h3 id="db-site-settings">site_settings keys</h3>
+      <p>
+        All transient state (running status, results, cancel signals) is stored in the
+        <code>site_settings</code> key-value table rather than the <code>articles</code> table.
+        This keeps the articles table clean and makes it safe to restart the server mid-run
+        (stale <code>cinemagraph_status_*</code> keys are deleted at startup).
+      </p>
+      <table>
+        <tr><th>Key pattern</th><th>Type</th><th>Lifecycle</th><th>Example values</th></tr>
+        <tr>
+          <td><code>cinemagraph_status_{article_id}</code></td>
+          <td>Transient string</td>
+          <td>Written at run start; deleted when worker finishes or on server restart</td>
+          <td><code>"running:0/10"</code>, <code>"running:3/10:dreaming"</code>, <code>"slide_running:2"</code></td>
+        </tr>
+        <tr>
+          <td><code>cinemagraph_result_{article_id}</code></td>
+          <td>Transient string</td>
+          <td>Written at run end; cleared by frontend via <code>DELETE /cinemagraph-result</code> after display</td>
+          <td><code>"done"</code>, <code>"error:Billing error: ..."</code>, <code>"warn:partial:3/5"</code></td>
+        </tr>
+        <tr>
+          <td><code>cinemagraph_cancel_{article_id}</code></td>
+          <td>Transient string</td>
+          <td>Written by cancel route; deleted by worker when it detects cancellation</td>
+          <td><code>"1"</code></td>
+        </tr>
+        <tr>
+          <td><code>cinemagraph_prompt_{article_id}</code></td>
+          <td>Persistent string</td>
+          <td>Written by "Save for this Article" button; persists indefinitely</td>
+          <td>Custom Luma prompt text (any string)</td>
+        </tr>
+        <tr>
+          <td><code>cinemagraph_prompt</code></td>
+          <td>Persistent string</td>
+          <td>Site-wide default; seeded from <code>_CINE_DEFAULT_PROMPT</code> constant on first app start via <code>INSERT IGNORE</code></td>
+          <td>Default Luma motion prompt text</td>
+        </tr>
+        <tr>
+          <td><code>ig_post_status_{article_id}</code></td>
+          <td>Transient string</td>
+          <td>Written during IG post flow</td>
+          <td><code>"running:start"</code>, <code>"running:child_3"</code>, <code>"running:publish"</code></td>
+        </tr>
+        <tr>
+          <td><code>ig_post_result_{article_id}</code></td>
+          <td>Transient string</td>
+          <td>Written when IG post completes</td>
+          <td><code>"done:https://www.instagram.com/p/..."</code>, <code>"error:..."</code></td>
+        </tr>
+        <tr>
+          <td><code>ig_post_snapshot_{article_id}</code></td>
+          <td>Persistent JSON</td>
+          <td>Written on successful IG post; shown in the "posted" state UI</td>
+          <td>JSON object with post metadata</td>
+        </tr>
+        <tr>
+          <td><code>ig_activity_log_{article_id}</code></td>
+          <td>Persistent JSON array</td>
+          <td>Appended on each IG post action; shown in activity log modal</td>
+          <td>Array of <code>{type, message, url, timestamp}</code> objects</td>
+        </tr>
+      </table>
+
+      <div class="callout callout-warn">
+        <strong>Server restart cleanup:</strong> On app startup, <code>init_site_settings()</code>
+        runs <code>DELETE FROM site_settings WHERE key LIKE 'cinemagraph_status_%'</code>.
+        This prevents stale "running" status keys from blocking new generation requests
+        after a crash or restart mid-run.
+      </div>
+    </section>
+
+    <!-- ── 4. Python Backend ── -->
+    <section id="backend">
+      <h2>4. Python Backend (<code>app.py</code>)</h2>
+
+      <h3 id="be-client">Luma AI Client Initialisation</h3>
+      <p>
+        The Luma AI Python SDK (<code>lumaai</code>) is imported at module load. If the package
+        is not installed or <code>LUMAAI_API_KEY</code> is not set, <code>_luma_enabled</code>
+        remains <code>False</code> and every generation route returns a 400 error immediately.
+      </p>
+      <pre><code>try:
+    from lumaai import LumaAI as _LumaAI
+except ImportError:
+    _LumaAI = None
+
+LUMAAI_API_KEY = os.getenv("LUMAAI_API_KEY", "")
+_luma_client  = None
+_luma_enabled = False
+
+if LUMAAI_API_KEY and _LumaAI:
+    try:
+        _luma_client = _LumaAI(auth_token=LUMAAI_API_KEY)
+        _luma_enabled = True
+    except Exception as e:
+        print(f"WARNING: Luma AI init failed: {e}")</code></pre>
+
+      <h3 id="be-helpers">Helper Functions</h3>
+
+      <h4><code>_luma_create_task(image_url, prompt_text) → str</code></h4>
+      <p>
+        Submits an image-to-video generation task to Luma. The source image must be a
+        publicly accessible HTTPS URL — local static paths cannot be passed directly.
+        Returns the Luma generation ID (UUID string).
+      </p>
+      <pre><code>def _luma_create_task(image_url, prompt_text):
+    gen = _luma_client.generations.create(
+        prompt=prompt_text or "gentle subtle motion",
+        model="ray-2",
+        keyframes={"frame0": {"type": "image", "url": image_url}},
+        aspect_ratio="1:1",
+        duration="5s",
+    )
+    return gen.id</code></pre>
+
+      <h4><code>_luma_poll_task(gen_id) → (state, mp4_url, reason)</code></h4>
+      <p>Fetches the current state of a generation. The tuple fields:</p>
+      <table>
+        <tr><th>Field</th><th>Type</th><th>Values</th></tr>
+        <tr><td><code>state</code></td><td>str</td><td><code>"queued"</code>, <code>"dreaming"</code>, <code>"completed"</code>, <code>"failed"</code></td></tr>
+        <tr><td><code>mp4_url</code></td><td>str | None</td><td>CDN URL to the output MP4 (only when <code>state == "completed"</code>)</td></tr>
+        <tr><td><code>reason</code></td><td>str</td><td>Failure reason string (only when <code>state == "failed"</code>)</td></tr>
+      </table>
+      <pre><code>def _luma_poll_task(gen_id):
+    gen = _luma_client.generations.get(id=gen_id)
+    state   = gen.state   # "queued", "dreaming", "completed", "failed"
+    mp4_url = gen.assets.video if state == "completed" and gen.assets else None
+    reason  = gen.failure_reason if state == "failed" else ""
+    return state, mp4_url, reason or ""</code></pre>
+
+      <h4><code>_is_luma_billing_error(exc) → bool</code></h4>
+      <p>
+        Detects non-transient errors that indicate the account has run out of credits.
+        When this returns <code>True</code>, the worker aborts immediately and sets the
+        result to <code>"error:Billing/credits error: ..."</code> rather than continuing
+        to fail on every subsequent slide.
+      </p>
+      <pre><code>def _is_luma_billing_error(exc):
+    msg_lower = str(exc).lower()
+    return any(phrase in msg_lower for phrase in [
+        "insufficient", "credits", "billing", "quota", "balance",
+        "permissiondenied", "403",
+    ])</code></pre>
+
+      <h3 id="be-routes">API Routes</h3>
+      <p>All routes require <code>@login_required</code> and <code>@admin_required</code> decorators.</p>
+
+      <table>
+        <tr><th>Method</th><th>URL</th><th>Function</th><th>Returns</th></tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/generate-cinemagraphs</code></td>
+          <td><code>admin_article_generate_cinemagraphs</code></td>
+          <td>JSON: <code>{started: true, n_slides: N}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge get">GET</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/video-data</code></td>
+          <td><code>admin_article_video_data</code></td>
+          <td>JSON: combined video-data object (see below)</td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/cancel-cinemagraphs</code></td>
+          <td><code>admin_article_cancel_cinemagraphs</code></td>
+          <td>JSON: <code>{cancelled: true}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/regenerate-cinemagraph-slide</code></td>
+          <td><code>admin_article_regenerate_cinemagraph_slide</code></td>
+          <td>JSON: <code>{started: true, archived_idx: N}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/archive-cinemagraph-slide</code></td>
+          <td><code>admin_article_archive_cinemagraph_slide</code></td>
+          <td>JSON: <code>{ok: true, archived_idx: N}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/archive-all-cinemagraphs</code></td>
+          <td><code>admin_article_archive_all_cinemagraphs</code></td>
+          <td>JSON: <code>{ok: true, archived_start_idx: N}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/restore-cinemagraph-clip</code></td>
+          <td><code>admin_article_restore_cinemagraph_clip</code></td>
+          <td>JSON: <code>{ok: true, slot_idx, url, prompt, created_at, displaced?}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge delete">DELETE</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/cinemagraph-result</code></td>
+          <td><code>admin_article_clear_cinemagraph_result</code></td>
+          <td>JSON: <code>{cleared: true}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/post-to-instagram</code></td>
+          <td><code>admin_article_post_to_instagram</code></td>
+          <td>JSON: <code>{started: true}</code> (launches background IG thread)</td>
+        </tr>
+        <tr>
+          <td><span class="method-badge get">GET</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/ig-status?type=cine</code></td>
+          <td>IG status polling route</td>
+          <td>JSON: <code>{status, result}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/check-instagram-post</code></td>
+          <td><code>admin_article_check_instagram_post</code></td>
+          <td>JSON: <code>{found: bool, permalink?}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/archive-ig-post</code></td>
+          <td><code>admin_article_archive_ig_post</code></td>
+          <td>JSON: <code>{ok: true}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/generate-ig-caption</code></td>
+          <td><code>admin_article_generate_ig_caption</code></td>
+          <td>JSON: <code>{caption: "..."}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/settings/save</code></td>
+          <td><code>admin_settings_save</code></td>
+          <td>JSON: <code>{success: true}</code>. Handles <code>cinemagraph_prompt</code> and <code>cinemagraph_prompt_{id}</code> keys.</td>
+        </tr>
+      </table>
+
+      <h4>Route detail: <code>POST generate-cinemagraphs</code></h4>
+      <p>Request body (JSON, all fields optional):</p>
+      <pre><code>{
+  "prompts":       ["slide 1 prompt", null, "slide 3 prompt", ...],  // 10-element array, nulls use default
+  "global_prompt": "optional override applied to all empty-prompt slots"
+}</code></pre>
+      <p>Pre-flight logic:</p>
+      <ol>
+        <li>Returns <code>400</code> if <code>_luma_enabled</code> is <code>False</code>.</li>
+        <li>Returns <code>409</code> if a run is already in progress (<code>cinemagraph_status_{id}</code> starts with <code>"running"</code> or <code>"slide_running"</code>).</li>
+        <li>Loads <code>carousel_images</code>, pads to 10 slots.</li>
+        <li>Resolves final prompt for all 10 slots: incoming per-slide prompt → global_prompt → article override → site default.</li>
+        <li>Saves resolved prompts to <code>carousel_cinemagraph_prompts</code>.</li>
+        <li>Computes <code>empty_indices</code> = slots that have a carousel image but no cinemagraph clip.</li>
+        <li>Sets <code>cinemagraph_status_{id} = "running:0/{N}"</code>, clears stale result key.</li>
+        <li>Launches <code>_cinemagraph_worker</code> as a daemon thread.</li>
+        <li>Returns <code>{started: true, n_slides: N}</code> immediately.</li>
+      </ol>
+
+      <h4>Route detail: <code>GET video-data</code></h4>
+      <p>
+        The primary polling endpoint for the frontend. Returns a combined JSON object used by
+        both the cinemagraph and narrated video components. Cinemagraph-relevant fields:
+      </p>
+      <pre><code>{
+  "cinemagraph_urls":       ["https://...", null, "https://...", ...],  // 10-slot array
+  "cinemagraph_prompts":    ["prompt text", ...],
+  "cinemagraph_archived":   [{"url": ..., "prompt": ..., ...}, ...],
+  "cinemagraph_created_at": ["2026-03-14T10:00:00Z", null, ...],
+  "cinemagraph_status":     "running:3/10:dreaming",  // or null if idle
+  "cinemagraph_result":     null,                     // or "done" / "error:..." / "warn:partial:N/M"
+  "has_cinemagraph_log":    true
+}</code></pre>
+
+      <h4>Route detail: <code>POST regenerate-cinemagraph-slide</code></h4>
+      <p>Request body: <code>{"slide_idx": 0–9, "prompt": "custom prompt text"}</code></p>
+      <ul>
+        <li>Returns <code>409</code> if a run is already in progress.</li>
+        <li>Archives the current clip at <code>slide_idx</code> into <code>carousel_cinemagraph_archived</code>
+          (returns the new <code>archived_idx</code> to the frontend).</li>
+        <li>Sets <code>cinemagraph_status_{id} = "slide_running:{slide_idx}"</code>.</li>
+        <li>Launches <code>_cinemagraph_slide_worker</code> as a daemon thread.</li>
+      </ul>
+
+      <h4>Route detail: <code>POST restore-cinemagraph-clip</code></h4>
+      <p>Request body: <code>{"archived_idx": N, "target_slot": 0–9}</code></p>
+      <ul>
+        <li>Loads both <code>carousel_cinemagraphs</code> and <code>carousel_cinemagraph_archived</code> arrays.</li>
+        <li>If <code>target_slot</code> is already occupied, the displaced clip is appended to the archived
+          array and returned as <code>displaced: {entry, archived_idx}</code> in the response.</li>
+        <li>The restored clip is removed from the archived array and written into the active slot.</li>
+        <li>Both arrays are saved back to the DB in one UPDATE.</li>
+      </ul>
+    </section>
+
+    <!-- ── 5. Worker Detail ── -->
+    <section id="worker">
+      <h2>5. Worker Detail — <code>_cinemagraph_worker</code></h2>
+      <p>
+        Runs in a daemon thread started by <code>admin_article_generate_cinemagraphs</code>.
+        Processes each empty slide in sequence (one at a time, not concurrent) so Luma rate
+        limits are respected and cancel checks are reliable.
+      </p>
+
+      <h3 id="worker-args">Arguments</h3>
+      <pre><code>def _cinemagraph_worker(
+    article_id,
+    images,          # list of source image URLs for the empty slots
+    prompts=None,    # parallel list of per-slide prompts (same length as images)
+    slot_indices=None,  # list mapping each item in images to its 0-based slot index
+    existing_urls=None, # full 10-slot URL array — used to merge new results into
+):
+    ...</code></pre>
+      <table>
+        <tr><th>Parameter</th><th>Type</th><th>Notes</th></tr>
+        <tr><td><code>article_id</code></td><td>int</td><td>DB article ID — used for status keys, log writes, DB updates</td></tr>
+        <tr><td><code>images</code></td><td>list[str]</td><td>Source image URLs to animate. Length = number of empty slots being processed.</td></tr>
+        <tr><td><code>prompts</code></td><td>list[str]</td><td>Parallel prompt list. Resolved before the worker starts by the route; each entry is a non-empty string.</td></tr>
+        <tr><td><code>slot_indices</code></td><td>list[int]</td><td>Maps each <code>images[i]</code> to its 0-based position in the 10-slot array. E.g. <code>[0, 3, 7]</code> means we are filling slots 1, 4, and 8.</td></tr>
+        <tr><td><code>existing_urls</code></td><td>list[str|None]</td><td>Full current 10-slot URL array. Padded to 10 before use. New clip URLs are merged into this array; slots not being generated are preserved untouched.</td></tr>
+      </table>
+
+      <h3 id="worker-flow">Execution Flow</h3>
+      <ol class="flow">
+        <li><strong>Init:</strong> Pad <code>existing_urls</code> to 10. Load <code>carousel_cinemagraph_created_at</code> from DB and pad to 10. Delete any stale cancel key.</li>
+        <li><strong>For each <code>(i, img_url)</code> in <code>enumerate(images)</code>:</strong>
+          <ol type="a">
+            <li>Check cancel key — break loop if set.</li>
+            <li>Set <code>cinemagraph_status_{id} = "running:{i}/{n}"</code>. Flush log.</li>
+            <li>Resolve public URL: if the image is a GCS URL (<code>https://</code>), use it directly. If it's a local path, upload to <code>articles/{id}/temp/slide_{N}_{ts}.jpg</code> on GCS and use the resulting URL. Skip slide if upload fails or file not found.</li>
+            <li>Call <code>_luma_create_task(luma_img_url, prompt)</code> → <code>gen_id</code>. If billing error, set <code>billing_abort = True</code> and break. Other errors: log and continue to next slide.</li>
+            <li>Enter poll loop.</li>
+          </ol>
+        </li>
+        <li><strong>Poll loop</strong> (see <a href="#worker-polling">Luma Polling Pattern</a>).</li>
+        <li><strong>On <code>completed</code>:</strong>
+          <ol type="a">
+            <li>Download MP4 from Luma CDN via <code>requests.get(mp4_url, timeout=120)</code>.</li>
+            <li>Save to <code>static/articles/{id}/cinemagraph/slide_{N}_{ts}.mp4</code>.</li>
+            <li>Upload to GCS as <code>articles/{id}/cinemagraph/slide_{N}_{ts}.mp4</code>. If GCS succeeds, delete local file; otherwise use local path as fallback URL.</li>
+            <li>Update <code>cinemagraph_urls[real_idx]</code> and <code>cinemagraph_created_at[real_idx]</code>.</li>
+            <li>Immediately UPDATE both columns to DB — the frontend poll will see the new clip on the next 20 s cycle.</li>
+          </ol>
+        </li>
+        <li><strong>After all slides (or break):</strong>
+          <ol type="a">
+            <li>Delete <code>cinemagraph_status_{id}</code>.</li>
+            <li>Set <code>cinemagraph_result_{id}</code>: <code>"done"</code> if all succeeded, <code>"warn:partial:{M}/{N}"</code> if some failed, <code>"error:Billing..."</code> if billing abort.</li>
+            <li>Flush final log to DB.</li>
+            <li>Upload log to GCS as <code>articles/{id}/cinemagraph/run_{ts}.log</code> (if GCS enabled).</li>
+            <li>Optionally call activity log helper to record the completed run.</li>
+          </ol>
+        </li>
+      </ol>
+
+      <h3 id="worker-polling">Luma Polling Pattern</h3>
+      <p>
+        The poll loop runs inside the per-slide processing. There is no maximum attempt count
+        enforced in code, but Luma's typical generation time is 1–3 minutes. The poll interval
+        is a fixed 6-second sleep (both in the full-run worker and the single-slide worker).
+      </p>
+      <pre><code>mp4_url    = None
+poll_count = 0
+last_sub_status = None
+
+while True:
+    time.sleep(6)
+    if _is_cancelled():
+        _log(f"slide {slide_num} cancelled by user during poll")
+        break
+    poll_count += 1
+    try:
+        luma_status, mp4_url, status_msg = _luma_poll_task(gen_id)
+    except Exception as e:
+        _log(f"slide {slide_num} poll error: {e}")
+        break
+    if luma_status == "completed":
+        break
+    elif luma_status == "failed":
+        _log(f"slide {slide_num} Luma FAILED (reason: {status_msg})")
+        mp4_url = None
+        break
+    else:
+        # "queued" or "dreaming" — keep polling
+        if luma_status != last_sub_status:
+            _set_status(f"running:{i}/{n}:{luma_status}")  # reflects sub-status in UI
+            _flush_log()
+            last_sub_status = luma_status</code></pre>
+
+      <div class="callout callout-info">
+        <strong>Sub-status propagation:</strong> When Luma's state changes from
+        <code>"queued"</code> to <code>"dreaming"</code>, the worker updates the status key to
+        <code>"running:3/10:dreaming"</code>. The frontend status-text renderer maps this to
+        a human-readable label like "Dreaming (slide 4 / 10)".
+      </div>
+
+      <h3 id="worker-storage">File Storage</h3>
+      <table>
+        <tr><th>Scenario</th><th>Local path written</th><th>URL stored in DB</th></tr>
+        <tr>
+          <td>GCS configured and upload succeeds</td>
+          <td><code>static/articles/{id}/cinemagraph/slide_{N}_{ts}.mp4</code> (then deleted)</td>
+          <td><code>https://storage.googleapis.com/{bucket}/articles/{id}/cinemagraph/slide_{N}_{ts}.mp4</code></td>
+        </tr>
+        <tr>
+          <td>GCS not configured or upload fails</td>
+          <td><code>static/articles/{id}/cinemagraph/slide_{N}_{ts}.mp4</code> (kept)</td>
+          <td><code>/static/articles/{id}/cinemagraph/slide_{N}_{ts}.mp4</code></td>
+        </tr>
+        <tr>
+          <td>Source image is local (not GCS)</td>
+          <td>Original local image file; plus a temp upload to GCS under <code>articles/{id}/temp/</code></td>
+          <td>Temp GCS URL used for Luma; not stored</td>
+        </tr>
+      </table>
+
+      <h3 id="worker-cancel">Cancel Support</h3>
+      <p>
+        The route <code>POST cancel-cinemagraphs</code> writes <code>cinemagraph_cancel_{id} = "1"</code>
+        to <code>site_settings</code>. The worker calls <code>_is_cancelled()</code> — which reads
+        this key — at two points per slide:
+      </p>
+      <ul>
+        <li>Before submitting to Luma (between slides).</li>
+        <li>During the poll loop (inside the <code>while True</code> sleep cycle).</li>
+      </ul>
+      <p>
+        When cancellation is detected, the worker breaks out of the slide loop, clears the status key,
+        and exits. The cancel key itself is deleted at the start of every new run to ensure a fresh state.
+      </p>
+
+      <h3 id="worker-log">Log Flushing</h3>
+      <p>
+        The worker maintains an in-memory <code>log_lines</code> list. <code>_flush_log()</code>
+        concatenates these lines with a run-start header and writes them to
+        <code>carousel_cinemagraph_log</code> via a direct UPDATE. Flush is called:
+      </p>
+      <ul>
+        <li>At the start of each new slide (before Luma submission).</li>
+        <li>When Luma's sub-status changes (e.g. queued → dreaming).</li>
+        <li>At the end of the run (final flush before thread exits).</li>
+      </ul>
+      <p>The log column is capped at 65,000 characters to stay safely within MySQL TEXT limits.</p>
+    </section>
+
+    <!-- ── 6. Single-Slide Worker ── -->
+    <section id="slide-worker">
+      <h2>6. Single-Slide Worker — <code>_cinemagraph_slide_worker</code></h2>
+      <p>
+        A lighter variant of <code>_cinemagraph_worker</code> used exclusively by
+        <code>regenerate-cinemagraph-slide</code>. Operates on exactly one slide.
+      </p>
+
+      <h4>Key differences from the full worker</h4>
+      <table>
+        <tr><th>Aspect</th><th>Full worker</th><th>Single-slide worker</th></tr>
+        <tr><td>Status key value</td><td><code>"running:N/M"</code></td><td><code>"slide_running:{slide_idx}"</code></td></tr>
+        <tr><td>Result key</td><td>Written on completion</td><td>Not written — frontend detects completion by absence of status key</td></tr>
+        <tr><td>Archive step</td><td>No archiving (filling empty slots)</td><td>Route archives old clip before starting the worker; worker only writes the new clip</td></tr>
+        <tr><td>DB update pattern</td><td>Patches specific index in loaded array</td><td>Reads current arrays fresh from DB and patches the specific <code>slide_idx</code> slot</td></tr>
+        <tr><td>Cancel support</td><td>Yes — checks cancel key</td><td>No cancel support (short single-clip run)</td></tr>
+        <tr><td>Poll interval</td><td>6 s fixed sleep</td><td>6 s fixed sleep</td></tr>
+        <tr><td>Log append</td><td>Overwrites <code>carousel_cinemagraph_log</code></td><td>Appends to existing log (prepends a "Re-run slide N started:" header)</td></tr>
+      </table>
+
+      <h4>DB update on completion</h4>
+      <pre><code># Single-slide worker: reads and patches the specific slot
+row = query_one("SELECT carousel_cinemagraphs, carousel_cinemagraph_prompts, "
+                "carousel_cinemagraph_created_at FROM articles WHERE id = %s", (article_id,))
+urls       = json.loads(row[0]) if row and row[0] else []
+prompts    = json.loads(row[1]) if row and row[1] else []
+created_at = json.loads(row[2]) if row and row[2] else []
+# Pad to at least slide_idx + 1
+while len(urls) <= slide_idx:       urls.append(None)
+while len(prompts) <= slide_idx:    prompts.append(None)
+while len(created_at) <= slide_idx: created_at.append(None)
+urls[slide_idx]       = saved_url
+prompts[slide_idx]    = prompt or _CINE_DEFAULT_PROMPT
+created_at[slide_idx] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+execute(
+    "UPDATE articles SET carousel_cinemagraphs = %s, carousel_cinemagraph_prompts = %s, "
+    "carousel_cinemagraph_created_at = %s WHERE id = %s",
+    (json.dumps(urls), json.dumps(prompts), json.dumps(created_at), article_id),
+)</code></pre>
+    </section>
+
+    <!-- ── 7. Instagram Posting Flow ── -->
+    <section id="instagram">
+      <h2>7. Instagram Posting Flow (Cinemagraph Carousel)</h2>
+      <p>
+        Posting a cinemagraph carousel to Instagram uses the same route as the static image
+        carousel but with <code>post_type: "cine"</code> in the request body. The Instagram
+        Graph API requires a multi-step container-based flow for video carousels.
+      </p>
+
+      <h3 id="ig-routes">IG Routes</h3>
+      <table>
+        <tr><th>Method</th><th>URL</th><th>Request body</th></tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/post-to-instagram</code></td>
+          <td><code>{caption: "...", post_type: "cine"}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge get">GET</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/ig-status?type=cine</code></td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/check-instagram-post</code></td>
+          <td><code>{post_type: "cine"}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/archive-ig-post</code></td>
+          <td><code>{post_type: "cine"}</code></td>
+        </tr>
+        <tr>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/admin/articles/&lt;id&gt;/generate-ig-caption</code></td>
+          <td><code>{component: "cinemagraph"}</code></td>
+        </tr>
+      </table>
+
+      <h3 id="ig-flow">Posting Sequence</h3>
+      <p>
+        The backend IG worker runs in a daemon thread. Status is tracked via
+        <code>ig_post_status_{id}</code> in <code>site_settings</code>.
+      </p>
+      <ol class="flow">
+        <li><strong>Collect clips:</strong> Load <code>carousel_cinemagraphs</code> (up to 10 non-null URLs).
+          At least 2 clips required for a carousel; up to 10 supported (Instagram limit).</li>
+        <li><strong>Create child containers</strong> — one per clip:
+          <pre><code>POST https://graph.facebook.com/{ig_user_id}/media
+  media_type=REELS
+  video_url={clip_url}
+  share_to_feed=false
+  is_carousel_item=true</code></pre>
+          Status: <code>"running:child_0"</code>, <code>"running:child_1"</code>, etc.
+        </li>
+        <li><strong>Poll each child container</strong> for <code>STATUS_CODE=FINISHED</code>.
+          Polls every ~5 s; times out after ~5 min per container.</li>
+        <li><strong>Create parent carousel container:</strong>
+          <pre><code>POST https://graph.facebook.com/{ig_user_id}/media
+  media_type=CAROUSEL
+  children={child_id_1},{child_id_2},...
+  caption={caption}</code></pre>
+          Status: <code>"running:carousel"</code>
+        </li>
+        <li><strong>Poll parent container</strong> for <code>FINISHED</code> status.
+          Status: <code>"running:carousel_poll"</code></li>
+        <li><strong>Publish:</strong>
+          <pre><code>POST https://graph.facebook.com/{ig_user_id}/media_publish
+  creation_id={parent_container_id}</code></pre>
+          Status: <code>"running:publish"</code>
+        </li>
+        <li><strong>Verify:</strong> If publish returns a <code>Fatal</code> error or rate-limit error,
+          fall back to checking the account's recent media list for a newly created carousel post.
+          Status: <code>"running:publish_verify"</code></li>
+        <li><strong>Fetch permalink</strong> for the published post.</li>
+        <li><strong>Save snapshot</strong> to <code>ig_post_snapshot_{id}</code> in <code>site_settings</code>.
+          Set <code>ig_post_result_{id} = "done:https://www.instagram.com/p/..."</code>.</li>
+        <li><strong>Append activity log entry</strong> to <code>ig_activity_log_{id}</code>.</li>
+      </ol>
+
+      <div class="callout callout-warn">
+        <strong>Instagram video carousel limitations:</strong>
+        <ul>
+          <li>Each child container must be polled to <code>FINISHED</code> before the parent can be created. This can take 1–5 minutes per clip.</li>
+          <li>Maximum 10 video slides per carousel.</li>
+          <li>The Instagram API may return a <code>Fatal</code> error on publish even when the post actually succeeded — this is handled by the verify step which checks recent media.</li>
+        </ul>
+      </div>
+
+      <h3 id="ig-status">IG Status Keys</h3>
+      <table>
+        <tr><th>Status value</th><th>Meaning</th></tr>
+        <tr><td><code>running:start</code></td><td>Worker has started; collecting clips</td></tr>
+        <tr><td><code>running:compose</code></td><td>Building the set of clips to post</td></tr>
+        <tr><td><code>running:child_N</code></td><td>Creating/polling child container for slide N (0-based)</td></tr>
+        <tr><td><code>running:carousel</code></td><td>Creating parent carousel container</td></tr>
+        <tr><td><code>running:carousel_poll</code></td><td>Polling parent carousel container for FINISHED</td></tr>
+        <tr><td><code>running:publish</code></td><td>Publishing the carousel</td></tr>
+        <tr><td><code>running:publish_verify</code></td><td>Verifying publication via recent media fallback</td></tr>
+        <tr><td>key deleted / null</td><td>Worker finished (check result key)</td></tr>
+      </table>
+      <table>
+        <tr><th>Result value</th><th>Meaning</th></tr>
+        <tr><td><code>done:https://...</code></td><td>Post is live; URL is the Instagram permalink</td></tr>
+        <tr><td><code>error:...</code></td><td>Fatal error; message after the colon</td></tr>
+        <tr><td><code>warn:...</code></td><td>Partial success or uncertain outcome with a warning</td></tr>
+      </table>
+    </section>
+
+    <!-- ── 8. Frontend HTML ── -->
+    <section id="frontend-html">
+      <h2>8. Frontend — HTML Elements (<code>article_edit.html</code>)</h2>
+      <p>
+        The entire cinemagraph UI lives inside a Bootstrap card with
+        <code>id="cinemagraph-card"</code>, which is rendered for all existing articles.
+        The card is initially in a "locked" state until carousel images exist.
+      </p>
+
+      <h3 id="html-card">Card Header Buttons</h3>
+      <table>
+        <tr><th>Element ID</th><th>Default state</th><th>Purpose</th></tr>
+        <tr>
+          <td><code>cinemagraph-locked-btn</code></td>
+          <td>Visible, disabled</td>
+          <td>"Generate Cinemagraph" button shown when no carousel images exist. Hidden by <code>cinemagraphUnlock()</code>.</td>
+        </tr>
+        <tr>
+          <td><code>cinemagraph-btn</code></td>
+          <td>Hidden (<code>d-none</code>)</td>
+          <td>"Generate Cinemagraph" — shown when unlocked and empty slots exist. Calls <code>cinemagraphGenerate()</code>.</td>
+        </tr>
+        <tr>
+          <td><code>cinemagraph-menu-generate</code></td>
+          <td>Disabled (kebab menu)</td>
+          <td>Mirror of <code>cinemagraph-btn</code> in the dropdown. Enabled/disabled in sync.</td>
+        </tr>
+        <tr>
+          <td><code>cinemagraph-archive-all-btn</code></td>
+          <td>Hidden (kebab menu)</td>
+          <td>"Archive All" — visible only when at least one active clip exists. Calls <code>archiveAllCinemagraphs()</code>.</td>
+        </tr>
+        <tr>
+          <td><code>cinemagraph-log-btn</code></td>
+          <td>Hidden (kebab menu)</td>
+          <td>"View Logs" — shown when <code>has_cinemagraph_log</code> is true. Calls <code>viewComponentLog('cinemagraph', 'Cinemagraph')</code>.</td>
+        </tr>
+      </table>
+      <p>The kebab menu also contains "Edit Default Prompt" (<code>openCinemagraphPromptModal()</code>) and "Re-run All" (<code>openCinemagraphRerunAllModal()</code>) items.</p>
+
+      <h3 id="html-status">Status / Progress Bar</h3>
+      <table>
+        <tr><th>Element ID</th><th>Purpose</th></tr>
+        <tr><td><code>cinemagraph-status</code></td><td>Wrapper div. Hidden when idle (<code>d-none</code>); shown during generation via <code>_cinemagraphShowRunning()</code>.</td></tr>
+        <tr><td><code>cinemagraph-spinner</code></td><td>Bootstrap spinner (<code>spinner-border-sm</code>).</td></tr>
+        <tr><td><code>cinemagraph-status-text</code></td><td>Human-readable status string. Updated by <code>_cinemagraphApplyStatus()</code> during polling.</td></tr>
+        <tr><td><code>cinemagraph-progress</code></td><td>Bootstrap progress bar. Width updated from parsed status: <code>(completed / total) * 100%</code>.</td></tr>
+        <tr><td><code>cinemagraph-cancel-btn</code></td><td>"Cancel" button. Calls <code>cancelCinemagraphGeneration()</code>. Disabled while cancellation is in flight.</td></tr>
+      </table>
+
+      <h3 id="html-grids">Grids and Tabs</h3>
+      <table>
+        <tr><th>Element ID</th><th>Purpose</th></tr>
+        <tr><td><code>cinemagraph-grid-wrap</code></td><td>Outer wrapper for both grids. Hidden until the component is unlocked; toggled by a chevron accordion control.</td></tr>
+        <tr><td><code>cinemagraph-grid</code></td><td>Active clips. 5-column flex grid. Each slot rendered as <code>div#cine-col-{idx}</code>.</td></tr>
+        <tr><td><code>cinemagraph-removed-grid</code></td><td>Archived clips. Same layout. Hidden by default (<code>d-none</code>); shown when Archived tab is active.</td></tr>
+        <tr><td><code>cinemagraph-empty</code></td><td>Empty state message. Shown when grid is unlocked but all slots are placeholders.</td></tr>
+        <tr><td><code>cinemagraph-tabs</code></td><td>Tab nav bar with "Current (N)" and "Archived (N)" tabs. Archived tab is hidden when empty.</td></tr>
+        <tr><td><code>cinemagraph-error</code></td><td>Alert container. Shown by <code>_showCinemagraphError(msg)</code> after a failed run.</td></tr>
+      </table>
+
+      <h4>Clip tile anatomy</h4>
+      <p>
+        Each active slot in <code>#cinemagraph-grid</code> is rendered as a
+        <code>div.carousel-col#cine-col-{idx}</code> (where <code>idx</code> is the 0-based slot index). A filled slot contains:
+      </p>
+      <ul>
+        <li>A <code>&lt;video&gt;</code> element with <code>autoplay loop muted playsinline</code>,
+          <code>src</code> set to the clip URL, and a <code>data-slide-idx</code> attribute.</li>
+        <li>A small info button (<code>class="cine-info-btn"</code>) that calls
+          <code>openCinemagraphEditModal(idx, url, prompt)</code>.</li>
+      </ul>
+      <p>
+        An empty slot renders as <code>&lt;div class="carousel-placeholder"&gt;{N}&lt;/div&gt;</code>
+        (1-based slot number). During generation a spinner overlay
+        (<code>class="cine-spinner-overlay"</code>) is added on top of the placeholder.
+      </p>
+
+      <h4>Archived clip tile anatomy</h4>
+      <p>
+        Each archived entry in <code>#cinemagraph-removed-grid</code> is a
+        <code>div.carousel-col#cine-archived-{archivedIdx}</code> with a
+        <code>&lt;video&gt;</code> element and an info button that opens the shared
+        <code>#archived-info-modal</code> via <code>openArchivedInfoModal('cinemagraph', ...)</code>.
+        The shared modal shows clip metadata and a "Restore to slot" dropdown.
+      </p>
+
+      <h3 id="html-modals">Modals</h3>
+      <table>
+        <tr><th>Modal ID</th><th>Purpose</th><th>Opened by</th></tr>
+        <tr>
+          <td><code>cinemagraph-edit-modal</code></td>
+          <td>Edit a single active clip's prompt. Shows a video preview, prompt textarea, "Archive clip" and "Re-run slide" buttons.</td>
+          <td><code>openCinemagraphEditModal(slideIdx, url, prompt)</code></td>
+        </tr>
+        <tr>
+          <td><code>cinemagraph-prompt-modal</code></td>
+          <td>View/edit the default Luma prompt for this article (or the site global default if no per-article override exists). Save button calls <code>saveCinemagraphPrompt()</code>.</td>
+          <td><code>openCinemagraphPromptModal()</code> (kebab menu item)</td>
+        </tr>
+        <tr>
+          <td><code>cinemagraph-rerun-all-modal</code></td>
+          <td>Confirm "Re-run All" with an optional global prompt override. Shows estimated cost (~$2.50). Confirm button calls <code>cinemagraphRerunAll()</code>.</td>
+          <td><code>openCinemagraphRerunAllModal()</code> (kebab menu item)</td>
+        </tr>
+        <tr>
+          <td><code>archived-info-modal</code></td>
+          <td>Shared modal (also used by carousel). Shows clip video preview, prompt text, timestamps, slot source, and a "Restore to slot N" dropdown. Restore calls <code>cinemagraphRestoreClip(archivedIdx, targetSlot)</code>.</td>
+          <td><code>openArchivedInfoModal('cinemagraph', ...)</code></td>
+        </tr>
+      </table>
+
+      <h3 id="html-ig">Instagram Section</h3>
+      <p>
+        The IG posting UI is embedded below the clip grid. It shares structure with other IG
+        post sections on the page but is scoped to <code>type='cine'</code>:
+      </p>
+      <ul>
+        <li><code>id="cine-ig-post-btn"</code> — "Post to Instagram" button. Calls <code>postToInstagram('cine')</code>.</li>
+        <li>A caption textarea pre-filled from <code>ig_cine_caption</code> (Jinja2 context variable).</li>
+        <li>A "Generate caption" link that calls <code>generateIgCaption('cinemagraph')</code>.</li>
+        <li>Status display updated by <code>pollIgStatus('cine')</code>.</li>
+      </ul>
+    </section>
+
+    <!-- ── 9. Frontend JavaScript ── -->
+    <section id="frontend-js">
+      <h2>9. Frontend — JavaScript (<code>article_edit.html</code>)</h2>
+
+      <h3 id="js-vars">State Variables</h3>
+      <p>All cinemagraph state is module-level in the page's inline script block:</p>
+      <pre><code>// ── Jinja2-injected constants ────────────────────────────────
+const ARTICLE_ID              = parseInt(...) || null;
+const CINEMAGRAPH_PROMPT      = {{ cinemagraph_prompt | tojson }};       // site-wide default
+const CINEMAGRAPH_ARTICLE_PROMPT = {{ cinemagraph_article_prompt | tojson }}; // per-article override (empty = none)
+
+// ── Mutable state ────────────────────────────────────────────
+let _CINE_DEFAULT_PROMPT   = CINEMAGRAPH_PROMPT;
+let _cineArticlePrompt     = CINEMAGRAPH_ARTICLE_PROMPT;
+let _cinePrompts           = [];    // 10-element per-slide prompt array, synced from /video-data
+let _cineCreatedAt         = [];    // 10-element created_at array, synced from /video-data
+let _cineEditIdx           = null;  // 0-based slide index currently open in edit modal
+let _cinemagraphUnlocked   = false; // true once carousel images exist (gate for generate button)
+let _cineRerunningIdx      = null;  // slot currently being re-run; prevents old URL being restored into slot
+let _cinemagraphGenerating = false; // true while a full generation run OR single slide re-run is in progress</code></pre>
+
+      <h3 id="js-functions">Function Reference</h3>
+      <table>
+        <tr><th>Function</th><th>Parameters</th><th>Purpose</th></tr>
+        <tr>
+          <td><code>cinemagraphUnlock()</code></td>
+          <td>—</td>
+          <td>Sets <code>_cinemagraphUnlocked = true</code>. Hides the locked-state button, shows the grid wrapper. Called when carousel images load, or when a cinemagraph run starts if the component was previously locked.</td>
+        </tr>
+        <tr>
+          <td><code>updateCinemagraphTabCounts()</code></td>
+          <td>—</td>
+          <td>Counts active clips in <code>#cinemagraph-grid</code> (video elements) and archived clips in <code>#cinemagraph-removed-grid</code>. Updates tab badge text, hides/shows Archived tab, shows/enables Generate button when <code>activeCount &lt; 10</code> and not currently running/re-running.</td>
+        </tr>
+        <tr>
+          <td><code>cinemagraphGenerate()</code></td>
+          <td>—</td>
+          <td>POSTs <code>{prompts: _cinePrompts}</code> to <code>generate-cinemagraphs</code>. On success, calls <code>_cinemagraphShowRunning(d.n_slides)</code>. On <code>already_running</code>, calls <code>_cinemagraphShowRunning(10)</code> to attach to the in-progress run.</td>
+        </tr>
+        <tr>
+          <td><code>cancelCinemagraphGeneration()</code></td>
+          <td>—</td>
+          <td>POSTs to <code>cancel-cinemagraphs</code>. Disables cancel button, sets status text to "Cancelling…". Polling continues — the worker clears the status key when done, and the next poll cycle's "done" branch cleans up the UI.</td>
+        </tr>
+        <tr>
+          <td><code>_cinemagraphShowRunning(nSlides)</code></td>
+          <td><code>nSlides</code>: int</td>
+          <td>Sets <code>_cinemagraphGenerating = true</code>. Shows status bar. If no existing video elements in the grid, initialises placeholder tiles via <code>_cinemagraphInitClipGrid(nSlides)</code>. Starts the poll loop via <code>_cinemagraphPoll()</code>.</td>
+        </tr>
+        <tr>
+          <td><code>_cinemagraphInitClipGrid(n)</code></td>
+          <td><code>n</code>: int (number of slides)</td>
+          <td>Clears <code>#cinemagraph-grid</code> and inserts <code>n</code> placeholder divs (<code>div.carousel-col#cine-col-{i}</code> each containing <code>div.carousel-placeholder</code>). Also ensures 10 placeholder columns exist for partial runs.</td>
+        </tr>
+        <tr>
+          <td><code>_cinemagraphApplyStatus(status, nSlides)</code></td>
+          <td><code>status</code>: string from <code>cinemagraph_status_{id}</code></td>
+          <td>Parses the status string. Updates the progress bar width and status text label. Maps Luma sub-status values to human labels (see <a href="#js-status-map">Status String Mapping</a>).</td>
+        </tr>
+        <tr>
+          <td><code>_cinemagraphUpdateGrid(urls, prompts)</code></td>
+          <td><code>urls</code>: 10-element array; <code>prompts</code>: 10-element array</td>
+          <td>For each slot with a URL: if <code>#cine-col-{i}</code> does not already contain a video, creates a video element via <code>_cinemagraphMakeVideo()</code> and replaces the placeholder. Only adds; does not remove or replace existing videos (prevents flicker).</td>
+        </tr>
+        <tr>
+          <td><code>_cinemagraphMakeVideo(url, slideIdx, prompt)</code></td>
+          <td><code>url</code>: clip URL; <code>slideIdx</code>: 0-based; <code>prompt</code>: string</td>
+          <td>Constructs a <code>&lt;video autoplay loop muted playsinline&gt;</code> and a small info icon button. Returns <code>[videoEl, infoBtnEl]</code>.</td>
+        </tr>
+        <tr>
+          <td><code>_cinemagraphShowPreviews(urls, prompts)</code></td>
+          <td>—</td>
+          <td>Used to populate the grid from existing data on page load or after a polling "done" event. Calls <code>_cinemagraphUpdateGrid()</code> then <code>updateCinemagraphTabCounts()</code>.</td>
+        </tr>
+        <tr>
+          <td><code>_cinemagraphSetSlideSpinner(slideIdx, show)</code></td>
+          <td><code>slideIdx</code>: 0-based; <code>show</code>: bool</td>
+          <td>Adds or removes a <code>div.cine-spinner-overlay</code> on top of <code>#cine-col-{slideIdx}</code>. Used during single-slide re-run to indicate which slot is being regenerated.</td>
+        </tr>
+        <tr>
+          <td><code>_cinemagraphPoll()</code></td>
+          <td>—</td>
+          <td>Core polling function. Schedules <code>fetch('/video-data')</code> after a 20 s <code>setTimeout</code>. See <a href="#js-polling">Polling Pattern</a>.</td>
+        </tr>
+        <tr>
+          <td><code>_showCinemagraphError(msg)</code></td>
+          <td><code>msg</code>: string</td>
+          <td>Renders a dismissible Bootstrap alert in <code>#cinemagraph-error</code>. Shown after polling detects a <code>"error:..."</code> result, then calls <code>DELETE /cinemagraph-result</code> to clear the key.</td>
+        </tr>
+        <tr>
+          <td><code>openCinemagraphEditModal(slideIdx, url, prompt)</code></td>
+          <td><code>slideIdx</code>: 0-based; <code>url</code>: clip URL; <code>prompt</code>: current prompt</td>
+          <td>Populates and shows <code>#cinemagraph-edit-modal</code>. Blocked if <code>_cineRerunningIdx !== null</code>.</td>
+        </tr>
+        <tr>
+          <td><code>cinemagraphArchiveSlide()</code></td>
+          <td>—</td>
+          <td>Reads <code>_cineEditIdx</code>. POSTs <code>{slide_idx: idx}</code> to <code>archive-cinemagraph-slide</code>. On success: resets the slot to a placeholder in the DOM, calls <code>addCinemagraphArchived(entry, archivedIdx)</code>, updates <code>_cinePrompts[idx] = null</code>.</td>
+        </tr>
+        <tr>
+          <td><code>cinemagraphRerunSlide()</code></td>
+          <td>—</td>
+          <td>Reads <code>_cineEditIdx</code> and prompt from modal. Captures current clip URL and metadata. POSTs to <code>regenerate-cinemagraph-slide</code>. On success: moves old clip to archive tab, resets slot to spinner placeholder, sets <code>_cineRerunningIdx = idx</code>, starts polling.</td>
+        </tr>
+        <tr>
+          <td><code>addCinemagraphArchived(entry, archivedIdx)</code></td>
+          <td><code>entry</code>: archived object; <code>archivedIdx</code>: int</td>
+          <td>Creates a new <code>div.carousel-col#cine-archived-{archivedIdx}</code> with a video preview and info button. Prepends to <code>#cinemagraph-removed-grid</code>. Calls <code>updateCinemagraphTabCounts()</code>.</td>
+        </tr>
+        <tr>
+          <td><code>archiveAllCinemagraphs()</code></td>
+          <td>—</td>
+          <td>Confirms with user. POSTs to <code>archive-all-cinemagraphs</code>. On success: calls <code>addCinemagraphArchived()</code> for each active clip, resets all slots to placeholders, clears <code>_cinePrompts</code> and <code>_cineCreatedAt</code>.</td>
+        </tr>
+        <tr>
+          <td><code>cinemagraphRestoreClip(archivedIdx, targetSlot)</code></td>
+          <td><code>archivedIdx</code>: int; <code>targetSlot</code>: 0-based int</td>
+          <td>POSTs to <code>restore-cinemagraph-clip</code>. On success: removes the archived tile, places restored clip video in the target slot, adds displaced clip to archived grid if applicable, updates local <code>_cinePrompts</code> and <code>_cineCreatedAt</code> arrays.</td>
+        </tr>
+        <tr>
+          <td><code>openCinemagraphPromptModal()</code></td>
+          <td>—</td>
+          <td>Populates <code>#cine-default-prompt-text</code> with the per-article prompt (<code>_cineArticlePrompt</code>) or site default (<code>_CINE_DEFAULT_PROMPT</code>) and shows the modal.</td>
+        </tr>
+        <tr>
+          <td><code>saveCinemagraphPrompt()</code></td>
+          <td>—</td>
+          <td>POSTs <code>{cinemagraph_prompt: val, article_id: ARTICLE_ID}</code> to <code>/admin/settings/save</code>. The backend differentiates: if <code>article_id</code> is supplied, it saves to <code>cinemagraph_prompt_{id}</code> (per-article override); otherwise to <code>cinemagraph_prompt</code> (global).</td>
+        </tr>
+        <tr>
+          <td><code>cinemagraphRerunAll()</code></td>
+          <td>—</td>
+          <td>Reads optional global prompt from modal. POSTs <code>{global_prompt: "..."}</code> to <code>generate-cinemagraphs</code>. The route archives all existing clips on the backend before starting the worker. On success, calls <code>_cinemagraphShowRunning(d.n_slides)</code>.</td>
+        </tr>
+        <tr>
+          <td><code>showCinemagraphTab(tab)</code></td>
+          <td><code>tab</code>: <code>'current'</code> | <code>'archived'</code></td>
+          <td>Toggles <code>d-none</code> between <code>#cinemagraph-grid</code> and <code>#cinemagraph-removed-grid</code>. Updates active class on tab buttons.</td>
+        </tr>
+        <tr>
+          <td><code>_cinemagraphUpdateLogBtn(hasLog)</code></td>
+          <td><code>hasLog</code>: bool</td>
+          <td>Shows or hides the "View Logs" kebab menu item based on whether <code>carousel_cinemagraph_log</code> is non-empty.</td>
+        </tr>
+        <tr>
+          <td><code>postToInstagram('cine')</code></td>
+          <td>—</td>
+          <td>Reads caption from textarea. POSTs <code>{caption, post_type: "cine"}</code> to <code>post-to-instagram</code>. Starts polling via <code>pollIgStatus('cine')</code>.</td>
+        </tr>
+        <tr>
+          <td><code>pollIgStatus('cine')</code></td>
+          <td>—</td>
+          <td>Polls <code>/ig-status?type=cine</code> every 5 s. Updates status text. On result: calls <code>showIgDone('cine', url)</code> or displays error.</td>
+        </tr>
+        <tr>
+          <td><code>viewComponentLog('cinemagraph', 'Cinemagraph')</code></td>
+          <td>—</td>
+          <td>Fetches the log text from the backend and displays it in the shared component log modal.</td>
+        </tr>
+      </table>
+
+      <h3 id="js-polling">Polling Pattern</h3>
+      <p>
+        Unlike the Carousel Generator (which uses SSE streaming), the Cinemagraph Generator
+        uses a <strong>polling loop</strong>. The frontend calls <code>/video-data</code> every
+        20 seconds and renders any newly completed clips.
+      </p>
+      <pre><code>function _cinemagraphPoll() {
+    setTimeout(function () {
+        fetch('/admin/articles/' + ARTICLE_ID + '/video-data')
+            .then(r => r.json())
+            .then(d => {
+                _cinePrompts   = d.cinemagraph_prompts    || _cinePrompts;
+                _cineCreatedAt = d.cinemagraph_created_at || _cineCreatedAt;
+
+                if (d.cinemagraph_status && d.cinemagraph_status.startsWith('running:')) {
+                    // Full generation still in progress
+                    _cinemagraphApplyStatus(d.cinemagraph_status, null);
+                    _cinemagraphUpdateGrid(d.cinemagraph_urls, _cinePrompts);
+                    _cinemagraphPoll();  // schedule next poll
+
+                } else if (d.cinemagraph_status && d.cinemagraph_status.startsWith('slide_running:')) {
+                    // Single slide re-run — keep spinner on the correct slot
+                    const sm = d.cinemagraph_status.match(/^slide_running:(\d+)$/);
+                    if (sm) {
+                        _cinemagraphSetSlideSpinner(parseInt(sm[1]), true);
+                        document.getElementById('cinemagraph-status-text').textContent =
+                            'Re-running slide ' + (parseInt(sm[1]) + 1) + '\u2026';
+                    }
+                    _cinemagraphPoll();  // schedule next poll
+
+                } else {
+                    // Done (status key deleted by worker)
+                    _cinemagraphGenerating = false;
+                    document.getElementById('cinemagraph-status').classList.add('d-none');
+                    document.querySelectorAll('.cine-spinner-overlay').forEach(el => el.remove());
+
+                    // If a single-slide re-run just finished, clear the old placeholder
+                    // so _cinemagraphUpdateGrid will fill it with the new clip
+                    if (_cineRerunningIdx !== null) {
+                        const col = document.getElementById('cine-col-' + _cineRerunningIdx);
+                        if (col) col.innerHTML = '&lt;div class="carousel-placeholder"&gt;' + (_cineRerunningIdx + 1) + '&lt;/div&gt;';
+                        _cineRerunningIdx = null;
+                    }
+
+                    // Check for error result
+                    if (d.cinemagraph_result && d.cinemagraph_result.startsWith('error:')) {
+                        _showCinemagraphError(d.cinemagraph_result.slice(6));
+                        fetch('/admin/articles/' + ARTICLE_ID + '/cinemagraph-result',
+                              { method: 'DELETE' }).catch(() => {});
+                    }
+
+                    // Render completed clips
+                    if (d.cinemagraph_urls && d.cinemagraph_urls.some(u => u)) {
+                        _cinemagraphShowPreviews(d.cinemagraph_urls, _cinePrompts);
+                    }
+                    updateCinemagraphTabCounts();
+                }
+            })
+            .catch(() => _cinemagraphPoll());  // network error — retry
+    }, 20000);  // 20 second poll interval
+}</code></pre>
+
+      <div class="callout callout-info">
+        <strong>Tab visibility re-sync:</strong> A <code>visibilitychange</code> listener is
+        attached to <code>document</code>. When the tab becomes visible again after being
+        backgrounded while <code>_cinemagraphGenerating</code> is <code>true</code>, an
+        immediate <code>/video-data</code> fetch is triggered (no 20 s wait) to re-sync
+        the UI in case generation finished while the tab was hidden.
+      </div>
+
+      <h3 id="js-status-map">Status String Mapping</h3>
+      <p>
+        <code>_cinemagraphApplyStatus(status, nSlides)</code> parses the status key value
+        and maps it to a human-readable label and progress percentage:
+      </p>
+      <table>
+        <tr><th>Status string pattern</th><th>Label shown</th><th>Progress %</th></tr>
+        <tr><td><code>running:0/{N}</code></td><td>Starting… (0 / N)</td><td>0%</td></tr>
+        <tr><td><code>running:{i}/{N}</code></td><td>Generating clip {i+1} / {N}…</td><td><code>(i / N) * 100</code></td></tr>
+        <tr><td><code>running:{i}/{N}:queued</code></td><td>Queued (slide {i+1} / {N})</td><td><code>(i / N) * 100</code></td></tr>
+        <tr><td><code>running:{i}/{N}:dreaming</code></td><td>Dreaming (slide {i+1} / {N})</td><td><code>(i / N) * 100</code> + partial</td></tr>
+        <tr><td><code>slide_running:{idx}</code></td><td>Re-running slide {idx+1}…</td><td>0%</td></tr>
+      </table>
+    </section>
+
+    <!-- ── 10. Logic Flows ── -->
+    <section id="flows">
+      <h2>10. End-to-End Logic Flows</h2>
+
+      <h3 id="flow-full">A. Full Generation (all 10 slots empty)</h3>
+      <ol class="flow">
+        <li>User clicks "Generate Cinemagraph". <code>cinemagraphGenerate()</code> fires.</li>
+        <li>Frontend POSTs <code>{prompts: _cinePrompts}</code> to <code>generate-cinemagraphs</code>.</li>
+        <li>Backend: loads carousel images, resolves all 10 prompts, writes them to <code>carousel_cinemagraph_prompts</code>, sets <code>cinemagraph_status_{id} = "running:0/10"</code>.</li>
+        <li>Backend: launches <code>_cinemagraph_worker</code> in a daemon thread. Returns <code>{started: true, n_slides: 10}</code>.</li>
+        <li>Frontend: <code>_cinemagraphShowRunning(10)</code> — shows status bar, builds 10 placeholder tiles, starts polling loop.</li>
+        <li><em>Worker thread, for each of 10 slides:</em>
+          <ol type="a">
+            <li>Resolves public image URL (GCS or uploads local to GCS temp).</li>
+            <li>Calls <code>_luma_create_task()</code> → <code>gen_id</code>. Sets status to <code>"running:{i}/10"</code>.</li>
+            <li>Polls every 6 s until <code>completed</code>, <code>failed</code>, or cancelled. Updates status to <code>"running:{i}/10:dreaming"</code> etc. as sub-status changes.</li>
+            <li>On <code>completed</code>: downloads MP4, saves to GCS (or local). Updates <code>cinemagraph_urls[real_idx]</code> and writes to DB immediately.</li>
+          </ol>
+        </li>
+        <li>Frontend polls <code>/video-data</code> every 20 s. Each poll where status starts with <code>"running:"</code>: calls <code>_cinemagraphUpdateGrid()</code> — slots with new URLs get video elements inserted.</li>
+        <li>Worker finishes. Clears status key. Sets result to <code>"done"</code>.</li>
+        <li>Next frontend poll finds no status key → "done" branch. Hides status bar. Calls <code>_cinemagraphShowPreviews()</code> then <code>updateCinemagraphTabCounts()</code>. Generate button is hidden (all 10 slots filled).</li>
+      </ol>
+
+      <h3 id="flow-partial">B. Partial Generation (some slots already filled)</h3>
+      <ol class="flow">
+        <li>Steps 1–4 same as Full Generation.</li>
+        <li>Backend computes <code>empty_indices</code> — only slots that have a carousel image but no clip. If N &lt; 10, only N clips are generated.</li>
+        <li><code>slot_indices</code> is passed to the worker, mapping each of the N images to their actual 0-based slot position in the 10-slot array.</li>
+        <li>Worker: <code>real_idx = slot_indices[i]</code>. Existing clips in filled slots are preserved in <code>cinemagraph_urls</code> (the merge array) and are never touched.</li>
+        <li>Frontend: <code>_cinemagraphShowRunning(N)</code> — only adds placeholder tiles for empty slots (since <code>hasExistingClips</code> check prevents rebuilding the grid if any video elements already exist).</li>
+        <li>On completion, <code>updateCinemagraphTabCounts()</code> shows Generate button only if any slots remain empty.</li>
+      </ol>
+
+      <h3 id="flow-rerun">C. Single-Slide Re-run</h3>
+      <ol class="flow">
+        <li>User clicks info button on an active clip tile. <code>openCinemagraphEditModal(idx, url, prompt)</code> opens modal.</li>
+        <li>User optionally edits the prompt and clicks "Re-run slide".</li>
+        <li><code>cinemagraphRerunSlide()</code>: captures <code>oldClipUrl</code>, <code>oldPrompt</code>, <code>oldCreatedAt</code> before the slot changes. POSTs <code>{slide_idx: idx, prompt: newPrompt}</code> to <code>regenerate-cinemagraph-slide</code>.</li>
+        <li>Backend: archives old clip into <code>carousel_cinemagraph_archived</code>, sets <code>cinemagraph_status_{id} = "slide_running:{idx}"</code>, launches <code>_cinemagraph_slide_worker</code>. Returns <code>{started: true, archived_idx: N}</code>.</li>
+        <li>Frontend: closes modal. Calls <code>addCinemagraphArchived(oldEntry, archivedIdx)</code> — adds old clip to Archived tab. Resets slot to placeholder with spinner overlay. Sets <code>_cineRerunningIdx = idx</code>. Starts polling.</li>
+        <li>Worker runs: same Luma task + poll loop as full worker. Patches only <code>slide_idx</code> in DB arrays.</li>
+        <li>Next frontend poll after worker finishes: <code>_cineRerunningIdx</code> is still set → DOM clears the placeholder. <code>_cinemagraphUpdateGrid()</code> inserts new clip. <code>_cineRerunningIdx = null</code>.</li>
+      </ol>
+
+      <h3 id="flow-archive-slide">D. Archive Single Clip</h3>
+      <ol class="flow">
+        <li>User opens edit modal, clicks "Archive clip".</li>
+        <li><code>cinemagraphArchiveSlide()</code>: confirms with user. POSTs <code>{slide_idx: idx}</code> to <code>archive-cinemagraph-slide</code>.</li>
+        <li>Backend: loads <code>carousel_cinemagraphs</code> and <code>carousel_cinemagraph_archived</code>. Moves the clip at <code>slide_idx</code> into the archived array (with metadata). Sets <code>cinemagraph_urls[slide_idx] = null</code>. Saves both columns.</li>
+        <li>Frontend: sets <code>_cinePrompts[idx] = null</code>. Resets slot to placeholder. Calls <code>addCinemagraphArchived(entry, d.archived_idx)</code>. Hides modal. Calls <code>updateCinemagraphTabCounts()</code> — Generate button appears.</li>
+      </ol>
+
+      <h3 id="flow-archive-all">E. Archive All</h3>
+      <ol class="flow">
+        <li>User clicks "Archive All" from kebab menu.</li>
+        <li><code>archiveAllCinemagraphs()</code>: confirms with user. POSTs to <code>archive-all-cinemagraphs</code>.</li>
+        <li>Backend: collects all non-null clips from <code>cinemagraph_urls[0..9]</code> with metadata. Appends them to <code>carousel_cinemagraph_archived</code>. Sets <code>cinemagraph_urls[0..9] = [null] * 10</code>. Saves. Returns <code>{ok: true, archived_start_idx: N}</code> (starting index for the newly archived items).</li>
+        <li>Frontend: iterates all active clip tiles, calls <code>addCinemagraphArchived()</code> for each with incrementing <code>archivedIdx</code>, resets slots to placeholders. Clears <code>_cinePrompts</code> and <code>_cineCreatedAt</code>. Calls <code>showCinemagraphTab('current')</code> and <code>updateCinemagraphTabCounts()</code>.</li>
+      </ol>
+
+      <h3 id="flow-restore">F. Restore Archived Clip</h3>
+      <ol class="flow">
+        <li>User opens "Archived" tab, clicks info button on an archived tile. <code>openArchivedInfoModal('cinemagraph', archivedIdx, url, prompt, meta)</code> opens the shared archived info modal.</li>
+        <li>User selects a target slot (1–10) from the dropdown and clicks "Restore to this slot".</li>
+        <li><code>cinemagraphRestoreClip(archivedIdx, targetSlot)</code>: POSTs <code>{archived_idx, target_slot}</code> to <code>restore-cinemagraph-clip</code>.</li>
+        <li>Backend: if target slot is occupied, its current clip is displaced into the archived array. The archived clip is moved from the archived array into the active slot. Saves both DB columns. Returns displacement info if applicable.</li>
+        <li>Frontend: removes archived tile. If displaced, adds the displaced clip to the archived grid. Inserts restored clip into <code>#cine-col-{slot_idx}</code>. Updates local arrays. Calls <code>showCinemagraphTab('current')</code> and <code>updateCinemagraphTabCounts()</code>.</li>
+      </ol>
+
+      <h3 id="flow-rerun-all">G. Re-run All</h3>
+      <ol class="flow">
+        <li>User clicks "Re-run All" from kebab menu. Modal opens with optional global prompt textarea and cost warning (~$2.50).</li>
+        <li>User clicks confirm. <code>cinemagraphRerunAll()</code> POSTs <code>{global_prompt: "..."}</code> to <code>generate-cinemagraphs</code>.</li>
+        <li>Backend: archives all existing clips (same logic as Archive All). Recomputes empty_indices — now all slots with carousel images. Resolves prompts using the global_prompt override. Launches worker.</li>
+        <li>Frontend: same as Full Generation steps 5–9.</li>
+      </ol>
+
+      <div class="callout callout-warn">
+        <strong>Archive-before-rerun:</strong> For "Re-run All", the backend archives all existing
+        clips before starting generation. This means the worker always sees all slots as empty
+        and generates fresh clips for every slide. The archived clips remain in the Archived tab.
+      </div>
+
+      <h3 id="flow-prompt">H. Save Default Prompt</h3>
+      <ol class="flow">
+        <li>User opens "Edit Default Prompt" from kebab menu. Modal shows per-article override if set, else site global default.</li>
+        <li>User edits the prompt text and clicks "Save for this Article".</li>
+        <li><code>saveCinemagraphPrompt()</code>: POSTs <code>{cinemagraph_prompt: val, article_id: ARTICLE_ID}</code> to <code>/admin/settings/save</code>.</li>
+        <li>Backend: key is <code>cinemagraph_prompt_{article_id}</code>. Upserted via <code>INSERT … ON DUPLICATE KEY UPDATE</code>. This key takes precedence over the global <code>cinemagraph_prompt</code> key for this article only.</li>
+        <li>Frontend: updates <code>_cineArticlePrompt = val</code>. This value is used as the default for all future single-slide re-runs and as the fallback for any slot whose per-slide prompt is empty.</li>
+      </ol>
+    </section>
+
+    <!-- ── 11. Cost & Limits ── -->
+    <section id="cost-limits">
+      <h2>11. Cost &amp; Limits</h2>
+
+      <h3>Luma AI (clip generation)</h3>
+      <table>
+        <tr><th>Item</th><th>Detail</th></tr>
+        <tr><td>Model</td><td>Luma Ray-2, <code>aspect_ratio="1:1"</code>, <code>duration="5s"</code></td></tr>
+        <tr><td>Cost per clip</td><td>~$0.20–0.25 (Luma Ray-2 pricing)</td></tr>
+        <tr><td>Cost per full 10-clip run</td><td>~$2.00–2.50</td></tr>
+        <tr><td>Generation time per clip</td><td>~30 s – 3 min (Luma queue dependent)</td></tr>
+        <tr><td>Total time for 10 clips</td><td>~5–15 minutes</td></tr>
+        <tr><td>Poll interval</td><td>6 s fixed sleep between polls</td></tr>
+        <tr><td>Max active clips</td><td>10 (slots 0–9)</td></tr>
+        <tr><td>Max archived clips</td><td>Unbounded (JSON array appended to)</td></tr>
+        <tr><td>Clip output spec</td><td>5 s, 1:1 aspect ratio, MP4 (H.264)</td></tr>
+        <tr><td>Billing error handling</td><td>Detected via <code>_is_luma_billing_error()</code> — immediately aborts all remaining slides and sets result to <code>"error:Billing/credits error"</code></td></tr>
+      </table>
+
+      <h3>GCS storage</h3>
+      <table>
+        <tr><th>Path pattern</th><th>Content</th></tr>
+        <tr><td><code>articles/{id}/cinemagraph/slide_{N}_{ts}.mp4</code></td><td>Generated cinemagraph clip (MP4, video/mp4)</td></tr>
+        <tr><td><code>articles/{id}/cinemagraph/run_{ts}.log</code></td><td>Run log text file (archived after each full run)</td></tr>
+        <tr><td><code>articles/{id}/temp/slide_{N}_{ts}.jpg</code></td><td>Temporary JPEG upload of local carousel image for Luma access. Not cleaned up automatically.</td></tr>
+      </table>
+
+      <h3>Instagram (video carousel)</h3>
+      <table>
+        <tr><th>Item</th><th>Detail</th></tr>
+        <tr><td>Max slides per carousel</td><td>10 (Instagram Graph API limit)</td></tr>
+        <tr><td>Min slides for a carousel</td><td>2</td></tr>
+        <tr><td>Container type</td><td><code>REELS</code> for child containers; <code>CAROUSEL</code> for parent</td></tr>
+        <tr><td><code>share_to_feed</code></td><td><code>false</code> on child containers (carousel controls feed visibility)</td></tr>
+        <tr><td>Child container polling</td><td>Polled for <code>STATUS_CODE=FINISHED</code>; can take 1–5 min per clip</td></tr>
+        <tr><td>Total IG posting time</td><td>5–20 minutes (10 clips × child polling + publish steps)</td></tr>
+        <tr><td>Fatal publish error handling</td><td>If IG returns a <code>Fatal</code> or rate-limit error on the publish step, falls back to checking the account's recent media to detect if the post actually went through</td></tr>
+        <tr><td>Post verification</td><td>Up to 3 retries checking <code>/me/media</code> for a recently created carousel post</td></tr>
+      </table>
+
+      <h3>Log column limits</h3>
+      <table>
+        <tr><th>Column</th><th>Max stored</th><th>Notes</th></tr>
+        <tr><td><code>carousel_cinemagraph_log</code></td><td>65,000 chars</td><td>Truncated before write to stay within MySQL TEXT (65,535 chars). Single-slide worker appends to existing content.</td></tr>
+        <tr><td><code>cinemagraph_status_*</code> (site_settings)</td><td>~50 chars</td><td>Short status string only; always overwritten</td></tr>
+      </table>
+
+      <div class="callout callout-danger">
+        <strong>Cost caution:</strong> "Re-run All" archives all 10 existing clips and regenerates
+        all 10, costing ~$2.50 per run. The confirmation modal displays this estimate.
+        There is no additional server-side cost gate beyond the Luma API key being valid.
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // Smooth scroll for TOC links
+  document.querySelectorAll('#toc a').forEach(a => {
+    a.addEventListener('click', e => {
+      const target = document.querySelector(a.getAttribute('href'));
+      if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    });
+  });
+</script>
+</body>
+</html>
