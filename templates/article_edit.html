@@ -2770,9 +2770,13 @@ function buildRunItem(run, expandIt) {
                         <label class="small text-muted">Title</label>
                         <input type="text" class="form-control form-control-sm" id="nv-yt-${run.ts}-title"
                                maxlength="100" placeholder="Video title…">
-                        <label class="small text-muted mt-1">Description</label>
+                        <div class="d-flex align-items-center justify-content-between mt-1">
+                            <label class="small text-muted mb-0">Description</label>
+                            <a href="#" class="small ms-auto" id="nv-yt-${run.ts}-gen-link"
+                               onclick="event.preventDefault(); generateYouTubeDesc(${run.ts})">Generate description <span class="text-muted">(~$0.01)</span></a>
+                        </div>
                         <textarea class="form-control form-control-sm mt-1" id="nv-yt-${run.ts}-desc"
-                                  rows="2" maxlength="5000" placeholder="Description…"></textarea>
+                                  rows="3" maxlength="5000" placeholder="Description…"></textarea>
                     </div>
                     ${!YT_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">YouTube not connected. <a href="/admin/settings" target="_blank">Connect in Settings</a>.</div>' : ''}
                     <button type="button" class="btn btn-sm btn-danger"
@@ -2800,6 +2804,8 @@ function buildRunItem(run, expandIt) {
     var defaultCaption = [ARTICLE_TITLE, ARTICLE_URL ? '\n' + ARTICLE_URL : ''].filter(Boolean).join('\n');
     var captionEl = item.querySelector('#nv-ig-' + run.ts + '-caption');
     if (captionEl) captionEl.value = defaultCaption;
+    var ytTitleEl = item.querySelector('#nv-yt-' + run.ts + '-title');
+    if (ytTitleEl && ARTICLE_TITLE) ytTitleEl.value = ARTICLE_TITLE;
     return item;
 }
 
@@ -2833,6 +2839,37 @@ function generateNarratedIgCaption(runTs) {
         link.innerHTML = origHTML;
         link.style.pointerEvents = '';
         alert('Failed to generate caption: ' + err);
+    });
+}
+
+/* ── Generate YouTube description for a narrated run ─────────── */
+function generateYouTubeDesc(runTs) {
+    if (!ARTICLE_ID) return;
+    var link   = document.getElementById('nv-yt-' + runTs + '-gen-link');
+    var descEl = document.getElementById('nv-yt-' + runTs + '-desc');
+    if (!link || !descEl) return;
+    var origHTML = link.innerHTML;
+    link.textContent = 'Generating…';
+    link.style.pointerEvents = 'none';
+    fetch('/admin/articles/' + ARTICLE_ID + '/generate-ig-caption', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({component: 'narrated'})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        link.innerHTML = origHTML;
+        link.style.pointerEvents = '';
+        if (d.error) { alert('Failed to generate description: ' + d.error); return; }
+        descEl.value = d.caption;
+        if (ARTICLE_URL && d.caption.indexOf(ARTICLE_URL) === -1) {
+            descEl.value += '\n\nRead the full article: ' + ARTICLE_URL;
+        }
+    })
+    .catch(function(err) {
+        link.innerHTML = origHTML;
+        link.style.pointerEvents = '';
+        alert('Failed to generate description: ' + err);
     });
 }
 
