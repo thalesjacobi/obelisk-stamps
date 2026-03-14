@@ -12,6 +12,15 @@
     .ql-container { border-radius: 0 0 4px 4px; }
     .dropdown-menu .dropdown-header { font-size: 0.65rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
 
+    /* Instagram live icon gradient */
+    .ig-icon-live {
+        stroke: url(#ig-gradient) !important;
+    }
+
+    /* Narrated run per-item social icons */
+    .nv-run-ig-live { stroke: url(#ig-gradient) !important; }
+    .nv-run-yt-live { stroke: #ff0000 !important; }
+
     /* Instagram Carousel Generator */
     #carousel-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     #carousel-grid .carousel-col { flex: 0 0 calc(20% - 0.4rem); }
@@ -188,6 +197,19 @@
     </div>
 
     {% if article %}
+    <!-- Hidden SVG defs: Instagram gradient for live-post icon -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            <linearGradient id="ig-gradient" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%"   stop-color="#f09433"/>
+                <stop offset="25%"  stop-color="#e6683c"/>
+                <stop offset="50%"  stop-color="#dc2743"/>
+                <stop offset="75%"  stop-color="#cc2366"/>
+                <stop offset="100%" stop-color="#bc1888"/>
+            </linearGradient>
+        </defs>
+    </svg>
+
     <!-- Instagram Carousel Generator -->
     <div class="card mt-3 mb-4">
         <div class="card-header position-relative d-flex align-items-center justify-content-between flex-wrap gap-2 pe-5">
@@ -295,7 +317,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleIgSection('car')">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                <svg id="car-ig-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
                      fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                      stroke-linejoin="round" style="flex-shrink:0">
                     <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
@@ -561,7 +583,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleIgSection('cine')">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                <svg id="cine-ig-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
                      fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                      stroke-linejoin="round" style="flex-shrink:0">
                     <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
@@ -1699,6 +1721,38 @@ function showIgRunning(mode, statusStr) {
     }
 }
 
+function _setIgIconLive(mode) {
+    /* Apply Instagram gradient to the section header icon when a post is live. */
+    var iconId = (mode === 'car') ? 'car-ig-icon' : 'cine-ig-icon';
+    var icon = document.getElementById(iconId);
+    if (icon) icon.classList.add('ig-icon-live');
+}
+
+function _clearIgIconLive(mode) {
+    /* Remove gradient when post is archived. */
+    var iconId = (mode === 'car') ? 'car-ig-icon' : 'cine-ig-icon';
+    var icon = document.getElementById(iconId);
+    if (icon) icon.classList.remove('ig-icon-live');
+}
+
+/* Per-run social icons in Narrated Video accordion */
+function _setNvIgIconLive(ts) {
+    var el = document.getElementById('nv-ig-icon-' + ts);
+    if (el) { el.classList.add('nv-run-ig-live'); el.setAttribute('stroke', 'url(#ig-gradient)'); }
+}
+function _clearNvIgIconLive(ts) {
+    var el = document.getElementById('nv-ig-icon-' + ts);
+    if (el) { el.classList.remove('nv-run-ig-live'); el.setAttribute('stroke', '#ccc'); }
+}
+function _setNvYtIconLive(ts) {
+    var el = document.getElementById('nv-yt-icon-' + ts);
+    if (el) { el.classList.add('nv-run-yt-live'); el.setAttribute('stroke', '#ff0000'); }
+}
+function _clearNvYtIconLive(ts) {
+    var el = document.getElementById('nv-yt-icon-' + ts);
+    if (el) { el.classList.remove('nv-run-yt-live'); el.setAttribute('stroke', '#ccc'); }
+}
+
 function showIgDone(mode, permalink) {
     const area     = document.getElementById(_igId(mode, 'status-area'));
     const running  = document.getElementById(_igId(mode, 'status-running'));
@@ -1709,6 +1763,7 @@ function showIgDone(mode, permalink) {
     running.classList.add('d-none');
     if (progress) progress.classList.add('d-none');
     resultEl.classList.remove('d-none');
+    _setIgIconLive(mode);
 
     // Disable Post button and inject Edit + Check buttons inline in btn-row
     const postBtn = document.getElementById(_igId(mode, 'post-btn'));
@@ -1934,6 +1989,7 @@ function igArchivePost(mode) {
             }
             const btnRow = document.getElementById(_igId(mode, 'btn-row'));
             if (btnRow) btnRow.querySelectorAll('.ig-done-btn').forEach(function(b) { b.remove(); });
+            _clearIgIconLive(mode);
             if (d.history && d.history.length) renderIgHistory(mode, d.history);
         } else {
             if (status) status.innerHTML = '<span class="text-danger">' + (d.error || 'Archive failed') + '</span>';
@@ -2683,6 +2739,19 @@ function buildRunItem(run, expandIt) {
                     data-bs-toggle="collapse" data-bs-target="#${collapseId}">
                 ${fmtBadge}${vBadge}${sBadge}${cineBadge}
                 <span class="small text-muted ms-1">${run.ts_label}</span>
+                <span class="ms-auto d-flex align-items-center gap-2 me-3" onclick="event.stopPropagation()" style="pointer-events:none">
+                    <svg id="nv-ig-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Instagram">
+                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+                        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+                    </svg>
+                    <svg id="nv-yt-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="YouTube">
+                        <path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.54C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/>
+                        <polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/>
+                    </svg>
+                </span>
             </button>
         </h2>
         <div id="${collapseId}" class="accordion-collapse collapse ${show}"
@@ -2903,6 +2972,7 @@ function showNvIgRunning(ts, statusStr) {
 }
 
 function showNvIgDone(ts, permalink) {
+    _setNvIgIconLive(ts);
     var area         = document.getElementById(_nvIgId(ts, 'status-area'));
     var running      = document.getElementById(_nvIgId(ts, 'status-running'));
     var progressWrap = document.getElementById(_nvIgId(ts, 'progress-wrap'));
@@ -2993,6 +3063,7 @@ function nvIgArchivePost(ts) {
     .then(function(r) { return r.json(); })
     .then(function(d) {
         if (d.ok) {
+            _clearNvIgIconLive(ts);
             var resultEl = document.getElementById(_nvIgId(ts, 'result'));
             if (resultEl) resultEl.innerHTML = '<span class="text-muted small">Post archived. You can now publish a new post.</span>';
             var postBtn = document.getElementById(_nvIgId(ts, 'post-btn'));
@@ -3042,6 +3113,7 @@ function restoreNvIgState(ts) {
         if (!d.result && !d.status) return;
         if (d.result && d.result.startsWith('done:')) {
             showNvIgDone(ts, d.result.slice(5));
+            // _setNvIgIconLive called inside showNvIgDone
         } else if (d.result && d.result.startsWith('error:')) {
             showNvIgError(ts, d.result.slice(6));
         } else if (d.status && d.status.startsWith('running')) {
@@ -3153,6 +3225,7 @@ function pollYouTube(runTs, btn) {
             if (statusStr.startsWith('running')) {
                 pollYouTube(runTs, btn);
             } else if (d.result && d.result.startsWith('done:')) {
+                _setNvYtIconLive(runTs);
                 var ytUrl = d.result.slice(5);
                 var running = document.getElementById('nv-yt-' + runTs + '-running');
                 var resultEl = document.getElementById('nv-yt-' + runTs + '-result');
@@ -3194,6 +3267,13 @@ function loadNarratedRuns(runs) {
             accordion.appendChild(buildRunItem(run, false));
             rendered++;
             restoreNvIgState(run.ts);
+            // Restore YouTube icon if a successful upload exists
+            (function(ts) {
+                fetch('/admin/articles/' + ARTICLE_ID + '/youtube-status?ts=' + ts)
+                .then(function(r) { return r.json(); })
+                .then(function(d) { if (d.result && d.result.startsWith('done:')) _setNvYtIconLive(ts); })
+                .catch(function() {});
+            })(run.ts);
         } catch(e) {
             console.warn('Could not render narrated run', i, e);
         }
@@ -3473,7 +3553,19 @@ function narratedFinish(error) {
                 });
             }
             _cinemagraphUpdateLogBtn(d.has_cinemagraph_log);
+
+            // Colour IG icons if a post is currently live
+            if (d.cinemagraph_result && d.cinemagraph_result.startsWith('done:')) {
+                _setIgIconLive('cine');
+            }
         }).catch(() => {});
+
+    // Check carousel IG status separately (not in video-data response)
+    fetch('/admin/articles/' + ARTICLE_ID + '/ig-status?type=car')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) _setIgIconLive('car');
+        }).catch(function() {});
 })();
 
 // ════════════════════════════════════════════════════════════════
