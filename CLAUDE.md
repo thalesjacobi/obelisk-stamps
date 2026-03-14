@@ -18,3 +18,8 @@ Runs on port 8080. Admin panel at `/admin`.
 - Images are uploaded to GCS via `upload_bytes_to_gcs()`.
 - Env var: `GCS_BUCKET_NAME`. Optional prefix: `GCS_PATH_PREFIX`.
 - Local static files are used as fallback when GCS is not configured.
+
+## Deployment
+- Hosted on Google Cloud Run (europe-west1).
+- CI/CD via GitHub Actions (`.github/workflows/main.yml`).
+- Env vars are passed from GitHub secrets to Cloud Run at deploy time.
