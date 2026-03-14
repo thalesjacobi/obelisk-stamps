@@ -550,6 +550,46 @@
                 </p>
             </div>
         </div>
+        <!-- Facebook Page API -->
+        <div class="card mt-4">
+            <div class="card-header"><strong>Facebook Page API</strong></div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    These credentials are required to post carousels and videos to your Facebook Page.
+                    They are stored as environment variables — never in the database.
+                </p>
+                <table class="table table-sm mb-3">
+                    <tbody>
+                        <tr>
+                            <td><code>FB_PAGE_ID</code></td>
+                            <td>
+                                {% if fb_page_id_set %}
+                                    <span class="badge bg-success">✓ Configured</span>
+                                {% else %}
+                                    <span class="badge bg-danger">✗ Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>FB_PAGE_ACCESS_TOKEN</code></td>
+                            <td>
+                                {% if fb_token_set %}
+                                    <span class="badge bg-success">✓ Configured</span>
+                                {% else %}
+                                    <span class="badge bg-danger">✗ Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="text-muted small mb-0">
+                    Get these from the
+                    <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener">Graph API Explorer</a>:
+                    call <code>me/accounts</code> to get your Page ID and Page Access Token. Set them as
+                    environment variables and redeploy.
+                </p>
+            </div>
+        </div>
         <!-- YouTube API -->
         <div class="card mt-4">
             <div class="card-header"><strong>YouTube API</strong></div>

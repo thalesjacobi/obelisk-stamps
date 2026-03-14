@@ -183,6 +183,14 @@ if IG_USER_ID and IG_ACCESS_TOKEN:
 else:
     print("Instagram: IG_USER_ID / IG_ACCESS_TOKEN not set — posting disabled")
 
+# --- Facebook Page API (optional — for Page posting) ---
+FB_PAGE_ID           = os.getenv("FB_PAGE_ID", "")
+FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN", "")
+if FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN:
+    print("Facebook: Page credentials configured")
+else:
+    print("Facebook: FB_PAGE_ID / FB_PAGE_ACCESS_TOKEN not set — posting disabled")
+
 # --- Knowledge Base (ChromaDB) ---
 KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb")
 
@@ -2461,6 +2469,8 @@ def admin_settings():
                            ig_caption_prompt=ig_caption_prompt,
                            ig_user_id_set=bool(IG_USER_ID),
                            ig_token_set=bool(IG_ACCESS_TOKEN),
+                           fb_page_id_set=bool(FB_PAGE_ID),
+                           fb_token_set=bool(FB_PAGE_ACCESS_TOKEN),
                            yt_connected=bool(get_setting("youtube_refresh_token")))
 
 
@@ -2534,6 +2544,7 @@ def admin_article_new():
                            ig_caption_prompt=get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT),
                            ig_article_caption_prompt='',
                            ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN),
+                           fb_configured=bool(FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN),
                            yt_configured=bool(get_setting("youtube_refresh_token")))
 
 
@@ -2598,6 +2609,7 @@ def admin_article_edit(article_id):
                            ig_caption_prompt=get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT),
                            ig_article_caption_prompt=get_setting(f'ig_caption_prompt_{article_id}', ''),
                            ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN),
+                           fb_configured=bool(FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN),
                            yt_configured=bool(get_setting("youtube_refresh_token")),
                            ig_cine_caption=cine_caption,
                            ig_car_caption=car_caption)
@@ -4856,6 +4868,18 @@ def _ig_keys(post_type, article_id):
     }
 
 
+def _fb_keys(post_type, article_id):
+    """Return dict of site_settings keys for Facebook posting ('cine' or 'car')."""
+    prefix = "fb_car_post_" if post_type == "car" else "fb_post_"
+    return {
+        "status":   f"{prefix}status_{article_id}",
+        "result":   f"{prefix}result_{article_id}",
+        "media_id": f"{prefix}media_id_{article_id}",
+        "history":  f"{prefix}history_{article_id}",
+        "snapshot": f"{prefix}snapshot_{article_id}",
+    }
+
+
 def _add_activity_log(article_id, title, content, component=None):
     """Append an entry to the article's activity log (stored in site_settings)."""
     import datetime as _dt
@@ -5936,6 +5960,466 @@ def admin_article_generate_ig_caption(article_id):
         except Exception:
             pass
         return jsonify({"error": f"Caption generation failed: {e}"}), 500
+
+
+# ------------------------------------------------------------
+# FACEBOOK PAGE POSTING
+# ------------------------------------------------------------
+
+def _post_to_facebook_worker(article_id, caption, post_type="cine"):
+    """
+    Background thread: post carousel images or cinemagraph video to Facebook Page.
+    post_type: 'car' = multi-photo post; 'cine' = video post.
+    """
+    import time as _time
+    import requests as _req
+
+    keys       = _fb_keys(post_type, article_id)
+    status_key = keys["status"]
+    result_key = keys["result"]
+
+    def _set_status(s):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, s, s))
+
+    def _set_result(r):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, r, r))
+
+    def _set_kv(k, v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (k, v, v))
+
+    page_id      = FB_PAGE_ID
+    access_token = FB_PAGE_ACCESS_TOKEN
+
+    try:
+        _set_status("running:0")
+
+        # ── Fetch article data ─────────────────────────────────
+        row = query_one(
+            "SELECT title, carousel_images, carousel_cinemagraphs, punchlines "
+            "FROM articles WHERE id = %s", (article_id,))
+        if not row:
+            _set_result("error:Article not found")
+            return
+        title       = row[0] or "Untitled"
+        images_raw  = row[1]
+        cines_raw   = row[2]
+        punches_raw = row[3]
+        images     = (json.loads(images_raw) if images_raw else [])[:10]
+        cines      = (json.loads(cines_raw) if cines_raw else [])[:10]
+        punchlines = (json.loads(punches_raw) if punches_raw else [])[:10]
+
+        component_label = "carousel" if post_type == "car" else "cinemagraph"
+
+        if post_type == "car":
+            # ── Multi-photo post ────────────────────────────────
+            valid_urls = [u for u in images if u]
+            if not valid_urls:
+                _set_result("error:No carousel images to post")
+                return
+
+            photo_ids = []
+            for idx, img_url in enumerate(valid_urls):
+                _set_status(f"running:upload:{idx+1}/{len(valid_urls)}")
+                resp = _req.post(
+                    f"{_IG_GRAPH_URL}/{page_id}/photos",
+                    data={
+                        "url": img_url,
+                        "published": "false",
+                        "access_token": access_token,
+                    },
+                    timeout=60,
+                )
+                data = resp.json()
+                if "id" not in data:
+                    err = data.get("error", {}).get("message", str(data))
+                    _set_result(f"error:Photo upload failed (slide {idx+1}): {err}")
+                    return
+                photo_ids.append(data["id"])
+                print(f"[FB] Uploaded photo {idx+1}/{len(valid_urls)}: {data['id']}", flush=True)
+
+            # Create feed post with attached media
+            _set_status("running:publishing")
+            post_data = {
+                "message": caption,
+                "access_token": access_token,
+            }
+            for i, pid in enumerate(photo_ids):
+                post_data[f"attached_media[{i}]"] = json.dumps({"media_fbid": pid})
+
+            resp = _req.post(
+                f"{_IG_GRAPH_URL}/{page_id}/feed",
+                data=post_data,
+                timeout=60,
+            )
+            data = resp.json()
+            if "id" not in data:
+                err = data.get("error", {}).get("message", str(data))
+                _set_result(f"error:Feed post failed: {err}")
+                return
+
+            post_id = data["id"]
+            permalink = f"https://www.facebook.com/{post_id}"
+            print(f"[FB] Carousel posted: {permalink}", flush=True)
+
+        else:
+            # ── Cinemagraph video post ──────────────────────────
+            # Find the first valid cinemagraph URL
+            video_url = None
+            for c in cines:
+                if c:
+                    video_url = c
+                    break
+            if not video_url:
+                _set_result("error:No cinemagraph video to post")
+                return
+
+            _set_status("running:upload")
+            resp = _req.post(
+                f"{_IG_GRAPH_URL}/{page_id}/videos",
+                data={
+                    "file_url": video_url,
+                    "description": caption,
+                    "access_token": access_token,
+                },
+                timeout=120,
+            )
+            data = resp.json()
+            if "id" not in data:
+                err = data.get("error", {}).get("message", str(data))
+                _set_result(f"error:Video upload failed: {err}")
+                return
+
+            post_id = data["id"]
+            permalink = f"https://www.facebook.com/{page_id}/videos/{post_id}"
+            print(f"[FB] Video posted: {permalink}", flush=True)
+
+        # ── Save results ───────────────────────────────────────
+        _set_kv(keys["media_id"], str(post_id))
+        snapshot = {
+            "caption": caption,
+            "post_type": post_type,
+            "posted_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "image_urls": images if post_type == "car" else [],
+            "video_urls": cines if post_type == "cine" else [],
+        }
+        _set_kv(keys["snapshot"], json.dumps(snapshot))
+        _set_result(f"done:{permalink}")
+
+        _add_activity_log(
+            article_id,
+            f"Facebook {component_label.title()} Post Published",
+            f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>",
+            component=component_label,
+        )
+
+    except Exception as e:
+        print(f"[FB] Worker error: {e}", flush=True)
+        _set_result(f"error:{e}")
+
+
+def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
+    """Background thread: post narrated video to Facebook Page."""
+    import requests as _req
+
+    status_key = f"narrated_fb_status_{article_id}_{run_ts}"
+    result_key = f"narrated_fb_result_{article_id}_{run_ts}"
+
+    def _set_status(s):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, s, s))
+
+    def _set_result(r):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, r, r))
+
+    def _set_kv(k, v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (k, v, v))
+
+    try:
+        _set_status("running:upload")
+
+        _add_activity_log(
+            article_id,
+            "Facebook Video Post Started",
+            f"Uploading narrated video to Facebook Page…",
+            component="narrated",
+        )
+
+        resp = _req.post(
+            f"{_IG_GRAPH_URL}/{FB_PAGE_ID}/videos",
+            data={
+                "file_url": video_url,
+                "description": caption,
+                "access_token": FB_PAGE_ACCESS_TOKEN,
+            },
+            timeout=180,
+        )
+        data = resp.json()
+
+        if "id" not in data:
+            err = data.get("error", {}).get("message", str(data))
+            _set_result(f"error:{err}")
+            _add_activity_log(article_id, "Facebook Post Failed", err, component="narrated")
+            return
+
+        video_id  = data["id"]
+        permalink = f"https://www.facebook.com/{FB_PAGE_ID}/videos/{video_id}"
+
+        _set_kv(f"narrated_fb_media_id_{article_id}_{run_ts}", str(video_id))
+        _set_result(f"done:{permalink}")
+
+        _add_activity_log(
+            article_id,
+            "Facebook Video Post Published",
+            f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>",
+            component="narrated",
+        )
+        print(f"[FB] Narrated video posted: {permalink}", flush=True)
+
+    except Exception as e:
+        print(f"[FB] Narrated worker error: {e}", flush=True)
+        _set_result(f"error:{e}")
+
+
+# ── Facebook: Post carousel / cinemagraph ──────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-to-facebook", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_post_to_facebook(article_id):
+    if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN:
+        return jsonify({"error": "Facebook Page credentials not configured. "
+                        "Set FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN environment variables."}), 400
+    data      = request.get_json() or {}
+    caption   = data.get("caption", "")
+    post_type = data.get("type", "cine")
+
+    keys       = _fb_keys(post_type, article_id)
+    status_key = keys["status"]
+    result_key = keys["result"]
+
+    component_label = "carousel" if post_type == "car" else "cinemagraph"
+    _add_activity_log(article_id, f"Facebook {component_label.title()} Post Started",
+                      "Starting Facebook post…", component=component_label)
+
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (result_key, "", ""))
+
+    t = threading.Thread(target=_post_to_facebook_worker,
+                         args=(article_id, caption, post_type), daemon=True)
+    t.start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/fb-post-status")
+@login_required
+@admin_required
+def admin_article_fb_post_status(article_id):
+    post_type = request.args.get("type", "cine")
+    keys      = _fb_keys(post_type, article_id)
+    status    = get_setting(keys["status"]) or "idle"
+    result    = get_setting(keys["result"]) or ""
+    media_id  = get_setting(keys["media_id"]) or ""
+    history   = json.loads(get_setting(keys["history"]) or "[]")
+    return jsonify({"status": status, "result": result, "media_id": media_id, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/check-facebook-post")
+@login_required
+@admin_required
+def admin_article_check_facebook_post(article_id):
+    import requests as _req
+    post_type = request.args.get("type", "cine")
+    keys      = _fb_keys(post_type, article_id)
+    media_id  = get_setting(keys["media_id"])
+    if not media_id:
+        return jsonify({"live": False, "reason": "No post ID stored"})
+    try:
+        resp = _req.get(
+            f"{_IG_GRAPH_URL}/{media_id}",
+            params={"fields": "id,permalink_url", "access_token": FB_PAGE_ACCESS_TOKEN},
+            timeout=15,
+        )
+        data = resp.json()
+        if "id" in data:
+            return jsonify({"live": True, "permalink": data.get("permalink_url", "")})
+        return jsonify({"live": False, "reason": data.get("error", {}).get("message", "Not found")})
+    except Exception as e:
+        return jsonify({"live": False, "reason": str(e)})
+
+
+@app.route("/admin/articles/<int:article_id>/archive-facebook-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_archive_facebook_post(article_id):
+    data      = request.get_json() or {}
+    post_type = data.get("type", "cine")
+    keys      = _fb_keys(post_type, article_id)
+    media_id  = get_setting(keys["media_id"])
+    if not media_id:
+        return jsonify({"error": "No post to archive"}), 400
+
+    snap_raw = get_setting(keys["snapshot"])
+    snapshot = json.loads(snap_raw) if snap_raw else {}
+    result   = get_setting(keys["result"]) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+
+    history = json.loads(get_setting(keys["history"]) or "[]")
+    history.append({
+        "media_id":    media_id,
+        "permalink":   permalink,
+        "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "caption":     snapshot.get("caption", ""),
+        "post_type":   snapshot.get("post_type", post_type),
+        "posted_at":   snapshot.get("posted_at", ""),
+    })
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (keys["history"], hist_val, hist_val))
+
+    # Clear current post
+    for k in ("media_id", "result", "status", "snapshot"):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (keys[k],))
+
+    component_label = "carousel" if post_type == "car" else "cinemagraph"
+    _add_activity_log(article_id, f"Facebook {component_label.title()} Post Archived",
+                      f"Post {media_id} archived", component=component_label)
+
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/edit-facebook-caption", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_edit_facebook_caption(article_id):
+    import requests as _req
+    data      = request.get_json() or {}
+    caption   = data.get("caption", "")
+    post_type = data.get("type", "cine")
+    keys      = _fb_keys(post_type, article_id)
+    media_id  = get_setting(keys["media_id"])
+    if not media_id or not FB_PAGE_ACCESS_TOKEN:
+        return jsonify({"error": "No post or credentials"}), 400
+    try:
+        resp = _req.post(
+            f"{_IG_GRAPH_URL}/{media_id}",
+            data={"message": caption, "access_token": FB_PAGE_ACCESS_TOKEN},
+            timeout=15,
+        )
+        data = resp.json()
+        if data.get("success") or "id" in data:
+            return jsonify({"ok": True})
+        return jsonify({"error": data.get("error", {}).get("message", "Unknown error")}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Facebook: Post narrated video ──────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-facebook", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_facebook(article_id):
+    if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN:
+        return jsonify({"error": "Facebook Page credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+
+    status_key = f"narrated_fb_status_{article_id}_{run_ts}"
+    result_key = f"narrated_fb_result_{article_id}_{run_ts}"
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (result_key, "", ""))
+
+    t = threading.Thread(target=_post_narrated_fb_worker,
+                         args=(article_id, video_url, caption, run_ts), daemon=True)
+    t.start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-fb-status")
+@login_required
+@admin_required
+def admin_narrated_fb_status(article_id):
+    run_ts     = request.args.get("ts", "0")
+    status_key = f"narrated_fb_status_{article_id}_{run_ts}"
+    result_key = f"narrated_fb_result_{article_id}_{run_ts}"
+    status     = get_setting(status_key) or "idle"
+    result     = get_setting(result_key) or ""
+    history    = json.loads(get_setting(f"narrated_fb_history_{article_id}_{run_ts}") or "[]")
+    return jsonify({"status": status, "result": result, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/check-narrated-fb-post")
+@login_required
+@admin_required
+def admin_check_narrated_fb_post(article_id):
+    import requests as _req
+    run_ts   = request.args.get("ts", "0")
+    media_id = get_setting(f"narrated_fb_media_id_{article_id}_{run_ts}")
+    if not media_id:
+        return jsonify({"live": False, "reason": "No post ID stored"})
+    try:
+        resp = _req.get(
+            f"{_IG_GRAPH_URL}/{media_id}",
+            params={"fields": "id,permalink_url", "access_token": FB_PAGE_ACCESS_TOKEN},
+            timeout=15,
+        )
+        data = resp.json()
+        if "id" in data:
+            return jsonify({"live": True, "permalink": data.get("permalink_url", "")})
+        return jsonify({"live": False, "reason": data.get("error", {}).get("message", "Not found")})
+    except Exception as e:
+        return jsonify({"live": False, "reason": str(e)})
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-fb-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_fb_post(article_id):
+    data   = request.get_json() or {}
+    run_ts = str(data.get("run_ts", "0"))
+
+    media_key = f"narrated_fb_media_id_{article_id}_{run_ts}"
+    result_key = f"narrated_fb_result_{article_id}_{run_ts}"
+    status_key = f"narrated_fb_status_{article_id}_{run_ts}"
+    history_key = f"narrated_fb_history_{article_id}_{run_ts}"
+
+    media_id  = get_setting(media_key)
+    if not media_id:
+        return jsonify({"error": "No post to archive"}), 400
+
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+
+    history = json.loads(get_setting(history_key) or "[]")
+    history.append({
+        "media_id":    media_id,
+        "permalink":   permalink,
+        "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    })
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+
+    for k in (media_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+
+    _add_activity_log(article_id, "Facebook Video Post Archived",
+                      f"Post {media_id} archived", component="narrated")
+
+    return jsonify({"ok": True, "history": history})
 
 
 # ------------------------------------------------------------

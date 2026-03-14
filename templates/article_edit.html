@@ -17,9 +17,13 @@
         stroke: url(#ig-gradient) !important;
     }
 
+    /* Facebook live icon */
+    .fb-icon-live { stroke: #1877F2 !important; }
+
     /* Narrated run per-item social icons */
     .nv-run-ig-live { stroke: url(#ig-gradient) !important; }
     .nv-run-yt-live { stroke: #ff0000 !important; }
+    .nv-run-fb-live { stroke: #1877F2 !important; }
 
     /* Instagram Carousel Generator */
     #carousel-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
@@ -380,6 +384,65 @@
                 </div>
             </div>
             {% endif %}
+
+            <!-- Facebook Carousel Posting -->
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="toggleFbSection('car')">
+                <svg id="car-fb-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0">
+                    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+                </svg>
+                <span class="small fw-semibold">Post Carousel Images to Facebook</span>
+                <svg id="car-fb-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto"
+                     style="transition:transform 0.2s">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+            <div id="car-fb-body" class="d-none pt-1">
+                {% if fb_configured %}
+                <div class="mb-2">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <label class="small fw-semibold mb-0" for="car-fb-caption">Caption</label>
+                        <a href="#" class="small ms-auto" onclick="event.preventDefault(); copyIgCaptionToFb('car')">Copy from Instagram</a>
+                    </div>
+                    <textarea id="car-fb-caption" class="form-control form-control-sm" rows="3"
+                              placeholder="Write your Facebook caption…"
+                              maxlength="2200"
+                              oninput="document.getElementById('car-fb-char-count').textContent=this.value.length+' / 2200'"></textarea>
+                    <div class="text-end text-muted small" id="car-fb-char-count">0 / 2200</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-fb-btn-row">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="postToFacebook('car')" id="car-fb-post-btn">
+                        Post to Facebook
+                    </button>
+                </div>
+                <div id="car-fb-status-area" class="d-none">
+                    <div class="d-flex align-items-center gap-2 mb-1" id="car-fb-status-running">
+                        <div class="spinner-border spinner-border-sm text-primary"></div>
+                        <span id="car-fb-status-text" class="text-muted small">Starting…</span>
+                    </div>
+                    <div class="progress mb-2" style="height:4px" id="car-fb-progress-wrap">
+                        <div id="car-fb-progress-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width:0%"></div>
+                    </div>
+                    <div id="car-fb-result" class="d-none small"></div>
+                    <div id="car-fb-history" class="d-none mt-3">
+                        <div class="text-muted small fw-semibold mb-1">Past Posts</div>
+                        <div id="car-fb-history-list"></div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="alert alert-warning py-2 small mb-0">
+                    Facebook Page credentials not configured.
+                    Set <code>FB_PAGE_ID</code> and <code>FB_PAGE_ACCESS_TOKEN</code> in your environment.
+                </div>
+                {% endif %}
+            </div>
+
             </div>
             {% endif %}
         </div>
@@ -646,6 +709,65 @@
                 </div>
             </div>
             {% endif %}
+
+            <!-- Facebook Cinemagraph Posting -->
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="toggleFbSection('cine')">
+                <svg id="cine-fb-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0">
+                    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+                </svg>
+                <span class="small fw-semibold">Post Cinemagraph to Facebook</span>
+                <svg id="cine-fb-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto"
+                     style="transition:transform 0.2s">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+            <div id="cine-fb-body" class="d-none pt-1">
+                {% if fb_configured %}
+                <div class="mb-2">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <label class="small fw-semibold mb-0" for="cine-fb-caption">Caption</label>
+                        <a href="#" class="small ms-auto" onclick="event.preventDefault(); copyIgCaptionToFb('cine')">Copy from Instagram</a>
+                    </div>
+                    <textarea id="cine-fb-caption" class="form-control form-control-sm" rows="3"
+                              placeholder="Write your Facebook caption…"
+                              maxlength="2200"
+                              oninput="document.getElementById('cine-fb-char-count').textContent=this.value.length+' / 2200'"></textarea>
+                    <div class="text-end text-muted small" id="cine-fb-char-count">0 / 2200</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="cine-fb-btn-row">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="postToFacebook('cine')" id="cine-fb-post-btn">
+                        Post to Facebook
+                    </button>
+                </div>
+                <div id="cine-fb-status-area" class="d-none">
+                    <div class="d-flex align-items-center gap-2 mb-1" id="cine-fb-status-running">
+                        <div class="spinner-border spinner-border-sm text-primary"></div>
+                        <span id="cine-fb-status-text" class="text-muted small">Starting…</span>
+                    </div>
+                    <div class="progress mb-2" style="height:4px" id="cine-fb-progress-wrap">
+                        <div id="cine-fb-progress-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width:0%"></div>
+                    </div>
+                    <div id="cine-fb-result" class="d-none small"></div>
+                    <div id="cine-fb-history" class="d-none mt-3">
+                        <div class="text-muted small fw-semibold mb-1">Past Posts</div>
+                        <div id="cine-fb-history-list"></div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="alert alert-warning py-2 small mb-0">
+                    Facebook Page credentials not configured.
+                    Set <code>FB_PAGE_ID</code> and <code>FB_PAGE_ACCESS_TOKEN</code> in your environment.
+                </div>
+                {% endif %}
+            </div>
+
             </div>
             {% endif %}
         </div>
@@ -1260,6 +1382,7 @@ const ARTICLE_TITLE = {{ (article.title if article and article.title else '') | 
 const CAROUSEL_PUNCHLINES = {{ (article.carousel_punchlines if article and article.carousel_punchlines else []) | tojson }};
 const ARTICLE_URL    = {{ ((site_url ~ '/articles/' ~ article.slug) if article and article.slug else '') | tojson }};
 const IG_CONFIGURED  = {{ ig_configured | tojson }};
+const FB_CONFIGURED  = {{ fb_configured | tojson }};
 const YT_CONFIGURED  = {{ yt_configured | tojson }};
 
 function openCarouselStyleModal() {
@@ -1753,6 +1876,371 @@ function _clearNvYtIconLive(ts) {
     if (el) { el.classList.remove('nv-run-yt-live'); el.setAttribute('stroke', '#ccc'); }
 }
 
+/* Facebook section header icons (carousel/cinemagraph) */
+function _setFbIconLive(mode) {
+    var iconId = (mode === 'car') ? 'car-fb-icon' : 'cine-fb-icon';
+    var icon = document.getElementById(iconId);
+    if (icon) icon.classList.add('fb-icon-live');
+}
+function _clearFbIconLive(mode) {
+    var iconId = (mode === 'car') ? 'car-fb-icon' : 'cine-fb-icon';
+    var icon = document.getElementById(iconId);
+    if (icon) icon.classList.remove('fb-icon-live');
+}
+function _setNvFbIconLive(ts) {
+    var el = document.getElementById('nv-fb-icon-' + ts);
+    if (el) { el.classList.add('nv-run-fb-live'); el.setAttribute('stroke', '#1877F2'); }
+}
+function _clearNvFbIconLive(ts) {
+    var el = document.getElementById('nv-fb-icon-' + ts);
+    if (el) { el.classList.remove('nv-run-fb-live'); el.setAttribute('stroke', '#ccc'); }
+}
+
+/* ── Facebook toggle, post, poll, done, error, archive (carousel/cinemagraph) ── */
+function _fbId(mode, suffix) { return mode + '-fb-' + suffix; }
+
+function toggleFbSection(mode) {
+    var body    = document.getElementById(_fbId(mode, 'body'));
+    var chevron = document.getElementById(_fbId(mode, 'chevron'));
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function copyIgCaptionToFb(mode) {
+    var igCaption = document.getElementById(mode + '-ig-caption');
+    var fbCaption = document.getElementById(_fbId(mode, 'caption'));
+    if (igCaption && fbCaption) {
+        fbCaption.value = igCaption.value;
+        var countEl = document.getElementById(_fbId(mode, 'char-count'));
+        if (countEl) countEl.textContent = fbCaption.value.length + ' / 2200';
+    }
+}
+
+function postToFacebook(mode) {
+    if (!ARTICLE_ID) return;
+    var caption = (document.getElementById(_fbId(mode, 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_fbId(mode, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showFbRunning(mode, 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-to-facebook', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({caption: caption, type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showFbError(mode, d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollFbStatus(mode);
+    })
+    .catch(function(e) { showFbError(mode, 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function pollFbStatus(mode) {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/fb-post-status?type=' + mode)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) {
+                showFbDone(mode, d.result.slice(5));
+                if (d.history && d.history.length) renderFbHistory(mode, d.history);
+            } else if (d.result && d.result.startsWith('error:')) {
+                showFbError(mode, d.result.slice(6));
+                if (d.history && d.history.length) renderFbHistory(mode, d.history);
+            } else {
+                showFbRunning(mode, d.status || '');
+                pollFbStatus(mode);
+            }
+        })
+        .catch(function() { pollFbStatus(mode); });
+    }, 5000);
+}
+
+function showFbRunning(mode, statusStr) {
+    var area    = document.getElementById(_fbId(mode, 'status-area'));
+    var running = document.getElementById(_fbId(mode, 'status-running'));
+    var result  = document.getElementById(_fbId(mode, 'result'));
+    var textEl  = document.getElementById(_fbId(mode, 'status-text'));
+    var bar     = document.getElementById(_fbId(mode, 'progress-bar'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (result) result.classList.add('d-none');
+    var labels = {
+        'running:0': 'Starting…',
+        'running:upload:': 'Uploading photos…',
+        'running:publishing': 'Publishing post…',
+        'running:upload': 'Uploading video…'
+    };
+    var label = labels[statusStr];
+    if (!label) {
+        for (var k in labels) { if (statusStr && statusStr.startsWith(k)) { label = statusStr.replace(k, labels[k].replace('…',': ')); break; } }
+    }
+    if (textEl) textEl.textContent = label || statusStr || 'Processing…';
+    var pct = 10;
+    if (statusStr && statusStr.startsWith('running:upload:')) pct = 50;
+    if (statusStr === 'running:publishing') pct = 80;
+    if (bar) bar.style.width = pct + '%';
+}
+
+function showFbDone(mode, permalink) {
+    _setFbIconLive(mode);
+    var area    = document.getElementById(_fbId(mode, 'status-area'));
+    var running = document.getElementById(_fbId(mode, 'status-running'));
+    var progress = document.getElementById(_fbId(mode, 'progress-wrap'));
+    var result  = document.getElementById(_fbId(mode, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-success py-1 small mb-2">Posted! ' +
+            '<a href="' + permalink + '" target="_blank" rel="noopener">View on Facebook ↗</a></div>';
+    }
+    var postBtn = document.getElementById(_fbId(mode, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    var btnRow = document.getElementById(_fbId(mode, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.fb-done-btn').forEach(function(b) { b.remove(); });
+        var checkBtn = document.createElement('button');
+        checkBtn.type = 'button';
+        checkBtn.className = 'btn btn-outline-secondary btn-sm fb-done-btn';
+        checkBtn.textContent = 'Check if post is still live';
+        checkBtn.onclick = function() { fbCheckPostLive(mode); };
+        btnRow.appendChild(checkBtn);
+        var archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-outline-danger btn-sm fb-done-btn';
+        archiveBtn.textContent = 'Archive post';
+        archiveBtn.onclick = function() { fbArchivePost(mode); };
+        btnRow.appendChild(archiveBtn);
+    }
+}
+
+function showFbError(mode, msg) {
+    var area    = document.getElementById(_fbId(mode, 'status-area'));
+    var running = document.getElementById(_fbId(mode, 'status-running'));
+    var progress = document.getElementById(_fbId(mode, 'progress-wrap'));
+    var result  = document.getElementById(_fbId(mode, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-danger py-1 small mb-2">' + msg + '</div>';
+    }
+    var postBtn = document.getElementById(_fbId(mode, 'post-btn'));
+    if (postBtn) postBtn.disabled = false;
+}
+
+function fbCheckPostLive(mode) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/check-facebook-post?type=' + mode)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.live) alert('Post is still live on Facebook.');
+        else alert('Post not found: ' + (d.reason || 'unknown'));
+    })
+    .catch(function() { alert('Could not check post status.'); });
+}
+
+function fbArchivePost(mode) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-facebook-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.ok) {
+            _clearFbIconLive(mode);
+            var result = document.getElementById(_fbId(mode, 'result'));
+            if (result) result.innerHTML = '<span class="text-muted small">Post archived.</span>';
+            var postBtn = document.getElementById(_fbId(mode, 'post-btn'));
+            if (postBtn) postBtn.disabled = false;
+            var btnRow = document.getElementById(_fbId(mode, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.fb-done-btn').forEach(function(b) { b.remove(); });
+            if (d.history && d.history.length) renderFbHistory(mode, d.history);
+        } else {
+            alert(d.error || 'Archive failed');
+        }
+    })
+    .catch(function() { alert('Archive request failed'); });
+}
+
+function renderFbHistory(mode, history) {
+    var wrap = document.getElementById(_fbId(mode, 'history'));
+    var list = document.getElementById(_fbId(mode, 'history-list'));
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.forEach(function(entry, i) {
+        var div = document.createElement('div');
+        div.className = 'border rounded p-2 mb-2 small';
+        var link = entry.permalink
+            ? '<a href="' + entry.permalink + '" target="_blank" rel="noopener">' + entry.permalink + '</a>'
+            : '(no permalink)';
+        div.innerHTML = '<div class="text-muted">#' + (i + 1) + ' — ' + (entry.archived_at || '') + '</div><div>' + link + '</div>';
+        list.appendChild(div);
+    });
+    wrap.classList.remove('d-none');
+}
+
+function checkFbRunning(mode) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/fb-post-status?type=' + mode)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.result && d.result.startsWith('done:')) {
+            showFbDone(mode, d.result.slice(5));
+        } else if (d.result && d.result.startsWith('error:')) {
+            showFbError(mode, d.result.slice(6));
+        } else if (d.status && d.status.startsWith('running')) {
+            showFbRunning(mode, d.status);
+            pollFbStatus(mode);
+        }
+        if (d.history && d.history.length) renderFbHistory(mode, d.history);
+    })
+    .catch(function() {});
+}
+
+/* ── Narrated Video Facebook functions ── */
+function _nvFbId(ts, suffix) { return 'nv-fb-' + ts + '-' + suffix; }
+
+function copyNvIgCaptionToFb(ts) {
+    var igCaption = document.getElementById('nv-ig-' + ts + '-caption');
+    var fbCaption = document.getElementById('nv-fb-' + ts + '-caption');
+    if (igCaption && fbCaption) {
+        fbCaption.value = igCaption.value;
+        var countEl = document.getElementById('nv-fb-' + ts + '-count');
+        if (countEl) countEl.textContent = fbCaption.value.length + ' / 2200';
+    }
+}
+
+function postNarratedToFb(ts, videoUrl) {
+    var caption = (document.getElementById(_nvFbId(ts, 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_nvFbId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showNvFbRunning(ts, 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-narrated-to-facebook', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({video_url: videoUrl, caption: caption, run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showNvFbError(ts, d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollNvFbStatus(ts);
+    })
+    .catch(function(e) { showNvFbError(ts, 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function pollNvFbStatus(ts) {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/narrated-fb-status?ts=' + ts)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) {
+                showNvFbDone(ts, d.result.slice(5));
+            } else if (d.result && d.result.startsWith('error:')) {
+                showNvFbError(ts, d.result.slice(6));
+            } else {
+                showNvFbRunning(ts, d.status || '');
+                pollNvFbStatus(ts);
+            }
+        })
+        .catch(function() { pollNvFbStatus(ts); });
+    }, 5000);
+}
+
+function showNvFbRunning(ts, statusStr) {
+    var area    = document.getElementById(_nvFbId(ts, 'status-area'));
+    var running = document.getElementById(_nvFbId(ts, 'status-running'));
+    var textEl  = document.getElementById(_nvFbId(ts, 'status-text'));
+    var bar     = document.getElementById(_nvFbId(ts, 'progress-bar'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (textEl) textEl.textContent = statusStr === 'running:upload' ? 'Uploading video…' : 'Processing…';
+    if (bar) bar.style.width = (statusStr === 'running:upload' ? 50 : 10) + '%';
+}
+
+function showNvFbDone(ts, permalink) {
+    _setNvFbIconLive(ts);
+    var area    = document.getElementById(_nvFbId(ts, 'status-area'));
+    var running = document.getElementById(_nvFbId(ts, 'status-running'));
+    var result  = document.getElementById(_nvFbId(ts, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-success py-2 px-3 small mb-0">' +
+            '<strong>Posted to Facebook!</strong><br>' +
+            '<a href="' + permalink + '" target="_blank" rel="noopener">' + permalink + '</a></div>';
+    }
+    var postBtn = document.getElementById(_nvFbId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    var btnRow = document.getElementById(_nvFbId(ts, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.nv-fb-done-btn').forEach(function(b) { b.remove(); });
+        var archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-outline-danger btn-sm nv-fb-done-btn';
+        archiveBtn.textContent = 'Archive post';
+        archiveBtn.onclick = function() { nvFbArchivePost(ts); };
+        btnRow.appendChild(archiveBtn);
+    }
+}
+
+function showNvFbError(ts, msg) {
+    var area    = document.getElementById(_nvFbId(ts, 'status-area'));
+    var running = document.getElementById(_nvFbId(ts, 'status-running'));
+    var result  = document.getElementById(_nvFbId(ts, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-danger py-2 px-3 small mb-0">' +
+            '<strong>Post failed:</strong> ' + msg + '</div>';
+    }
+    var postBtn = document.getElementById(_nvFbId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = false;
+}
+
+function nvFbArchivePost(ts) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-fb-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.ok) {
+            _clearNvFbIconLive(ts);
+            var result = document.getElementById(_nvFbId(ts, 'result'));
+            if (result) result.innerHTML = '<span class="text-muted small">Post archived.</span>';
+            var postBtn = document.getElementById(_nvFbId(ts, 'post-btn'));
+            if (postBtn) postBtn.disabled = false;
+            var btnRow = document.getElementById(_nvFbId(ts, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.nv-fb-done-btn').forEach(function(b) { b.remove(); });
+        } else {
+            alert(d.error || 'Archive failed');
+        }
+    })
+    .catch(function() { alert('Archive request failed'); });
+}
+
+function restoreNvFbState(ts) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/narrated-fb-status?ts=' + ts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.result && d.result.startsWith('done:')) {
+            showNvFbDone(ts, d.result.slice(5));
+        } else if (d.result && d.result.startsWith('error:')) {
+            showNvFbError(ts, d.result.slice(6));
+        } else if (d.status && d.status.startsWith('running')) {
+            showNvFbRunning(ts, d.status);
+            pollNvFbStatus(ts);
+        }
+    })
+    .catch(function() {});
+}
+
 function showIgDone(mode, permalink) {
     const area     = document.getElementById(_igId(mode, 'status-area'));
     const running  = document.getElementById(_igId(mode, 'status-running'));
@@ -2100,7 +2588,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         updateIgCharCount(mode);
         updateIgImagesHint(mode);
-        if (typeof ARTICLE_ID !== 'undefined' && ARTICLE_ID) checkIgRunning(mode);
+        if (typeof ARTICLE_ID !== 'undefined' && ARTICLE_ID) {
+            checkIgRunning(mode);
+            checkFbRunning(mode);
+        }
     });
 });
 
@@ -2751,6 +3242,10 @@ function buildRunItem(run, expandIt) {
                         <path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.54C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/>
                         <polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/>
                     </svg>
+                    <svg id="nv-fb-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Facebook">
+                        <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+                    </svg>
                 </span>
             </button>
         </h2>
@@ -2868,6 +3363,19 @@ function buildRunItem(run, expandIt) {
                     <div id="nv-yt-${run.ts}-result" class="d-none mt-2"></div>
                 </div>
             </div>
+
+            <!-- Facebook -->
+            <div class="border rounded p-2 mt-2">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                         stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+                    <span class="small fw-semibold">Post to Facebook</span>
+                </div>
+                ${FB_CONFIGURED ? '' : '<div class="alert alert-warning py-1 small mb-0">Facebook not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>'}
+                ${FB_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small fw-semibold mb-0">Caption</label><a href="#" class="small ms-auto" onclick="event.preventDefault(); copyNvIgCaptionToFb(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-fb-' + run.ts + '-caption" rows="3" maxlength="2200" placeholder="Write your Facebook caption…" oninput="document.getElementById(\'nv-fb-' + run.ts + '-count\').textContent=this.value.length+\' / 2200\'"></textarea><div class="text-end text-muted small mb-2" id="nv-fb-' + run.ts + '-count">0 / 2200</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-fb-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-primary" id="nv-fb-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToFb(' + run.ts + ', this.dataset.videoUrl)">Post to Facebook</button></div><div id="nv-fb-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-fb-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-primary"></div><span id="nv-fb-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-fb-' + run.ts + '-progress-wrap"><div id="nv-fb-' + run.ts + '-progress-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-fb-' + run.ts + '-result" class="d-none mt-2"></div></div>' : ''}
+            </div>
+
         </div>`;
     /* Set caption default after DOM is built (avoids HTML-escaping issues in textarea) */
     var defaultCaption = [ARTICLE_TITLE, ARTICLE_URL ? '\n' + ARTICLE_URL : ''].filter(Boolean).join('\n');
@@ -3267,6 +3775,7 @@ function loadNarratedRuns(runs) {
             accordion.appendChild(buildRunItem(run, false));
             rendered++;
             restoreNvIgState(run.ts);
+            restoreNvFbState(run.ts);
             // Restore YouTube icon if a successful upload exists
             (function(ts) {
                 fetch('/admin/articles/' + ARTICLE_ID + '/youtube-status?ts=' + ts)
@@ -3565,6 +4074,18 @@ function narratedFinish(error) {
         .then(function(r) { return r.json(); })
         .then(function(d) {
             if (d.result && d.result.startsWith('done:')) _setIgIconLive('car');
+        }).catch(function() {});
+
+    // Check Facebook status for carousel and cinemagraph icons
+    fetch('/admin/articles/' + ARTICLE_ID + '/fb-post-status?type=car')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) _setFbIconLive('car');
+        }).catch(function() {});
+    fetch('/admin/articles/' + ARTICLE_ID + '/fb-post-status?type=cine')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) _setFbIconLive('cine');
         }).catch(function() {});
 })();
 
