@@ -6044,7 +6044,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
 
         # ── Fetch article data ─────────────────────────────────
         row = query_one(
-            "SELECT title, carousel_images, carousel_cinemagraphs, punchlines "
+            "SELECT title, carousel_images, carousel_cinemagraphs, carousel_punchlines "
             "FROM articles WHERE id = %s", (article_id,))
         if not row:
             _set_result("error:Article not found")
