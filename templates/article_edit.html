@@ -221,10 +221,15 @@
                             <img id="image-preview-img" src="{{ article.image_url if article and article.image_url else '' }}" class="img-fluid rounded" alt="Cover preview" style="max-height:100px; object-fit:cover; width:100%;">
                             <button type="button" onclick="openCoverImagePicker()" title="Change cover image" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.55);color:#fff;font-size:12px;font-weight:700;line-height:22px;text-align:center;cursor:pointer;padding:0;opacity:0.8;">i</button>
                         </div>
-                        <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="openCoverImagePicker()">
-                            {% if article and article.image_url %}Change image{% else %}Set cover image…{% endif %}
-                        </button>
                     </div>
+                    {% if article %}
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" id="show-slideshow-toggle"
+                               {% if article.show_slideshow %}checked{% endif %}
+                               onchange="toggleSlideshow(this.checked)">
+                        <label class="form-check-label small" for="show-slideshow-toggle">Show slideshow on article</label>
+                    </div>
+                    {% endif %}
                 </div>
 
             </div>
@@ -245,11 +250,21 @@
         </defs>
     </svg>
 
+    <!-- ══════════════════════════════════════════════════════════
+         Social Media Content — Master Component
+         ══════════════════════════════════════════════════════════ -->
+    <div class="card mt-3 mb-4" id="social-content-card">
+        <div class="card-header">
+            <h5 class="mb-0">Social Media Content</h5>
+            <p class="text-muted small mb-0 mt-1">Generate and publish content across social media channels.</p>
+        </div>
+        <div class="card-body p-3">
+
     <!-- Instagram Carousel Generator -->
-    <div class="card mt-3 mb-4">
+    <div class="card mb-3">
         <div class="card-header position-relative d-flex align-items-center justify-content-between flex-wrap gap-2 pe-5">
             <div>
-                <h5 class="mb-0">Instagram Carousel Generator</h5>
+                <h5 class="mb-0">Carousel Generator</h5>
                 <p class="text-muted small mb-0 mt-1">
                     Generates up to 10 square images via DALL-E 3 from this article's content.
                     Takes ~60–90 seconds. Costs ~$0.40 per run.
@@ -600,9 +615,9 @@
     <!-- ══════════════════════════════════════════════════════════
          Component D — Cinemagraph (Luma Ray-2 per slide)
          ══════════════════════════════════════════════════════════ -->
-    <div class="card mt-3 mb-4" id="cinemagraph-card">
+    <div class="card mb-3" id="cinemagraph-card">
         <div class="card-header position-relative pe-5">
-            <h5 class="mb-0">Cinemagraph</h5>
+            <h5 class="mb-0">Cinemagraph Generator</h5>
             <p class="text-muted small mb-2 mt-1">
                 Each slide animated via Luma Ray-2 (5 s loop). ~5–15 min.
             </p>
@@ -937,10 +952,10 @@
     <!-- ══════════════════════════════════════════════════════════
          Component B — Narrated MP4 (OpenAI TTS + FFmpeg)
          ══════════════════════════════════════════════════════════ -->
-    <div class="card mt-3 mb-4" id="narrated-video-card">
+    <div class="card mb-0" id="narrated-video-card">
         <div class="card-header position-relative d-flex align-items-center justify-content-between flex-wrap gap-2 pe-5">
             <div>
-                <h5 class="mb-0">Narrated MP4</h5>
+                <h5 class="mb-0">Narrated Video Generator</h5>
                 <p class="text-muted small mb-0 mt-1">
                     GPT script + OpenAI TTS + FFmpeg Ken Burns — one MP4 per slide, then merged.
                     ~2–4 min. Cost: ~$0.15 TTS.
@@ -1003,6 +1018,9 @@
             </div>
         </div>
     </div>
+
+        </div><!-- /.card-body (social-content-card) -->
+    </div><!-- /#social-content-card -->
 
     <!-- Narrated MP4 — Settings Modal -->
     <div class="modal fade" id="narrated-settings-modal" tabindex="-1" aria-hidden="true">
@@ -1412,6 +1430,16 @@ const ARTICLE_TITLE = {{ (article.title if article and article.title else '') | 
 const CAROUSEL_PUNCHLINES = {{ (article.carousel_punchlines if article and article.carousel_punchlines else []) | tojson }};
 const ARTICLE_URL    = {{ ((site_url ~ '/articles/' ~ article.slug) if article and article.slug else '') | tojson }};
 const IG_CONFIGURED  = {{ ig_configured | tojson }};
+
+function toggleSlideshow(enabled) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/toggle-slideshow', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled: enabled})
+    }).then(function(r) { return r.json(); })
+    .then(function(d) { if (d.error) alert(d.error); })
+    .catch(function(e) { alert('Error: ' + e); });
+}
 const FB_CONFIGURED  = {{ fb_configured | tojson }};
 const YT_CONFIGURED  = {{ yt_configured | tojson }};
 

@@ -869,7 +869,8 @@ def init_articles_table():
                 "video_ai_log TEXT",
                 "carousel_created_at TEXT",
                 "carousel_archived_meta TEXT",
-                "carousel_cinemagraph_created_at TEXT"):
+                "carousel_cinemagraph_created_at TEXT",
+                "show_slideshow BOOLEAN DEFAULT FALSE"):
         try:
             cur.execute(f"ALTER TABLE articles ADD COLUMN {col}")
         except Exception:
@@ -1221,7 +1222,7 @@ def articles():
 def article_view(slug):
     row = query_one(
         "SELECT id, slug, title, subtitle, content, excerpt, image_url, published_at, "
-        "carousel_images, carousel_punchlines, carousel_cinemagraphs "
+        "carousel_images, carousel_punchlines, carousel_cinemagraphs, show_slideshow "
         "FROM articles WHERE slug = %s AND is_published = TRUE",
         (slug,),
     )
@@ -1235,6 +1236,7 @@ def article_view(slug):
         "carousel_images":       json.loads(row[8])  if row[8]  else [],
         "carousel_punchlines":   json.loads(row[9])  if row[9]  else [],
         "carousel_cinemagraphs": json.loads(row[10]) if row[10] else [],
+        "show_slideshow": bool(row[11]),
     }
     return render_template("article.html", article=article)
 
@@ -2579,7 +2581,7 @@ def admin_article_edit(article_id):
     row = query_one(
         "SELECT id, slug, title, subtitle, content, excerpt, image_url, "
         "is_published, published_at, carousel_prompts, carousel_images, "
-        "carousel_punchlines, carousel_style "
+        "carousel_punchlines, carousel_style, show_slideshow "
         "FROM articles WHERE id = %s",
         (article_id,),
     )
@@ -2594,6 +2596,7 @@ def admin_article_edit(article_id):
         "carousel_prompts": json.loads(row[9]) if row[9] else [],
         "carousel_images": json.loads(row[10]) if row[10] else [],
         "carousel_punchlines": json.loads(row[11]) if row[11] else [],
+        "show_slideshow": bool(row[13]),
     }
     # Show this article's saved style; fall back to current site setting if never generated
     article_carousel_style = row[12] or get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
@@ -2614,6 +2617,16 @@ def admin_article_edit(article_id):
                            yt_configured=bool(get_setting("youtube_refresh_token")),
                            ig_cine_caption=cine_caption,
                            ig_car_caption=car_caption)
+
+
+@app.route("/admin/articles/<int:article_id>/toggle-slideshow", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_toggle_slideshow(article_id):
+    data = request.get_json() or {}
+    enabled = bool(data.get("enabled", False))
+    execute("UPDATE articles SET show_slideshow = %s WHERE id = %s", (enabled, article_id))
+    return jsonify({"ok": True})
 
 
 @app.route("/admin/articles/<int:article_id>/save", methods=["POST"])
@@ -6020,6 +6033,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
     """
     import time as _time
     import requests as _req
+    import datetime as _dt
 
     keys       = _fb_keys(post_type, article_id)
     status_key = keys["status"]
@@ -6050,6 +6064,9 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
         if not row:
             _set_status("idle")
             _set_result("error:Article not found")
+            _add_activity_log(article_id, f"Facebook Post Failed",
+                              f"Article {article_id} not found in database.",
+                              component="carousel" if post_type == "car" else "cinemagraph")
             return
         title       = row[0] or "Untitled"
         images_raw  = row[1]
@@ -6067,13 +6084,21 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
             if not valid_urls:
                 _set_status("idle")
                 _set_result("error:No carousel images to post")
+                _add_activity_log(article_id, f"Facebook Carousel Post Failed",
+                                  f"No carousel images found.\nimages_raw length={len(images_raw) if images_raw else 0}",
+                                  component=component_label)
                 return
+
+            _add_activity_log(article_id, f"Facebook Carousel Uploading Photos",
+                              f"Uploading {len(valid_urls)} photos to Facebook as unpublished…\ncaption length={len(caption)}",
+                              component=component_label)
 
             photo_ids = []
             for idx, img_url in enumerate(valid_urls):
                 _set_status(f"running:upload:{idx+1}/{len(valid_urls)}")
+                api_url = f"{_IG_GRAPH_URL}/{page_id}/photos"
                 resp = _req.post(
-                    f"{_IG_GRAPH_URL}/{page_id}/photos",
+                    api_url,
                     data={
                         "url": img_url,
                         "published": "false",
@@ -6086,6 +6111,13 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
                     err = data.get("error", {}).get("message", str(data))
                     _set_status("idle")
                     _set_result(f"error:Photo upload failed (slide {idx+1}): {err}")
+                    _add_activity_log(article_id, f"Facebook Carousel Post Failed",
+                                      f"Photo upload failed at slide {idx+1}/{len(valid_urls)}.\n"
+                                      f"image_url={img_url}\n"
+                                      f"API endpoint={api_url}\n"
+                                      f"HTTP status={resp.status_code}\n"
+                                      f"API response={json.dumps(data, indent=2)[:1500]}",
+                                      component=component_label)
                     return
                 photo_ids.append(data["id"])
                 print(f"[FB] Uploaded photo {idx+1}/{len(valid_urls)}: {data['id']}", flush=True)
@@ -6099,16 +6131,20 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
             for i, pid in enumerate(photo_ids):
                 post_data[f"attached_media[{i}]"] = json.dumps({"media_fbid": pid})
 
-            resp = _req.post(
-                f"{_IG_GRAPH_URL}/{page_id}/feed",
-                data=post_data,
-                timeout=60,
-            )
+            api_url = f"{_IG_GRAPH_URL}/{page_id}/feed"
+            resp = _req.post(api_url, data=post_data, timeout=60)
             data = resp.json()
             if "id" not in data:
                 err = data.get("error", {}).get("message", str(data))
                 _set_status("idle")
                 _set_result(f"error:Feed post failed: {err}")
+                _add_activity_log(article_id, f"Facebook Carousel Post Failed",
+                                  f"Feed post creation failed.\n"
+                                  f"photo_ids={photo_ids}\n"
+                                  f"API endpoint={api_url}\n"
+                                  f"HTTP status={resp.status_code}\n"
+                                  f"API response={json.dumps(data, indent=2)[:1500]}",
+                                  component=component_label)
                 return
 
             post_id = data["id"]
@@ -6126,11 +6162,19 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
             if not video_url:
                 _set_status("idle")
                 _set_result("error:No cinemagraph video to post")
+                _add_activity_log(article_id, f"Facebook Cinemagraph Post Failed",
+                                  f"No cinemagraph video URL found.\ncines count={len(cines)}",
+                                  component=component_label)
                 return
 
+            _add_activity_log(article_id, f"Facebook Cinemagraph Uploading Video",
+                              f"Uploading video to Facebook Page…\nvideo_url={video_url}\ncaption length={len(caption)}",
+                              component=component_label)
+
             _set_status("running:upload")
+            api_url = f"{_IG_GRAPH_URL}/{page_id}/videos"
             resp = _req.post(
-                f"{_IG_GRAPH_URL}/{page_id}/videos",
+                api_url,
                 data={
                     "file_url": video_url,
                     "description": caption,
@@ -6143,6 +6187,13 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
                 err = data.get("error", {}).get("message", str(data))
                 _set_status("idle")
                 _set_result(f"error:Video upload failed: {err}")
+                _add_activity_log(article_id, f"Facebook Cinemagraph Post Failed",
+                                  f"Video upload failed.\n"
+                                  f"video_url={video_url}\n"
+                                  f"API endpoint={api_url}\n"
+                                  f"HTTP status={resp.status_code}\n"
+                                  f"API response={json.dumps(data, indent=2)[:1500]}",
+                                  component=component_label)
                 return
 
             post_id = data["id"]
@@ -6161,17 +6212,24 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
         _set_kv(keys["snapshot"], json.dumps(snapshot))
         _set_result(f"done:{permalink}")
 
+        slides_info = f"{len(valid_urls)} photos" if post_type == "car" else f"video_url={video_url}"
         _add_activity_log(
             article_id,
             f"Facebook {component_label.title()} Post Published",
-            f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>",
+            f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+            f"post_id={post_id}\n{slides_info}\ncaption length={len(caption)}",
             component=component_label,
         )
 
     except Exception as e:
-        print(f"[FB] Worker error: {e}", flush=True)
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[FB] Worker error: {e}\n{tb}", flush=True)
         _set_status("idle")
         _set_result(f"error:{e}")
+        _add_activity_log(article_id, f"Facebook Post Failed (Exception)",
+                          f"Unhandled exception:\n{str(e)}\n\nTraceback:\n{tb[:2000]}",
+                          component="carousel" if post_type == "car" else "cinemagraph")
 
 
 def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
@@ -6198,13 +6256,16 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
 
         _add_activity_log(
             article_id,
-            "Facebook Video Post Started",
-            f"Uploading narrated video to Facebook Page…",
+            "Facebook Narrated Video Uploading",
+            f"Uploading narrated video to Facebook Page…\n"
+            f"video_url={video_url}\nrun_ts={run_ts}\n"
+            f"page_id={FB_PAGE_ID}\ncaption length={len(caption)}",
             component="narrated",
         )
 
+        api_url = f"{_IG_GRAPH_URL}/{FB_PAGE_ID}/videos"
         resp = _req.post(
-            f"{_IG_GRAPH_URL}/{FB_PAGE_ID}/videos",
+            api_url,
             data={
                 "file_url": video_url,
                 "description": caption,
@@ -6218,7 +6279,13 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
             err = data.get("error", {}).get("message", str(data))
             _set_status("idle")
             _set_result(f"error:{err}")
-            _add_activity_log(article_id, "Facebook Post Failed", err, component="narrated")
+            _add_activity_log(article_id, "Facebook Narrated Video Post Failed",
+                              f"Video upload failed.\n"
+                              f"video_url={video_url}\n"
+                              f"API endpoint={api_url}\n"
+                              f"HTTP status={resp.status_code}\n"
+                              f"API response={json.dumps(data, indent=2)[:1500]}",
+                              component="narrated")
             return
 
         video_id  = data["id"]
@@ -6229,16 +6296,22 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
 
         _add_activity_log(
             article_id,
-            "Facebook Video Post Published",
-            f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>",
+            "Facebook Narrated Video Post Published",
+            f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+            f"video_id={video_id}\nrun_ts={run_ts}\ncaption length={len(caption)}",
             component="narrated",
         )
         print(f"[FB] Narrated video posted: {permalink}", flush=True)
 
     except Exception as e:
-        print(f"[FB] Narrated worker error: {e}", flush=True)
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[FB] Narrated worker error: {e}\n{tb}", flush=True)
         _set_status("idle")
         _set_result(f"error:{e}")
+        _add_activity_log(article_id, "Facebook Narrated Video Post Failed (Exception)",
+                          f"Unhandled exception:\n{str(e)}\n\nTraceback:\n{tb[:2000]}",
+                          component="narrated")
 
 
 # ── Facebook: Post carousel / cinemagraph ──────────────────────
@@ -6259,8 +6332,10 @@ def admin_article_post_to_facebook(article_id):
     result_key = keys["result"]
 
     component_label = "carousel" if post_type == "car" else "cinemagraph"
+    caption_preview = (caption[:120] + "…") if len(caption) > 120 else caption
     _add_activity_log(article_id, f"Facebook {component_label.title()} Post Started",
-                      "Starting Facebook post…", component=component_label)
+                      f"type={post_type}\ncaption={caption_preview}\npage_id={FB_PAGE_ID}",
+                      component=component_label)
 
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
