@@ -6576,10 +6576,13 @@ def admin_article_delete_facebook_post(article_id):
     )
     if not resp.ok and resp.status_code != 404:
         try:
-            msg = resp.json().get("error", {}).get("message", resp.text)
+            err_data = resp.json().get("error", {})
+            msg = err_data.get("message", resp.text)
         except Exception:
             msg = resp.text
-        return jsonify({"error": msg}), 400
+        # Treat "does not exist" or "Unsupported delete" as already-deleted
+        if "does not exist" not in msg and "Unsupported delete" not in msg:
+            return jsonify({"error": msg}), 400
 
     # Archive (same logic as archive-facebook-post)
     snap_raw  = get_setting(keys["snapshot"])
@@ -6633,10 +6636,13 @@ def admin_delete_narrated_fb_post(article_id):
     )
     if not resp.ok and resp.status_code != 404:
         try:
-            msg = resp.json().get("error", {}).get("message", resp.text)
+            err_data = resp.json().get("error", {})
+            msg = err_data.get("message", resp.text)
         except Exception:
             msg = resp.text
-        return jsonify({"error": msg}), 400
+        # Treat "does not exist" or "Unsupported delete" as already-deleted
+        if "does not exist" not in msg and "Unsupported delete" not in msg:
+            return jsonify({"error": msg}), 400
 
     # Archive (same logic as archive-narrated-fb-post)
     result    = get_setting(result_key) or ""
