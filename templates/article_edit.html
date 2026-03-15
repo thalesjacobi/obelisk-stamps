@@ -2340,11 +2340,22 @@ function showNvFbRunning(ts, statusStr) {
 
 function showNvFbDone(ts, permalink) {
     _setNvFbIconLive(ts);
-    var area    = document.getElementById(_nvFbId(ts, 'status-area'));
-    var running = document.getElementById(_nvFbId(ts, 'status-running'));
-    var result  = document.getElementById(_nvFbId(ts, 'result'));
+    var area     = document.getElementById(_nvFbId(ts, 'status-area'));
+    var running  = document.getElementById(_nvFbId(ts, 'status-running'));
+    var progress = document.getElementById(_nvFbId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvFbId(ts, 'result'));
     if (area) area.classList.remove('d-none');
     if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    /* Make caption read-only */
+    var ta = document.getElementById(_nvFbId(ts, 'caption'));
+    if (ta) { ta.readOnly = true; ta.style.opacity = '0.7'; }
+    /* Disable "Copy from Instagram" link */
+    var body = document.getElementById(_nvFbId(ts, 'body'));
+    if (body) {
+        var copyLink = body.querySelector('.ig-section-link');
+        if (copyLink) { copyLink.classList.add('text-muted', 'pe-none'); copyLink.style.opacity = '0.5'; }
+    }
     var postBtn = document.getElementById(_nvFbId(ts, 'post-btn'));
     _makeViewPostBtn(postBtn, permalink, 'fb');
     var btnRow = document.getElementById(_nvFbId(ts, 'btn-row'));
@@ -2360,11 +2371,13 @@ function showNvFbDone(ts, permalink) {
 }
 
 function showNvFbError(ts, msg) {
-    var area    = document.getElementById(_nvFbId(ts, 'status-area'));
-    var running = document.getElementById(_nvFbId(ts, 'status-running'));
-    var result  = document.getElementById(_nvFbId(ts, 'result'));
+    var area     = document.getElementById(_nvFbId(ts, 'status-area'));
+    var running  = document.getElementById(_nvFbId(ts, 'status-running'));
+    var progress = document.getElementById(_nvFbId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvFbId(ts, 'result'));
     if (area) area.classList.remove('d-none');
     if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
     if (result) {
         result.classList.remove('d-none');
         result.innerHTML = '<div class="alert alert-danger py-2 px-3 small mb-0">' +
