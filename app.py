@@ -6609,31 +6609,36 @@ def admin_article_delete_facebook_post(article_id):
                           f"media_id={media_id}\nException: {e}\n{_tb.format_exc()}", component=component_label)
 
     # Step 2: Archive locally (always runs if we get here)
-    snap_raw  = get_setting(keys["snapshot"])
-    snapshot  = json.loads(snap_raw) if snap_raw else {}
-    result_val = get_setting(keys["result"]) or ""
-    permalink = result_val.replace("done:", "") if result_val.startswith("done:") else ""
+    try:
+        snap_raw  = get_setting(keys["snapshot"])
+        snapshot  = json.loads(snap_raw) if snap_raw else {}
+        result_val = get_setting(keys["result"]) or ""
+        permalink = result_val.replace("done:", "") if result_val.startswith("done:") else ""
 
-    history = json.loads(get_setting(keys["history"]) or "[]")
-    history.append({
-        "media_id":    media_id,
-        "permalink":   permalink,
-        "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "caption":     snapshot.get("caption", ""),
-        "post_type":   snapshot.get("post_type", post_type),
-        "posted_at":   snapshot.get("posted_at", ""),
-    })
-    hist_val = json.dumps(history)
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (keys["history"], hist_val, hist_val))
-    for k in ("media_id", "result", "status", "snapshot"):
-        execute("DELETE FROM site_settings WHERE `key` = %s", (keys[k],))
+        history = json.loads(get_setting(keys["history"]) or "[]")
+        history.append({
+            "media_id":    media_id,
+            "permalink":   permalink,
+            "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "caption":     snapshot.get("caption", ""),
+            "post_type":   snapshot.get("post_type", post_type),
+            "posted_at":   snapshot.get("posted_at", ""),
+        })
+        hist_val = json.dumps(history)
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (keys["history"], hist_val, hist_val))
+        for k in ("media_id", "result", "status", "snapshot"):
+            execute("DELETE FROM site_settings WHERE `key` = %s", (keys[k],))
 
-    action = "Post already removed from Facebook, archived locally" if already_gone else f"Post {media_id} deleted from Facebook and archived"
-    _add_activity_log(article_id, f"Facebook {component_label.title()} Post Archived",
-                      f"{action}\npermalink={permalink}", component=component_label)
+        action = "Post already removed from Facebook, archived locally" if already_gone else f"Post {media_id} deleted from Facebook and archived"
+        _add_activity_log(article_id, f"Facebook {component_label.title()} Post Archived",
+                          f"{action}\npermalink={permalink}", component=component_label)
 
-    return jsonify({"ok": True, "history": history})
+        return jsonify({"ok": True, "history": history})
+    except Exception as e:
+        _add_activity_log(article_id, f"Facebook {component_label.title()} Archive Failed",
+                          f"media_id={media_id}\nException: {e}\n{_tb.format_exc()}", component=component_label)
+        return jsonify({"error": f"Post was removed from Facebook but archiving failed: {e}"}), 500
 
 
 @app.route("/admin/articles/<int:article_id>/delete-narrated-fb-post", methods=["POST"])
@@ -6687,26 +6692,31 @@ def admin_delete_narrated_fb_post(article_id):
                           f"media_id={media_id}\nException: {e}\n{_tb.format_exc()}", component="narrated")
 
     # Step 2: Archive locally (always runs if we get here)
-    result_val = get_setting(result_key) or ""
-    permalink  = result_val.replace("done:", "") if result_val.startswith("done:") else ""
+    try:
+        result_val = get_setting(result_key) or ""
+        permalink  = result_val.replace("done:", "") if result_val.startswith("done:") else ""
 
-    history = json.loads(get_setting(history_key) or "[]")
-    history.append({
-        "media_id":    media_id,
-        "permalink":   permalink,
-        "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-    })
-    hist_val = json.dumps(history)
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
-    for k in (media_key, result_key, status_key):
-        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+        history = json.loads(get_setting(history_key) or "[]")
+        history.append({
+            "media_id":    media_id,
+            "permalink":   permalink,
+            "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
+        hist_val = json.dumps(history)
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+        for k in (media_key, result_key, status_key):
+            execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
 
-    action = "Post already removed from Facebook, archived locally" if already_gone else f"Post {media_id} deleted from Facebook and archived"
-    _add_activity_log(article_id, "Facebook Video Post Archived",
-                      f"{action}\npermalink={permalink}", component="narrated")
+        action = "Post already removed from Facebook, archived locally" if already_gone else f"Post {media_id} deleted from Facebook and archived"
+        _add_activity_log(article_id, "Facebook Video Post Archived",
+                          f"{action}\npermalink={permalink}", component="narrated")
 
-    return jsonify({"ok": True, "history": history})
+        return jsonify({"ok": True, "history": history})
+    except Exception as e:
+        _add_activity_log(article_id, "Facebook Video Archive Failed",
+                          f"media_id={media_id}\nException: {e}\n{_tb.format_exc()}", component="narrated")
+        return jsonify({"error": f"Post was removed from Facebook but archiving failed: {e}"}), 500
 
 
 # ------------------------------------------------------------
