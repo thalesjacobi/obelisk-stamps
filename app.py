@@ -193,6 +193,26 @@ if FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN:
 else:
     print("Facebook: FB_PAGE_ID / FB_PAGE_ACCESS_TOKEN not set — posting disabled")
 
+# --- X (Twitter) API (optional — for posting) ---
+X_API_KEY             = os.getenv("X_API_KEY", "")
+X_API_SECRET          = os.getenv("X_API_SECRET", "")
+X_ACCESS_TOKEN        = os.getenv("X_ACCESS_TOKEN", "")
+X_ACCESS_TOKEN_SECRET = os.getenv("X_ACCESS_TOKEN_SECRET", "")
+X_CONFIGURED          = bool(X_API_KEY and X_API_SECRET and X_ACCESS_TOKEN and X_ACCESS_TOKEN_SECRET)
+if X_CONFIGURED:
+    print("X (Twitter): credentials configured")
+else:
+    print("X (Twitter): credentials not set — posting disabled")
+
+_X_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
+_X_TWEET_URL  = "https://api.twitter.com/2/tweets"
+
+
+def _x_auth():
+    from requests_oauthlib import OAuth1
+    return OAuth1(X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET)
+
+
 # --- Knowledge Base (ChromaDB) ---
 KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb")
 
@@ -2483,7 +2503,11 @@ def admin_settings():
                            ig_token_set=bool(IG_ACCESS_TOKEN),
                            fb_page_id_set=bool(FB_PAGE_ID),
                            fb_token_set=bool(FB_PAGE_ACCESS_TOKEN),
-                           yt_connected=bool(get_setting("youtube_refresh_token")))
+                           yt_connected=bool(get_setting("youtube_refresh_token")),
+                           x_api_key_set=bool(X_API_KEY),
+                           x_api_secret_set=bool(X_API_SECRET),
+                           x_access_token_set=bool(X_ACCESS_TOKEN),
+                           x_access_token_secret_set=bool(X_ACCESS_TOKEN_SECRET))
 
 
 @app.route("/admin/settings/save", methods=["POST"])
@@ -2557,7 +2581,8 @@ def admin_article_new():
                            ig_article_caption_prompt='',
                            ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN),
                            fb_configured=bool(FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN),
-                           yt_configured=bool(get_setting("youtube_refresh_token")))
+                           yt_configured=bool(get_setting("youtube_refresh_token")),
+                           x_configured=X_CONFIGURED)
 
 
 @app.route("/admin/articles/new", methods=["POST"])
@@ -2624,6 +2649,7 @@ def admin_article_edit(article_id):
                            ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN),
                            fb_configured=bool(FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN),
                            yt_configured=bool(get_setting("youtube_refresh_token")),
+                           x_configured=X_CONFIGURED,
                            ig_cine_caption=cine_caption,
                            ig_car_caption=car_caption)
 
@@ -6773,6 +6799,492 @@ def admin_delete_narrated_fb_post(article_id):
         _add_activity_log(article_id, "Facebook Video Archive Failed",
                           f"media_id={media_id}\nException: {e}\n{_tb.format_exc()}", component="narrated")
         return jsonify({"error": f"Post was removed from Facebook but archiving failed: {e}"}), 500
+
+
+# ============================================================
+# X (TWITTER) POSTING
+# ============================================================
+
+def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
+    """Background thread: upload narrated video to X and post a tweet."""
+    import requests as _req
+    import tempfile as _tmp
+    import os as _os
+    import time as _time_mod
+    import base64 as _b64
+
+    status_key = f"x_narrated_status_{article_id}_{run_ts}"
+    result_key = f"x_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    tmp_path = None
+    try:
+        auth = _x_auth()
+
+        # 1. Download video to temp file
+        _set_status("running:download")
+        with _tmp.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_f:
+            tmp_path = tmp_f.name
+        with _req.get(video_url, stream=True, timeout=120) as dl:
+            dl.raise_for_status()
+            with open(tmp_path, "wb") as f:
+                for chunk in dl.iter_content(chunk_size=1024 * 1024):
+                    f.write(chunk)
+        file_size = _os.path.getsize(tmp_path)
+        print(f"[X] Downloaded video: {file_size} bytes", flush=True)
+
+        # 2. INIT upload session
+        _set_status("running:upload_init")
+        resp = _req.post(_X_UPLOAD_URL, auth=auth, data={
+            "command":        "INIT",
+            "total_bytes":    str(file_size),
+            "media_type":     "video/mp4",
+            "media_category": "tweet_video",
+        }, timeout=30)
+        data = resp.json()
+        if "media_id_string" not in data:
+            raise Exception(f"INIT failed: {data}")
+        media_id = data["media_id_string"]
+        print(f"[X] INIT media_id={media_id}", flush=True)
+
+        # 3. APPEND chunks (5 MB each)
+        _set_status("running:upload_append")
+        chunk_size = 5 * 1024 * 1024
+        segment = 0
+        with open(tmp_path, "rb") as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                resp = _req.post(_X_UPLOAD_URL, auth=auth, data={
+                    "command":       "APPEND",
+                    "media_id":      media_id,
+                    "segment_index": str(segment),
+                }, files={"media": chunk}, timeout=60)
+                if resp.status_code not in (200, 204):
+                    raise Exception(f"APPEND segment {segment} failed: {resp.text[:300]}")
+                segment += 1
+        print(f"[X] APPEND done ({segment} segments)", flush=True)
+
+        # 4. FINALIZE
+        _set_status("running:upload_finalize")
+        resp = _req.post(_X_UPLOAD_URL, auth=auth, data={
+            "command":  "FINALIZE",
+            "media_id": media_id,
+        }, timeout=30)
+        data = resp.json()
+        if "media_id_string" not in data:
+            raise Exception(f"FINALIZE failed: {data}")
+        print(f"[X] FINALIZE ok", flush=True)
+
+        # 5. Poll STATUS until processing complete
+        _set_status("running:processing")
+        for _ in range(60):
+            _time_mod.sleep(5)
+            resp = _req.get(_X_UPLOAD_URL, auth=auth, params={
+                "command":  "STATUS",
+                "media_id": media_id,
+            }, timeout=30)
+            info = resp.json().get("processing_info", {})
+            state = info.get("state", "succeeded")
+            print(f"[X] STATUS state={state}", flush=True)
+            if state == "succeeded":
+                break
+            if state == "failed":
+                raise Exception(f"X video processing failed: {info}")
+        else:
+            raise Exception("X video processing timed out after 5 minutes")
+
+        # 6. Post tweet
+        _set_status("running:tweeting")
+        tweet_text = caption[:280] if caption else ""
+        resp = _req.post(_X_TWEET_URL, auth=auth, json={
+            "text":  tweet_text,
+            "media": {"media_ids": [media_id]},
+        }, timeout=30)
+        tweet_data = resp.json()
+        tweet_id = (tweet_data.get("data") or {}).get("id")
+        if not tweet_id:
+            raise Exception(f"Tweet creation failed: {tweet_data}")
+
+        permalink = f"https://x.com/i/web/status/{tweet_id}"
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"x_narrated_tweet_id_{article_id}_{run_ts}", tweet_id, tweet_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, "X Narrated Video Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"tweet_id={tweet_id}\nrun_ts={run_ts}",
+                          component="narrated")
+        print(f"[X] Narrated video posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[X] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "X Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+    finally:
+        if tmp_path and _os.path.exists(tmp_path):
+            _os.unlink(tmp_path)
+
+
+def _post_carousel_x_worker(article_id, caption, run_ts, component):
+    """Background thread: compose carousel/cinemagraph images and post as X thread (4 per tweet)."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"x_{component}_status_{article_id}"
+    result_key = f"x_{component}_result_{article_id}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        auth = _x_auth()
+
+        # Fetch images from DB
+        row = query_one(
+            "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+            (article_id,)
+        )
+        if not row:
+            _set_result("error:Article not found")
+            return
+
+        images     = (json.loads(row[0]) if row[0] else [])[:10]
+        punchlines = (json.loads(row[1]) if row[1] else [])[:10]
+        valid_imgs = [u for u in images if u]
+        if not valid_imgs:
+            _set_result("error:No images found")
+            return
+
+        n = len(valid_imgs)
+        carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+
+        # Compose all images with overlay and upload to X
+        _set_status(f"running:compose:0/{n}")
+        media_ids = []
+        ts_x = int(_time_mod.time())
+        for idx, img_url in enumerate(valid_imgs):
+            _set_status(f"running:compose:{idx+1}/{n}")
+            try:
+                if img_url.startswith("https://"):
+                    resp_img = _req.get(img_url, timeout=20)
+                    resp_img.raise_for_status()
+                    img_bytes = resp_img.content
+                else:
+                    local = resolve_image_to_local_path(img_url)
+                    img_bytes = local.read_bytes() if local and local.exists() else b""
+            except Exception as e:
+                _set_result(f"error:Could not fetch image {idx+1}: {e}")
+                return
+
+            punchline  = punchlines[idx] if idx < len(punchlines) else ""
+            jpeg_bytes = compose_carousel_slide(img_bytes, punchline, idx, n,
+                                                band_top=carousel_band_top,
+                                                hint_text="obelisk-stamps.com")
+            gcs_obj    = f"articles/{article_id}/x/{component}_{idx+1}_{ts_x}.jpg"
+            public_url = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+
+            # Upload image to X
+            _set_status(f"running:upload:{idx+1}/{n}")
+            if public_url:
+                img_dl = _req.get(public_url, timeout=30)
+                upload_bytes = img_dl.content
+            else:
+                upload_bytes = jpeg_bytes
+
+            resp = _req.post(_X_UPLOAD_URL, auth=auth,
+                             files={"media": ("image.jpg", upload_bytes, "image/jpeg")},
+                             timeout=60)
+            mid_data = resp.json()
+            mid = mid_data.get("media_id_string")
+            if not mid:
+                _set_result(f"error:Image upload failed at {idx+1}: {mid_data}")
+                return
+            media_ids.append(mid)
+            print(f"[X] Uploaded image {idx+1}/{n}: media_id={mid}", flush=True)
+
+        # Post as thread: 4 images per tweet, each replying to previous
+        _set_status("running:tweeting")
+        chunks = [media_ids[i:i+4] for i in range(0, len(media_ids), 4)]
+        first_tweet_id = None
+        permalink      = None
+        reply_to       = None
+
+        for chunk_idx, chunk in enumerate(chunks):
+            tweet_body = {}
+            if chunk_idx == 0:
+                tweet_body["text"] = caption[:280] if caption else ""
+            else:
+                tweet_body["text"] = f"{chunk_idx+1}/{len(chunks)}"
+            tweet_body["media"] = {"media_ids": chunk}
+            if reply_to:
+                tweet_body["reply"] = {"in_reply_to_tweet_id": reply_to}
+
+            resp = _req.post(_X_TWEET_URL, auth=auth, json=tweet_body, timeout=30)
+            tweet_data = resp.json()
+            tweet_id   = (tweet_data.get("data") or {}).get("id")
+            if not tweet_id:
+                raise Exception(f"Tweet {chunk_idx+1} failed: {tweet_data}")
+            if chunk_idx == 0:
+                first_tweet_id = tweet_id
+                permalink      = f"https://x.com/i/web/status/{tweet_id}"
+            reply_to = tweet_id
+            print(f"[X] Posted tweet {chunk_idx+1}/{len(chunks)}: {tweet_id}", flush=True)
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"x_{component}_tweet_id_{article_id}", first_tweet_id, first_tweet_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, f"X {component.title()} Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"tweet_id={first_tweet_id}\nimages={n}\nthreads={len(chunks)}",
+                          component=component)
+        print(f"[X] Carousel posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[X] Carousel worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, f"X {component.title()} Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component=component)
+
+
+# ── X: Post narrated video ──────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-x", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_x(article_id):
+    if not X_CONFIGURED:
+        return jsonify({"error": "X credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"x_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_x_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-x-status")
+@login_required
+@admin_required
+def admin_narrated_x_status(article_id):
+    run_ts     = request.args.get("ts", "0")
+    status_key = f"x_narrated_status_{article_id}_{run_ts}"
+    result_key = f"x_narrated_result_{article_id}_{run_ts}"
+    history_key = f"x_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-x-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_x_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    tweet_key   = f"x_narrated_tweet_id_{article_id}_{run_ts}"
+    result_key  = f"x_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"x_narrated_status_{article_id}_{run_ts}"
+    history_key = f"x_narrated_history_{article_id}_{run_ts}"
+    tweet_id = get_setting(tweet_key)
+    if not tweet_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"tweet_id": tweet_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (tweet_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, "X Narrated Video Post Archived",
+                      f"tweet_id={tweet_id} archived", component="narrated")
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-narrated-x-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_narrated_x_post(article_id):
+    """Delete tweet from X and archive locally."""
+    import requests as _req
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    tweet_key   = f"x_narrated_tweet_id_{article_id}_{run_ts}"
+    result_key  = f"x_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"x_narrated_status_{article_id}_{run_ts}"
+    history_key = f"x_narrated_history_{article_id}_{run_ts}"
+    tweet_id = get_setting(tweet_key)
+    if not tweet_id:
+        return jsonify({"error": "No tweet record found"}), 400
+    # Delete from X
+    try:
+        resp = _req.delete(f"{_X_TWEET_URL}/{tweet_id}", auth=_x_auth(), timeout=15)
+        if resp.status_code not in (200, 204):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            # If already gone, continue to archive
+            if resp.status_code != 404:
+                return jsonify({"error": f"Could not delete tweet: {err}"}), 400
+    except Exception as e:
+        pass  # Archive anyway
+    # Archive locally
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"tweet_id": tweet_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (tweet_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, "X Narrated Video Post Deleted & Archived",
+                      f"tweet_id={tweet_id}", component="narrated")
+    return jsonify({"ok": True, "history": history})
+
+
+# ── X: Post carousel images ─────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-carousel-to-x", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_carousel_to_x(article_id):
+    if not X_CONFIGURED:
+        return jsonify({"error": "X credentials not configured."}), 400
+    data      = request.get_json() or {}
+    component = data.get("type", "car")  # "car" or "cine"
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    status_key = f"x_{component}_status_{article_id}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_carousel_x_worker,
+                     args=(article_id, caption, run_ts, component), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-x-status")
+@login_required
+@admin_required
+def admin_carousel_x_status(article_id):
+    component   = request.args.get("type", "car")
+    status_key  = f"x_{component}_status_{article_id}"
+    result_key  = f"x_{component}_result_{article_id}"
+    history_key = f"x_{component}_history_{article_id}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-carousel-x-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_carousel_x_post(article_id):
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    tweet_key   = f"x_{component}_tweet_id_{article_id}"
+    result_key  = f"x_{component}_result_{article_id}"
+    status_key  = f"x_{component}_status_{article_id}"
+    history_key = f"x_{component}_history_{article_id}"
+    tweet_id = get_setting(tweet_key)
+    if not tweet_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"tweet_id": tweet_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (tweet_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, f"X {component.title()} Post Archived",
+                      f"tweet_id={tweet_id}", component=component)
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-carousel-x-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_carousel_x_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    tweet_key   = f"x_{component}_tweet_id_{article_id}"
+    result_key  = f"x_{component}_result_{article_id}"
+    status_key  = f"x_{component}_status_{article_id}"
+    history_key = f"x_{component}_history_{article_id}"
+    tweet_id = get_setting(tweet_key)
+    if not tweet_id:
+        return jsonify({"error": "No tweet record found"}), 400
+    try:
+        resp = _req.delete(f"{_X_TWEET_URL}/{tweet_id}", auth=_x_auth(), timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete tweet: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"tweet_id": tweet_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (tweet_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, f"X {component.title()} Post Deleted & Archived",
+                      f"tweet_id={tweet_id}", component=component)
+    return jsonify({"ok": True, "history": history})
 
 
 # ------------------------------------------------------------

@@ -611,6 +611,66 @@
                 </a>
             </div>
         </div>
+
+        <!-- X (Twitter) API -->
+        <div class="card mt-4">
+            <div class="card-header"><strong>X (Twitter) API</strong></div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Set up X API credentials to post Narrated Videos and Carousel Images to X directly from the article editor.
+                    Get credentials at <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener">developer.x.com</a>.
+                </p>
+                <table class="table table-sm table-bordered small mb-3">
+                    <tbody>
+                        <tr>
+                            <td style="width:55%"><code>X_API_KEY</code></td>
+                            <td>
+                                {% if x_api_key_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>X_API_SECRET</code></td>
+                            <td>
+                                {% if x_api_secret_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>X_ACCESS_TOKEN</code></td>
+                            <td>
+                                {% if x_access_token_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>X_ACCESS_TOKEN_SECRET</code></td>
+                            <td>
+                                {% if x_access_token_secret_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="text-muted small mb-0">
+                    Add these four values as GitHub Secrets (<code>X_API_KEY</code>, <code>X_API_SECRET</code>,
+                    <code>X_ACCESS_TOKEN</code>, <code>X_ACCESS_TOKEN_SECRET</code>) and they will be injected
+                    at deploy time.
+                </p>
+            </div>
+        </div>
         {% endif %}
     </div>
 </div>

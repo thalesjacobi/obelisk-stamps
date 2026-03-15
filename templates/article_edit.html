@@ -20,10 +20,14 @@
     /* Facebook live icon */
     .fb-icon-live { stroke: #1877F2 !important; }
 
+    /* X (Twitter) live icon */
+    .x-icon-live { stroke: #000 !important; }
+
     /* Narrated run per-item social icons */
     .nv-run-ig-live { stroke: url(#ig-gradient) !important; }
     .nv-run-yt-live { stroke: #ff0000 !important; }
     .nv-run-fb-live { stroke: #1877F2 !important; }
+    .nv-run-x-live  { stroke: #000 !important; }
 
     /* Narrated run hide/show eye icon */
     .nv-eye-btn { opacity: 0; transition: opacity 0.15s; cursor: pointer; flex-shrink: 0; }
@@ -51,8 +55,8 @@
     /* Social posting sections: consistent font + padding */
     /* Tab text and section header icons both start at card-body edge */
     #carousel-tabs .nav-link, #cine-tabs .nav-link { padding-left: 0; padding-right: 0.75rem; }
-    #car-ig-body, #car-fb-body, #cine-ig-body, #cine-fb-body, .nv-social-body,
-    #car-ig-body *, #car-fb-body *, #cine-ig-body *, #cine-fb-body *, .nv-social-body * {
+    #car-ig-body, #car-fb-body, #car-x-body, #cine-ig-body, #cine-fb-body, #cine-x-body, .nv-social-body,
+    #car-ig-body *, #car-fb-body *, #car-x-body *, #cine-ig-body *, #cine-fb-body *, #cine-x-body *, .nv-social-body * {
         font-family: var(--bs-font-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif) !important;
         font-size: 0.8125rem !important;
     }
@@ -522,6 +526,70 @@
                 {% endif %}
             </div><!-- /car-fb-body -->
 
+            <!-- X Carousel Posting -->
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="toggleXSection('car')">
+                <svg id="car-x-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0">
+                    <path d="M4 4l11.733 16H20L8.267 4z"/>
+                    <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
+                </svg>
+                <span class="small fw-semibold">Post Carousel Images to X</span>
+                <svg id="car-x-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
+                     style="transition:transform 0.2s;flex-shrink:0">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+            <div id="car-x-body" class="d-none pt-1">
+                {% if not x_configured %}
+                <div class="alert alert-warning py-2 small mb-0">
+                    X credentials not configured.
+                    Set <code>X_API_KEY</code>, <code>X_API_SECRET</code>, <code>X_ACCESS_TOKEN</code>,
+                    and <code>X_ACCESS_TOKEN_SECRET</code> in your environment.
+                </div>
+                {% else %}
+                <div class="mb-2">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <label class="small text-muted mb-0" for="car-x-caption">Caption<span class="ig-caption-tooltip" data-tip="Up to 4 images will be posted in the first tweet. If you have more, they will continue in reply tweets (thread). Each tweet is limited to 280 characters.">?</span></label>
+                        <a href="#" class="small ms-auto ig-section-link" id="car-x-copy-link"
+                           onclick="event.preventDefault(); copyIgCaptionToX('car')">Copy from Instagram</a>
+                    </div>
+                    <textarea id="car-x-caption" class="form-control form-control-sm" rows="3"
+                              maxlength="280" placeholder="Write your X caption… #stamps #philately"
+                              oninput="document.getElementById('car-x-char-count').textContent=this.value.length+' / 280'"></textarea>
+                    <div class="text-end text-muted small mt-1" id="car-x-char-count">0 / 280</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-x-btn-row">
+                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToX('car')" id="car-x-post-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
+                            <path d="M4 4l11.733 16H20L8.267 4z"/>
+                            <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
+                        </svg>Post to X
+                    </button>
+                </div>
+                <div id="car-x-status-area" class="d-none">
+                    <div class="d-flex align-items-center gap-2 mb-1" id="car-x-status-running">
+                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
+                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
+                        <span id="car-x-status-text" class="text-muted small">Starting…</span>
+                    </div>
+                    <div class="progress mb-2" style="height:4px" id="car-x-progress-wrap">
+                        <div id="car-x-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width:0%"></div>
+                    </div>
+                    <div id="car-x-result" class="d-none small"></div>
+                    <div id="car-x-history" class="d-none mt-3">
+                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-x-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
+                        <div class="collapse" id="car-x-history-list"></div>
+                    </div>
+                </div>
+                {% endif %}
+            </div><!-- /car-x-body -->
+
             {% endif %}<!-- /article.id -->
         </div>
     </div>
@@ -810,6 +878,31 @@
                 <div class="alert alert-info small mb-0 d-flex align-items-center gap-2" style="padding:.6rem .8rem">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                     <span>Facebook doesn't support cinemagraph-style looping videos. Use <strong>Carousel Images</strong> or <strong>Narrated Videos</strong> to post to Facebook instead.</span>
+                </div>
+            </div>
+
+            <!-- X Cinemagraph Posting -->
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="toggleXSection('cine')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0">
+                    <path d="M4 4l11.733 16H20L8.267 4z"/>
+                    <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
+                </svg>
+                <span class="small fw-semibold">Post Cinemagraph to X</span>
+                <svg id="cine-x-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
+                     style="transition:transform 0.2s;flex-shrink:0">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+            <div id="cine-x-body" class="d-none pt-1">
+                <div class="alert alert-info small mb-0 d-flex align-items-center gap-2" style="padding:.6rem .8rem">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    <span>X (Twitter) doesn't support cinemagraph-style looping videos. Use <strong>Carousel Images</strong> or <strong>Narrated Videos</strong> to post to X instead.</span>
                 </div>
             </div>
 
@@ -1421,6 +1514,7 @@ function toggleSlideshow(enabled) {
 }
 const FB_CONFIGURED  = {{ fb_configured | tojson }};
 const YT_CONFIGURED  = {{ yt_configured | tojson }};
+const X_CONFIGURED   = {{ x_configured | tojson }};
 
 function openCarouselStyleModal() {
     document.getElementById('carousel-style-text').value = CAROUSEL_STYLE;
@@ -1712,6 +1806,7 @@ var _platformIconSvg = {
     ig: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>',
     fb: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
     yt: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.54C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/></svg>',
+    x:  '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M4 4l11.733 16H20L8.267 4z"/><path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/></svg>',
 };
 
 function _makeViewPostBtn(btn, permalink, platform) {
@@ -2011,6 +2106,25 @@ function _clearNvFbIconLive(ts) {
     if (hdr) hdr.setAttribute('stroke', 'currentColor');
 }
 
+/* X (Twitter) section header icons (carousel) */
+function _setXIconLive(mode) {
+    var icon = document.getElementById(mode + '-x-icon');
+    if (icon) icon.classList.add('x-icon-live');
+}
+function _clearXIconLive(mode) {
+    var icon = document.getElementById(mode + '-x-icon');
+    if (icon) icon.classList.remove('x-icon-live');
+}
+/* Narrated video X header icon */
+function _setNvXIconLive(ts) {
+    var hdr = document.getElementById('nv-x-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', '#000');
+}
+function _clearNvXIconLive(ts) {
+    var hdr = document.getElementById('nv-x-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', 'currentColor');
+}
+
 /* ── Facebook toggle, post, poll, done, error, archive (carousel/cinemagraph) ── */
 function _fbId(mode, suffix) { return mode + '-fb-' + suffix; }
 
@@ -2041,6 +2155,22 @@ function toggleNvFbSection(ts) {
 function toggleNvYtSection(ts) {
     var body    = document.getElementById('nv-yt-' + ts + '-body');
     var chevron = document.getElementById('nv-yt-' + ts + '-chevron');
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function toggleNvXSection(ts) {
+    var body    = document.getElementById('nv-x-' + ts + '-body');
+    var chevron = document.getElementById('nv-x-' + ts + '-chevron');
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function toggleXSection(mode) {
+    var body    = document.getElementById(mode + '-x-body');
+    var chevron = document.getElementById(mode + '-x-chevron');
     if (!body) return;
     body.classList.toggle('d-none');
     if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
@@ -2274,6 +2404,384 @@ function checkFbRunning(mode) {
             pollFbStatus(mode);
         }
         if (d.history && d.history.length) renderFbHistory(mode, d.history);
+    })
+    .catch(function() {});
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   X (Twitter) Carousel/Cinemagraph posting
+   ═══════════════════════════════════════════════════════════════ */
+function _xId(mode, suffix) { return mode + '-x-' + suffix; }
+
+function copyIgCaptionToX(mode) {
+    var igCaption = document.getElementById(mode + '-ig-caption');
+    var xCaption  = document.getElementById(_xId(mode, 'caption'));
+    if (igCaption && xCaption) {
+        xCaption.value = igCaption.value.slice(0, 280);
+        var countEl = document.getElementById(_xId(mode, 'char-count'));
+        if (countEl) countEl.textContent = xCaption.value.length + ' / 280';
+    }
+}
+
+function postCarouselToX(mode) {
+    if (!ARTICLE_ID) return;
+    var caption = (document.getElementById(_xId(mode, 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_xId(mode, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showXRunning(mode, 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-carousel-to-x', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({caption: caption, type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showXError(mode, d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollCarouselXStatus(mode);
+    })
+    .catch(function(e) { showXError(mode, 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function pollCarouselXStatus(mode) {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/carousel-x-status?type=' + mode)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) {
+                showXDone(mode, d.result.slice(5));
+                if (d.history && d.history.length) renderXHistory(mode, d.history);
+            } else if (d.result && d.result.startsWith('error:')) {
+                showXError(mode, d.result.slice(6));
+                if (d.history && d.history.length) renderXHistory(mode, d.history);
+            } else {
+                showXRunning(mode, d.status || '');
+                pollCarouselXStatus(mode);
+            }
+        })
+        .catch(function() { pollCarouselXStatus(mode); });
+    }, 5000);
+}
+
+function showXRunning(mode, statusStr) {
+    var area    = document.getElementById(_xId(mode, 'status-area'));
+    var running = document.getElementById(_xId(mode, 'status-running'));
+    var result  = document.getElementById(_xId(mode, 'result'));
+    var textEl  = document.getElementById(_xId(mode, 'status-text'));
+    var bar     = document.getElementById(_xId(mode, 'progress-bar'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (result) result.classList.add('d-none');
+    var labels = {
+        'running:0': 'Starting…',
+        'running:compose': 'Composing images…',
+        'running:upload': 'Uploading media…',
+        'running:tweet': 'Posting tweet…',
+    };
+    var label = labels[statusStr];
+    if (!label) {
+        for (var k in labels) { if (statusStr && statusStr.startsWith(k)) { label = statusStr.replace(k, labels[k].replace('…', ': ')); break; } }
+    }
+    if (textEl) textEl.textContent = label || statusStr || 'Processing…';
+    var pct = 10;
+    if (statusStr && statusStr.startsWith('running:upload')) pct = 50;
+    if (statusStr && statusStr.startsWith('running:tweet')) pct = 80;
+    if (bar) bar.style.width = pct + '%';
+}
+
+function showXDone(mode, permalink) {
+    _setXIconLive(mode);
+    var area     = document.getElementById(_xId(mode, 'status-area'));
+    var running  = document.getElementById(_xId(mode, 'status-running'));
+    var progress = document.getElementById(_xId(mode, 'progress-wrap'));
+    var result   = document.getElementById(_xId(mode, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    /* Make caption read-only */
+    var ta = document.getElementById(mode + '-x-caption');
+    if (ta) { ta.readOnly = true; ta.style.opacity = '0.7'; }
+    /* Disable copy link */
+    var copyLink = document.getElementById(mode + '-x-copy-link');
+    if (copyLink) { copyLink.classList.add('text-muted', 'pe-none'); copyLink.style.opacity = '0.5'; }
+    var postBtn = document.getElementById(_xId(mode, 'post-btn'));
+    _makeViewPostBtn(postBtn, permalink, 'x');
+    var btnRow = document.getElementById(_xId(mode, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.x-done-btn').forEach(function(b) { b.remove(); });
+        var archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-outline-danger btn-sm x-done-btn';
+        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.onclick = function() { xDeleteAndArchive(mode); };
+        btnRow.appendChild(archiveBtn);
+    }
+}
+
+function showXError(mode, msg) {
+    var area     = document.getElementById(_xId(mode, 'status-area'));
+    var running  = document.getElementById(_xId(mode, 'status-running'));
+    var progress = document.getElementById(_xId(mode, 'progress-wrap'));
+    var result   = document.getElementById(_xId(mode, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-danger py-1 small mb-2">' + msg + '</div>';
+    }
+    var postBtn = document.getElementById(_xId(mode, 'post-btn'));
+    if (postBtn) postBtn.disabled = false;
+}
+
+function xDeleteAndArchive(mode) {
+    if (!ARTICLE_ID) return;
+    if (!confirm('Archive this X post? It will be saved in Past Posts for your records.')) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-carousel-x-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { alert('Error: ' + d.error); return; }
+        _clearXIconLive(mode);
+        var ta = document.getElementById(mode + '-x-caption');
+        if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
+        var copyLink = document.getElementById(mode + '-x-copy-link');
+        if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+        var postBtn = document.getElementById(_xId(mode, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_xId(mode, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.x-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_xId(mode, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderXHistory(mode, d.history);
+    })
+    .catch(function(e) { alert('Archive failed: ' + e); });
+}
+
+function renderXHistory(mode, history) {
+    var wrap = document.getElementById(_xId(mode, 'history'));
+    var list = document.getElementById(mode + '-x-history-list');
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.slice().reverse().forEach(function(entry) {
+        var row = document.createElement('div');
+        row.className = 'mb-1 small text-muted';
+        var cap = (entry.caption || '').slice(0, 20);
+        var label = cap ? cap + '...' : 'Post archived';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        row.textContent = '\u2022 ' + label + (date ? ' \u2014 ' + date : '');
+        list.appendChild(row);
+    });
+    wrap.classList.remove('d-none');
+}
+
+function checkXRunning(mode) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/carousel-x-status?type=' + mode)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.result && d.result.startsWith('done:')) {
+            showXDone(mode, d.result.slice(5));
+        } else if (d.status && d.status.startsWith('running') && !(d.result && d.result.startsWith('error:'))) {
+            showXRunning(mode, d.status);
+            pollCarouselXStatus(mode);
+        }
+        if (d.history && d.history.length) renderXHistory(mode, d.history);
+    })
+    .catch(function() {});
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   X (Twitter) Narrated Video posting
+   ═══════════════════════════════════════════════════════════════ */
+function _nvXId(ts, suffix) { return 'nv-x-' + ts + '-' + suffix; }
+
+function copyNvIgCaptionToX(ts) {
+    var igCaption = document.getElementById('nv-ig-' + ts + '-caption');
+    var xCaption  = document.getElementById('nv-x-' + ts + '-caption');
+    if (igCaption && xCaption) {
+        xCaption.value = igCaption.value.slice(0, 280);
+        var countEl = document.getElementById('nv-x-' + ts + '-count');
+        if (countEl) countEl.textContent = xCaption.value.length + ' / 280';
+    }
+}
+
+function postNarratedToX(ts, videoUrl) {
+    if (!ARTICLE_ID) return;
+    var caption = (document.getElementById(_nvXId(ts, 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_nvXId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showNvXRunning(ts, 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-narrated-to-x', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({video_url: videoUrl, caption: caption, run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showNvXError(ts, d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollNvXStatus(ts);
+    })
+    .catch(function(e) { showNvXError(ts, 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function pollNvXStatus(ts) {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/narrated-x-status?ts=' + ts)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) {
+                showNvXDone(ts, d.result.slice(5));
+                if (d.history && d.history.length) renderNvXHistory(ts, d.history);
+            } else if (d.result && d.result.startsWith('error:')) {
+                showNvXError(ts, d.result.slice(6));
+                if (d.history && d.history.length) renderNvXHistory(ts, d.history);
+            } else {
+                showNvXRunning(ts, d.status || '');
+                pollNvXStatus(ts);
+            }
+        })
+        .catch(function() { pollNvXStatus(ts); });
+    }, 5000);
+}
+
+function showNvXRunning(ts, statusStr) {
+    var area    = document.getElementById(_nvXId(ts, 'status-area'));
+    var running = document.getElementById(_nvXId(ts, 'status-running'));
+    var result  = document.getElementById(_nvXId(ts, 'result'));
+    var textEl  = document.getElementById(_nvXId(ts, 'status-text'));
+    var bar     = document.getElementById(_nvXId(ts, 'progress-bar'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (result) result.classList.add('d-none');
+    var labels = {
+        'running:0': 'Starting…',
+        'running:download': 'Downloading video…',
+        'running:init': 'Initialising upload…',
+        'running:upload': 'Uploading to X…',
+        'running:processing': 'X is processing…',
+        'running:tweet': 'Posting tweet…',
+    };
+    var label = labels[statusStr];
+    if (!label) {
+        for (var k in labels) { if (statusStr && statusStr.startsWith(k)) { label = statusStr.replace(k, labels[k].replace('…', ': ')); break; } }
+    }
+    if (textEl) textEl.textContent = label || statusStr || 'Processing…';
+    var pct = 10;
+    if (statusStr && statusStr.startsWith('running:upload')) pct = 40;
+    if (statusStr && statusStr.startsWith('running:processing')) pct = 70;
+    if (statusStr && statusStr.startsWith('running:tweet')) pct = 90;
+    if (bar) bar.style.width = pct + '%';
+}
+
+function showNvXDone(ts, permalink) {
+    _setNvXIconLive(ts);
+    var area     = document.getElementById(_nvXId(ts, 'status-area'));
+    var running  = document.getElementById(_nvXId(ts, 'status-running'));
+    var progress = document.getElementById(_nvXId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvXId(ts, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    /* Make caption read-only */
+    var ta = document.getElementById(_nvXId(ts, 'caption'));
+    if (ta) { ta.readOnly = true; ta.style.opacity = '0.7'; }
+    /* Disable "Copy from Instagram" link */
+    var body = document.getElementById(_nvXId(ts, 'body'));
+    if (body) {
+        var copyLink = body.querySelector('.ig-section-link');
+        if (copyLink) { copyLink.classList.add('text-muted', 'pe-none'); copyLink.style.opacity = '0.5'; }
+    }
+    var postBtn = document.getElementById(_nvXId(ts, 'post-btn'));
+    _makeViewPostBtn(postBtn, permalink, 'x');
+    var btnRow = document.getElementById(_nvXId(ts, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.nv-x-done-btn').forEach(function(b) { b.remove(); });
+        var archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-outline-danger btn-sm nv-x-done-btn';
+        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.onclick = (function(t) { return function() { nvXDeleteAndArchive(t); }; })(ts);
+        btnRow.appendChild(archiveBtn);
+    }
+}
+
+function showNvXError(ts, msg) {
+    var area     = document.getElementById(_nvXId(ts, 'status-area'));
+    var running  = document.getElementById(_nvXId(ts, 'status-running'));
+    var progress = document.getElementById(_nvXId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvXId(ts, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-danger py-1 small mb-2">' + msg + '</div>';
+    }
+    var postBtn = document.getElementById(_nvXId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = false;
+}
+
+function nvXDeleteAndArchive(ts) {
+    if (!ARTICLE_ID) return;
+    if (!confirm('Archive this X post? It will be saved in Past Posts for your records.')) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-x-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { alert('Error: ' + d.error); return; }
+        _clearNvXIconLive(ts);
+        var ta = document.getElementById(_nvXId(ts, 'caption'));
+        if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
+        var body = document.getElementById(_nvXId(ts, 'body'));
+        if (body) {
+            var copyLink = body.querySelector('.ig-section-link');
+            if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+        }
+        var postBtn = document.getElementById(_nvXId(ts, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_nvXId(ts, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.nv-x-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_nvXId(ts, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderNvXHistory(ts, d.history);
+    })
+    .catch(function(e) { alert('Archive failed: ' + e); });
+}
+
+function renderNvXHistory(ts, history) {
+    var wrap = document.getElementById(_nvXId(ts, 'history'));
+    var list = document.getElementById('nv-x-' + ts + '-history-list');
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.slice().reverse().forEach(function(entry) {
+        var row = document.createElement('div');
+        row.className = 'mb-1 small text-muted';
+        var cap = (entry.caption || '').slice(0, 20);
+        var label = cap ? cap + '...' : 'Post archived';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        row.textContent = '\u2022 ' + label + (date ? ' \u2014 ' + date : '');
+        list.appendChild(row);
+    });
+    wrap.classList.remove('d-none');
+}
+
+function restoreNvXState(ts) {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/narrated-x-status?ts=' + ts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.history && d.history.length) renderNvXHistory(ts, d.history);
+        if (d.result && d.result.startsWith('done:')) {
+            showNvXDone(ts, d.result.slice(5));
+        } else if (d.status && d.status.startsWith('running')) {
+            showNvXRunning(ts, d.status);
+            pollNvXStatus(ts);
+        }
     })
     .catch(function() {});
 }
@@ -3632,6 +4140,21 @@ function buildRunItem(run, expandIt) {
                     </div>
                     <div id="nv-yt-${run.ts}-result" class="d-none mt-2"></div>
                 </div>
+                <hr class="mt-0 mb-0">
+                <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvXSection(${run.ts})">
+                    <svg id="nv-x-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                        <path d="M4 4l11.733 16H20L8.267 4z"/>
+                        <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
+                    </svg>
+                    <span class="small fw-semibold">Post to X</span>
+                    <svg id="nv-x-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </div>
+                <div id="nv-x-${run.ts}-body" class="nv-social-body d-none pt-1">
+                    ${!X_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">X not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>' : ''}
+                    ${X_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted as a tweet with up to 280 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToX(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-x-' + run.ts + '-caption" rows="3" maxlength="280" placeholder="Write your X caption…" oninput="document.getElementById(\'nv-x-' + run.ts + '-count\').textContent=this.value.length+\' / 280\'"></textarea><div class="text-end text-muted small mb-2" id="nv-x-' + run.ts + '-count">0 / 280</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-x-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-x-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToX(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M4 4l11.733 16H20L8.267 4z\'/><path d=\'M4 20l6.768-6.768M20 4l-6.768 6.768\'/></svg>Post to X</button></div><div id="nv-x-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-x-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-x-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-x-' + run.ts + '-progress-wrap"><div id="nv-x-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-x-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-x-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-x-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-x-' + run.ts + '-history-list"></div></div></div>' : ''}
+                </div>
         </div>`;
     /* Set caption default after DOM is built (avoids HTML-escaping issues in textarea) */
     var defaultCaption = [ARTICLE_TITLE, ARTICLE_URL ? '\n' + ARTICLE_URL : ''].filter(Boolean).join('\n');
@@ -4177,6 +4700,7 @@ function loadNarratedRuns(runs, hiddenTs) {
             }
             restoreNvIgState(run.ts);
             restoreNvFbState(run.ts);
+            restoreNvXState(run.ts);
             // Restore YouTube icon + button if a successful upload exists
             (function(ts) {
                 fetch('/admin/articles/' + ARTICLE_ID + '/youtube-status?ts=' + ts)
@@ -4496,6 +5020,9 @@ function narratedFinish(error) {
         .then(function(d) {
             if (d.result && d.result.startsWith('done:')) _setFbIconLive('car');
         }).catch(function() {});
+
+    // Check X status for carousel icon and restore state
+    if (typeof checkXRunning === 'function') checkXRunning('car');
 })();
 
 // ════════════════════════════════════════════════════════════════
