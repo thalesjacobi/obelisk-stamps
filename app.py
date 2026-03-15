@@ -179,6 +179,7 @@ else:
 IG_USER_ID      = os.getenv("IG_USER_ID", "")
 IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "")
 _IG_GRAPH_URL   = "https://graph.facebook.com/v21.0"
+_FB_VIDEO_URL   = "https://graph-video.facebook.com/v21.0"
 if IG_USER_ID and IG_ACCESS_TOKEN:
     print("Instagram: credentials configured")
 else:
@@ -6195,7 +6196,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
                               component=component_label)
 
             _set_status("running:upload")
-            api_url = f"{_IG_GRAPH_URL}/{page_id}/videos"
+            api_url = f"{_FB_VIDEO_URL}/{page_id}/videos"
             resp = _req.post(
                 api_url,
                 data={
@@ -6286,7 +6287,7 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
             component="narrated",
         )
 
-        api_url = f"{_IG_GRAPH_URL}/{FB_PAGE_ID}/videos"
+        api_url = f"{_FB_VIDEO_URL}/{FB_PAGE_ID}/videos"
         resp = _req.post(
             api_url,
             data={
