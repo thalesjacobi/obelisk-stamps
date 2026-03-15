@@ -6563,6 +6563,7 @@ def admin_archive_narrated_fb_post(article_id):
 def admin_article_delete_facebook_post(article_id):
     import requests as _req
     import traceback as _tb
+    import datetime as _dt
     data      = request.get_json() or {}
     post_type = data.get("type", "cine")
     keys      = _fb_keys(post_type, article_id)
@@ -6647,6 +6648,7 @@ def admin_article_delete_facebook_post(article_id):
 def admin_delete_narrated_fb_post(article_id):
     import requests as _req
     import traceback as _tb
+    import datetime as _dt
     data   = request.get_json() or {}
     run_ts = str(data.get("run_ts", "0"))
 
