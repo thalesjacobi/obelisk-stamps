@@ -6047,6 +6047,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
             "SELECT title, carousel_images, carousel_cinemagraphs, carousel_punchlines "
             "FROM articles WHERE id = %s", (article_id,))
         if not row:
+            _set_status("idle")
             _set_result("error:Article not found")
             return
         title       = row[0] or "Untitled"
@@ -6063,6 +6064,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
             # ── Multi-photo post ────────────────────────────────
             valid_urls = [u for u in images if u]
             if not valid_urls:
+                _set_status("idle")
                 _set_result("error:No carousel images to post")
                 return
 
@@ -6081,6 +6083,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
                 data = resp.json()
                 if "id" not in data:
                     err = data.get("error", {}).get("message", str(data))
+                    _set_status("idle")
                     _set_result(f"error:Photo upload failed (slide {idx+1}): {err}")
                     return
                 photo_ids.append(data["id"])
@@ -6103,6 +6106,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
             data = resp.json()
             if "id" not in data:
                 err = data.get("error", {}).get("message", str(data))
+                _set_status("idle")
                 _set_result(f"error:Feed post failed: {err}")
                 return
 
@@ -6119,6 +6123,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
                     video_url = c
                     break
             if not video_url:
+                _set_status("idle")
                 _set_result("error:No cinemagraph video to post")
                 return
 
@@ -6135,6 +6140,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
             data = resp.json()
             if "id" not in data:
                 err = data.get("error", {}).get("message", str(data))
+                _set_status("idle")
                 _set_result(f"error:Video upload failed: {err}")
                 return
 
@@ -6163,6 +6169,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
 
     except Exception as e:
         print(f"[FB] Worker error: {e}", flush=True)
+        _set_status("idle")
         _set_result(f"error:{e}")
 
 
@@ -6208,6 +6215,7 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
 
         if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
+            _set_status("idle")
             _set_result(f"error:{err}")
             _add_activity_log(article_id, "Facebook Post Failed", err, component="narrated")
             return
@@ -6228,6 +6236,7 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
 
     except Exception as e:
         print(f"[FB] Narrated worker error: {e}", flush=True)
+        _set_status("idle")
         _set_result(f"error:{e}")
 
 

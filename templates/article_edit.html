@@ -2247,7 +2247,7 @@ function checkFbRunning(mode) {
     .then(function(d) {
         if (d.result && d.result.startsWith('done:')) {
             showFbDone(mode, d.result.slice(5));
-        } else if (d.status && d.status.startsWith('running')) {
+        } else if (d.status && d.status.startsWith('running') && !(d.result && d.result.startsWith('error:'))) {
             showFbRunning(mode, d.status);
             pollFbStatus(mode);
         }
