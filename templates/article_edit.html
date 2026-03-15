@@ -789,11 +789,11 @@
             {% endif %}
             </div><!-- /cine-ig-body -->
 
-            <!-- Facebook Cinemagraph Posting -->
+            <!-- Facebook Cinemagraph (unsupported notice) -->
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleFbSection('cine')">
-                <svg id="cine-fb-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
                      fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                      stroke-linejoin="round" style="flex-shrink:0">
                     <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
@@ -807,46 +807,11 @@
                 </svg>
             </div>
             <div id="cine-fb-body" class="d-none pt-1">
-                {% if fb_configured %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="cine-fb-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from your Facebook Page. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyIgCaptionToFb('cine')">Copy from Instagram</a>
-                    </div>
-                    <textarea id="cine-fb-caption" class="form-control form-control-sm" rows="3"
-                              placeholder="Write your Facebook caption…"
-                              maxlength="2200"
-                              oninput="document.getElementById('cine-fb-char-count').textContent=this.value.length+' / 2200'"></textarea>
-                    <div class="text-end text-muted small" id="cine-fb-char-count">0 / 2200</div>
+                <div class="alert alert-info small mb-0 d-flex align-items-center gap-2" style="padding:.6rem .8rem">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    <span>Facebook doesn't support cinemagraph-style looping videos. Use <strong>Carousel Images</strong> or <strong>Narrated Videos</strong> to post to Facebook instead.</span>
                 </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="cine-fb-btn-row">
-                    <button type="button" class="btn btn-sm btn-primary" onclick="postToFacebook('cine')" id="cine-fb-post-btn">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
-                        Post to Facebook
-                    </button>
-                </div>
-                <div id="cine-fb-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="cine-fb-status-running">
-                        <div class="spinner-border spinner-border-sm text-primary"></div>
-                        <span id="cine-fb-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="cine-fb-progress-wrap">
-                        <div id="cine-fb-progress-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="cine-fb-result" class="d-none small"></div>
-                    <div id="cine-fb-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#cine-fb-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="cine-fb-history-list"></div>
-                    </div>
-                </div>
-                {% else %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    Facebook Page credentials not configured.
-                    Set <code>FB_PAGE_ID</code> and <code>FB_PAGE_ACCESS_TOKEN</code> in your environment.
-                </div>
-                {% endif %}
-            </div><!-- /cine-fb-body -->
+            </div>
 
             {% endif %}<!-- /article.id -->
         </div>
@@ -4517,11 +4482,6 @@ function narratedFinish(error) {
         .then(function(r) { return r.json(); })
         .then(function(d) {
             if (d.result && d.result.startsWith('done:')) _setFbIconLive('car');
-        }).catch(function() {});
-    fetch('/admin/articles/' + ARTICLE_ID + '/fb-post-status?type=cine')
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-            if (d.result && d.result.startsWith('done:')) _setFbIconLive('cine');
         }).catch(function() {});
 })();
 

@@ -465,7 +465,7 @@ def resolve_image_to_local_path(img_url):
 _FONT_PATH = Path("static/fonts/Roboto-Bold.ttf")
 
 
-def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides, band_top=None):
+def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides, band_top=None, hint_text=None):
     """
     Composite a dark gradient + punchline text + optional swipe hint onto a
     carousel image.  Returns JPEG bytes.  The original img_bytes are never
@@ -479,6 +479,9 @@ def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides, band
         band_top:     If set, use a solid dark band (same style as cinemagraph
                       overlay) starting at this Y. Used in cinemagraph carousels
                       for visual consistency with video slides.
+        hint_text:    If set, replaces the default "Slide right for more"
+                      swipe hint and is shown on ALL slides (including last).
+                      Used for branding (e.g. domain name on Facebook posts).
     """
     from PIL import Image, ImageDraw, ImageFont
     import io
@@ -557,11 +560,16 @@ def compose_carousel_slide(img_bytes, punchline, slide_index, total_slides, band
                   fill=(255, 255, 255, 255))
         text_y += line_h
 
-    # ── Swipe hint (yellow, all slides except the last) ─────────────────────
-    if slide_index < total_slides - 1:
-        hint_text = "Slide right for more »»»"
-        hint_y    = h - hint_h + int(font_hint.size * 0.4)
+    # ── Swipe hint / branding line ───────────────────────────────────────────
+    if hint_text:
+        # Custom hint (e.g. domain branding) — shown on ALL slides
+        hint_y = h - hint_h + int(font_hint.size * 0.4)
         draw.text((pad_x, hint_y), hint_text, font=font_hint,
+                  fill=(255, 215, 0, 255))
+    elif slide_index < total_slides - 1:
+        # Default swipe hint — all slides except the last
+        hint_y = h - hint_h + int(font_hint.size * 0.4)
+        draw.text((pad_x, hint_y), "Slide right for more »»»", font=font_hint,
                   fill=(255, 215, 0, 255))
 
     # ── Return as JPEG bytes ─────────────────────────────────────────────────
@@ -6090,7 +6098,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
             _set_result("error:Article not found")
             _add_activity_log(article_id, f"Facebook Post Failed",
                               f"Article {article_id} not found in database.",
-                              component="carousel" if post_type == "car" else "cinemagraph")
+                              component="carousel")
             return
         title       = row[0] or "Untitled"
         images_raw  = row[1]
@@ -6113,18 +6121,48 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
                                   component=component_label)
                 return
 
+            n = len(valid_urls)
+            # Pre-compute consistent band height for punchline overlays
+            carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+
             _add_activity_log(article_id, f"Facebook Carousel Uploading Photos",
-                              f"Uploading {len(valid_urls)} photos to Facebook as unpublished…\ncaption length={len(caption)}",
+                              f"Uploading {n} photos to Facebook as unpublished…\ncaption length={len(caption)}",
                               component=component_label)
 
             photo_ids = []
+            ts_fb = int(_time.time())
             for idx, img_url in enumerate(valid_urls):
-                _set_status(f"running:upload:{idx+1}/{len(valid_urls)}")
+                _set_status(f"running:compose:{idx+1}/{n}")
+                # Download original image
+                try:
+                    if img_url.startswith("https://"):
+                        resp_img = _req.get(img_url, timeout=20)
+                        resp_img.raise_for_status()
+                        img_bytes = resp_img.content
+                    else:
+                        local = resolve_image_to_local_path(img_url)
+                        img_bytes = local.read_bytes() if local and local.exists() else b""
+                except Exception as e:
+                    _set_status("idle")
+                    _set_result(f"error:Could not fetch image {idx+1}: {e}")
+                    _add_activity_log(article_id, f"Facebook Carousel Post Failed",
+                                      f"Could not fetch image {idx+1}: {e}",
+                                      component=component_label)
+                    return
+
+                # Compose punchline overlay onto image
+                punchline = punchlines[idx] if idx < len(punchlines) else ""
+                jpeg_bytes = compose_carousel_slide(img_bytes, punchline, idx, n, band_top=carousel_band_top, hint_text="obelisk-stamps.com")
+                gcs_obj = f"articles/{article_id}/facebook/composed_{idx+1}_{ts_fb}.jpg"
+                composed_url = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+                upload_url = composed_url or img_url
+
+                _set_status(f"running:upload:{idx+1}/{n}")
                 api_url = f"{_IG_GRAPH_URL}/{page_id}/photos"
                 resp = _req.post(
                     api_url,
                     data={
-                        "url": img_url,
+                        "url": upload_url,
                         "published": "false",
                         "access_token": access_token,
                     },
@@ -6136,15 +6174,15 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
                     _set_status("idle")
                     _set_result(f"error:Photo upload failed (slide {idx+1}): {err}")
                     _add_activity_log(article_id, f"Facebook Carousel Post Failed",
-                                      f"Photo upload failed at slide {idx+1}/{len(valid_urls)}.\n"
-                                      f"image_url={img_url}\n"
+                                      f"Photo upload failed at slide {idx+1}/{n}.\n"
+                                      f"image_url={upload_url}\n"
                                       f"API endpoint={api_url}\n"
                                       f"HTTP status={resp.status_code}\n"
                                       f"API response={json.dumps(data, indent=2)[:1500]}",
                                       component=component_label)
                     return
                 photo_ids.append(data["id"])
-                print(f"[FB] Uploaded photo {idx+1}/{len(valid_urls)}: {data['id']}", flush=True)
+                print(f"[FB] Uploaded photo {idx+1}/{n}: {data['id']}", flush=True)
 
             # Create feed post with attached media
             _set_status("running:publishing")
@@ -6175,79 +6213,19 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
             permalink = f"https://www.facebook.com/{post_id}"
             print(f"[FB] Carousel posted: {permalink}", flush=True)
 
-        else:
-            # ── Cinemagraph video post ──────────────────────────
-            # Find the first valid cinemagraph URL
-            video_url = None
-            for c in cines:
-                if c:
-                    video_url = c
-                    break
-            if not video_url:
-                _set_status("idle")
-                _set_result("error:No cinemagraph video to post")
-                _add_activity_log(article_id, f"Facebook Cinemagraph Post Failed",
-                                  f"No cinemagraph video URL found.\ncines count={len(cines)}",
-                                  component=component_label)
-                return
-
-            _add_activity_log(article_id, f"Facebook Cinemagraph Uploading Video",
-                              f"Uploading video to Facebook Page…\nvideo_url={video_url}\ncaption length={len(caption)}",
-                              component=component_label)
-
-            _set_status("running:upload")
-            # Download video bytes first, then upload directly to avoid URL access issues
-            vid_resp = _req.get(video_url, timeout=60)
-            if vid_resp.status_code != 200:
-                _set_status("idle")
-                _set_result(f"error:Could not download video from GCS (HTTP {vid_resp.status_code})")
-                _add_activity_log(article_id, f"Facebook Cinemagraph Post Failed",
-                                  f"Could not download video from GCS.\nvideo_url={video_url}\nHTTP {vid_resp.status_code}",
-                                  component=component_label)
-                return
-            api_url = f"{_FB_VIDEO_URL}/{page_id}/videos"
-            resp = _req.post(
-                api_url,
-                data={
-                    "description": caption,
-                    "access_token": access_token,
-                },
-                files={
-                    "source": ("video.mp4", vid_resp.content, "video/mp4"),
-                },
-                timeout=120,
-            )
-            data = resp.json()
-            if "id" not in data:
-                err = data.get("error", {}).get("message", str(data))
-                _set_status("idle")
-                _set_result(f"error:Video upload failed: {err}")
-                _add_activity_log(article_id, f"Facebook Cinemagraph Post Failed",
-                                  f"Video upload failed.\n"
-                                  f"video_url={video_url}\n"
-                                  f"API endpoint={api_url}\n"
-                                  f"HTTP status={resp.status_code}\n"
-                                  f"API response={json.dumps(data, indent=2)[:1500]}",
-                                  component=component_label)
-                return
-
-            post_id = data["id"]
-            permalink = f"https://www.facebook.com/{page_id}/videos/{post_id}"
-            print(f"[FB] Video posted: {permalink}", flush=True)
-
         # ── Save results ───────────────────────────────────────
         _set_kv(keys["media_id"], str(post_id))
         snapshot = {
             "caption": caption,
             "post_type": post_type,
             "posted_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "image_urls": images if post_type == "car" else [],
-            "video_urls": cines if post_type == "cine" else [],
+            "image_urls": images,
+            "video_urls": [],
         }
         _set_kv(keys["snapshot"], json.dumps(snapshot))
         _set_result(f"done:{permalink}")
 
-        slides_info = f"{len(valid_urls)} photos" if post_type == "car" else f"video_url={video_url}"
+        slides_info = f"{len(valid_urls)} photos"
         _add_activity_log(
             article_id,
             f"Facebook {component_label.title()} Post Published",
@@ -6264,7 +6242,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
         _set_result(f"error:{e}")
         _add_activity_log(article_id, f"Facebook Post Failed (Exception)",
                           f"Unhandled exception:\n{str(e)}\n\nTraceback:\n{tb[:2000]}",
-                          component="carousel" if post_type == "car" else "cinemagraph")
+                          component="carousel")
 
 
 def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
