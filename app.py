@@ -6358,7 +6358,11 @@ def admin_article_fb_post_status(article_id):
     result    = get_setting(keys["result"]) or ""
     media_id  = get_setting(keys["media_id"]) or ""
     history   = json.loads(get_setting(keys["history"]) or "[]")
-    return jsonify({"status": status, "result": result, "media_id": media_id, "history": history})
+    snap_raw  = get_setting(keys["snapshot"]) or "{}"
+    snapshot  = json.loads(snap_raw) if snap_raw else {}
+    caption   = snapshot.get("caption", "")
+    return jsonify({"status": status, "result": result, "media_id": media_id,
+                     "history": history, "caption": caption})
 
 
 @app.route("/admin/articles/<int:article_id>/check-facebook-post")

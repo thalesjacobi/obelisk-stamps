@@ -2102,7 +2102,7 @@ function pollFbStatus(mode) {
         .then(function(r) { return r.json(); })
         .then(function(d) {
             if (d.result && d.result.startsWith('done:')) {
-                showFbDone(mode, d.result.slice(5));
+                showFbDone(mode, d.result.slice(5), d.caption);
                 if (d.history && d.history.length) renderFbHistory(mode, d.history);
             } else if (d.result && d.result.startsWith('error:')) {
                 showFbError(mode, d.result.slice(6));
@@ -2142,7 +2142,7 @@ function showFbRunning(mode, statusStr) {
     if (bar) bar.style.width = pct + '%';
 }
 
-function showFbDone(mode, permalink) {
+function showFbDone(mode, permalink, caption) {
     _setFbIconLive(mode);
     var area    = document.getElementById(_fbId(mode, 'status-area'));
     var running = document.getElementById(_fbId(mode, 'status-running'));
@@ -2151,17 +2151,22 @@ function showFbDone(mode, permalink) {
     if (area) area.classList.remove('d-none');
     if (running) running.classList.add('d-none');
     if (progress) progress.classList.add('d-none');
+    /* Populate caption textarea with what was posted and make read-only */
+    var ta = document.getElementById(mode + '-fb-caption');
+    if (caption && ta && !ta.value) { ta.value = caption; ta.dispatchEvent(new Event('input')); }
+    if (ta) { ta.readOnly = true; ta.style.opacity = '0.7';
+    }
+    /* Disable "Copy from Instagram" link */
+    var copyLink = document.querySelector('#' + mode + '-fb-body .ig-section-link');
+    if (copyLink) { copyLink.classList.add('text-muted', 'pe-none'); copyLink.style.opacity = '0.5'; }
+    /* Hide "Generate caption" link */
+    var genLink = document.getElementById(mode + '-fb-generate-link');
+    if (genLink) genLink.classList.add('d-none');
     var postBtn = document.getElementById(_fbId(mode, 'post-btn'));
     _makeViewPostBtn(postBtn, permalink, 'fb');
     var btnRow = document.getElementById(_fbId(mode, 'btn-row'));
     if (btnRow) {
         btnRow.querySelectorAll('.fb-done-btn').forEach(function(b) { b.remove(); });
-        var checkBtn = document.createElement('button');
-        checkBtn.type = 'button';
-        checkBtn.className = 'btn btn-outline-primary btn-sm fb-done-btn';
-        checkBtn.textContent = 'Check if post is still live';
-        checkBtn.onclick = function() { fbCheckPostLive(mode); };
-        btnRow.appendChild(checkBtn);
         var archiveBtn = document.createElement('button');
         archiveBtn.type = 'button';
         archiveBtn.className = 'btn btn-outline-danger btn-sm fb-done-btn';
@@ -2274,7 +2279,7 @@ function checkFbRunning(mode) {
     .then(function(r) { return r.json(); })
     .then(function(d) {
         if (d.result && d.result.startsWith('done:')) {
-            showFbDone(mode, d.result.slice(5));
+            showFbDone(mode, d.result.slice(5), d.caption);
         } else if (d.status && d.status.startsWith('running') && !(d.result && d.result.startsWith('error:'))) {
             showFbRunning(mode, d.status);
             pollFbStatus(mode);
