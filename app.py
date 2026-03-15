@@ -6168,7 +6168,19 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
                     },
                     timeout=60,
                 )
-                data = resp.json()
+                try:
+                    data = resp.json()
+                except Exception:
+                    _set_status("idle")
+                    _set_result(f"error:Photo upload failed (slide {idx+1}): unexpected response (HTTP {resp.status_code})")
+                    _add_activity_log(article_id, f"Facebook Carousel Post Failed",
+                                      f"Photo upload failed at slide {idx+1}/{n} — non-JSON response.\n"
+                                      f"image_url={upload_url}\n"
+                                      f"API endpoint={api_url}\n"
+                                      f"HTTP status={resp.status_code}\n"
+                                      f"Raw response={resp.text[:1500]}",
+                                      component=component_label)
+                    return
                 if "id" not in data:
                     err = data.get("error", {}).get("message", str(data))
                     _set_status("idle")
@@ -6195,7 +6207,19 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
 
             api_url = f"{_IG_GRAPH_URL}/{page_id}/feed"
             resp = _req.post(api_url, data=post_data, timeout=60)
-            data = resp.json()
+            try:
+                data = resp.json()
+            except Exception:
+                _set_status("idle")
+                _set_result(f"error:Feed post failed — unexpected response (HTTP {resp.status_code})")
+                _add_activity_log(article_id, f"Facebook Carousel Post Failed",
+                                  f"Feed post creation failed — non-JSON response.\n"
+                                  f"photo_ids={photo_ids}\n"
+                                  f"API endpoint={api_url}\n"
+                                  f"HTTP status={resp.status_code}\n"
+                                  f"Raw response={resp.text[:1500]}",
+                                  component=component_label)
+                return
             if "id" not in data:
                 err = data.get("error", {}).get("message", str(data))
                 _set_status("idle")
@@ -6297,7 +6321,20 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
             },
             timeout=180,
         )
-        data = resp.json()
+        raw = resp.text or ""
+        try:
+            data = resp.json()
+        except Exception:
+            _set_status("idle")
+            _set_result(f"error:Unexpected response from Facebook (HTTP {resp.status_code})")
+            _add_activity_log(article_id, "Facebook Narrated Video Post Failed",
+                              f"Video upload failed — non-JSON response.\n"
+                              f"video_url={video_url}\n"
+                              f"API endpoint={api_url}\n"
+                              f"HTTP status={resp.status_code}\n"
+                              f"Raw response={raw[:1500]}",
+                              component="narrated")
+            return
 
         if "id" not in data:
             err = data.get("error", {}).get("message", str(data))
