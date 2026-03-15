@@ -6196,13 +6196,24 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
                               component=component_label)
 
             _set_status("running:upload")
+            # Download video bytes first, then upload directly to avoid URL access issues
+            vid_resp = _req.get(video_url, timeout=60)
+            if vid_resp.status_code != 200:
+                _set_status("idle")
+                _set_result(f"error:Could not download video from GCS (HTTP {vid_resp.status_code})")
+                _add_activity_log(article_id, f"Facebook Cinemagraph Post Failed",
+                                  f"Could not download video from GCS.\nvideo_url={video_url}\nHTTP {vid_resp.status_code}",
+                                  component=component_label)
+                return
             api_url = f"{_FB_VIDEO_URL}/{page_id}/videos"
             resp = _req.post(
                 api_url,
                 data={
-                    "file_url": video_url,
                     "description": caption,
                     "access_token": access_token,
+                },
+                files={
+                    "source": ("video.mp4", vid_resp.content, "video/mp4"),
                 },
                 timeout=120,
             )
@@ -6287,13 +6298,24 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
             component="narrated",
         )
 
+        # Download video bytes first, then upload directly
+        vid_resp = _req.get(video_url, timeout=60)
+        if vid_resp.status_code != 200:
+            _set_status("idle")
+            _set_result(f"error:Could not download video from GCS (HTTP {vid_resp.status_code})")
+            _add_activity_log(article_id, "Facebook Narrated Video Post Failed",
+                              f"Could not download video from GCS.\nvideo_url={video_url}\nHTTP {vid_resp.status_code}",
+                              component="narrated")
+            return
         api_url = f"{_FB_VIDEO_URL}/{FB_PAGE_ID}/videos"
         resp = _req.post(
             api_url,
             data={
-                "file_url": video_url,
                 "description": caption,
                 "access_token": FB_PAGE_ACCESS_TOKEN,
+            },
+            files={
+                "source": ("video.mp4", vid_resp.content, "video/mp4"),
             },
             timeout=180,
         )
