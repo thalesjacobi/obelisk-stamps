@@ -2241,14 +2241,26 @@ function fbDeleteAndArchive(mode) {
             if (result) result.innerHTML = '<span class="text-muted small">Post deleted and archived.</span>';
             var postBtn = document.getElementById(_fbId(mode, 'post-btn'));
             _restorePostBtn(postBtn);
+            var textarea = document.getElementById(_fbId(mode, 'caption'));
+            if (textarea) { textarea.readOnly = false; textarea.value = ''; }
+            var copyLink = document.getElementById(_fbId(mode, 'copy-ig'));
+            if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.removeAttribute('aria-disabled'); }
+            var genLink = document.getElementById(_fbId(mode, 'gen-caption'));
+            if (genLink) genLink.classList.remove('d-none');
             var btnRow = document.getElementById(_fbId(mode, 'btn-row'));
             if (btnRow) btnRow.querySelectorAll('.fb-done-btn').forEach(function(b) { b.remove(); });
             if (d.history && d.history.length) renderFbHistory(mode, d.history);
         } else {
-            alert(d.error || 'Delete failed');
+            var area = document.getElementById(_fbId(mode, 'result'));
+            if (area) area.innerHTML = '<div class="alert alert-danger small mt-2">' + (d.error || 'Something went wrong. Please try again.') + '</div>';
+            else alert(d.error || 'Something went wrong. Please try again.');
         }
     })
-    .catch(function() { alert('Delete request failed'); });
+    .catch(function() {
+        var area = document.getElementById(_fbId(mode, 'result'));
+        if (area) area.innerHTML = '<div class="alert alert-danger small mt-2">Network error — could not reach the server. Please try again.</div>';
+        else alert('Network error — could not reach the server.');
+    });
 }
 
 function renderFbHistory(mode, history) {
@@ -2428,10 +2440,16 @@ function nvFbDeleteAndArchive(ts) {
             if (btnRow) btnRow.querySelectorAll('.nv-fb-done-btn').forEach(function(b) { b.remove(); });
             if (d.history && d.history.length) renderNvFbHistory(ts, d.history);
         } else {
-            alert(d.error || 'Delete failed');
+            var area = document.getElementById(_nvFbId(ts, 'result'));
+            if (area) area.innerHTML = '<div class="alert alert-danger small mt-2">' + (d.error || 'Something went wrong. Please try again.') + '</div>';
+            else alert(d.error || 'Something went wrong. Please try again.');
         }
     })
-    .catch(function() { alert('Delete request failed'); });
+    .catch(function() {
+        var area = document.getElementById(_nvFbId(ts, 'result'));
+        if (area) area.innerHTML = '<div class="alert alert-danger small mt-2">Network error — could not reach the server. Please try again.</div>';
+        else alert('Network error — could not reach the server.');
+    });
 }
 
 function renderNvFbHistory(ts, history) {

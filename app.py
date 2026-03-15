@@ -6582,7 +6582,10 @@ def admin_article_delete_facebook_post(article_id):
             msg = resp.text
         # Treat "does not exist" or "Unsupported delete" as already-deleted
         if "does not exist" not in msg and "Unsupported delete" not in msg:
-            return jsonify({"error": msg}), 400
+            component_label = "carousel" if post_type == "car" else "cinemagraph"
+            _add_activity_log(article_id, f"Facebook {component_label.title()} Delete Failed",
+                              f"media_id={media_id}\nHTTP {resp.status_code}: {msg}", component=component_label)
+            return jsonify({"error": f"Could not delete the post from Facebook: {msg}"}), 400
 
     # Archive (same logic as archive-facebook-post)
     snap_raw  = get_setting(keys["snapshot"])
@@ -6590,6 +6593,7 @@ def admin_article_delete_facebook_post(article_id):
     result    = get_setting(keys["result"]) or ""
     permalink = result.replace("done:", "") if result.startswith("done:") else ""
 
+    already_gone = not resp.ok  # Post was already deleted from Facebook
     history = json.loads(get_setting(keys["history"]) or "[]")
     history.append({
         "media_id":    media_id,
@@ -6606,8 +6610,9 @@ def admin_article_delete_facebook_post(article_id):
         execute("DELETE FROM site_settings WHERE `key` = %s", (keys[k],))
 
     component_label = "carousel" if post_type == "car" else "cinemagraph"
+    action = "Post already removed from Facebook, archived locally" if already_gone else f"Post {media_id} deleted from Facebook and archived"
     _add_activity_log(article_id, f"Facebook {component_label.title()} Post Deleted",
-                      f"Post {media_id} deleted from Facebook and archived", component=component_label)
+                      action, component=component_label)
 
     return jsonify({"ok": True, "history": history})
 
@@ -6642,9 +6647,12 @@ def admin_delete_narrated_fb_post(article_id):
             msg = resp.text
         # Treat "does not exist" or "Unsupported delete" as already-deleted
         if "does not exist" not in msg and "Unsupported delete" not in msg:
-            return jsonify({"error": msg}), 400
+            _add_activity_log(article_id, "Facebook Video Delete Failed",
+                              f"media_id={media_id}\nHTTP {resp.status_code}: {msg}", component="narrated")
+            return jsonify({"error": f"Could not delete the post from Facebook: {msg}"}), 400
 
     # Archive (same logic as archive-narrated-fb-post)
+    already_gone = not resp.ok
     result    = get_setting(result_key) or ""
     permalink = result.replace("done:", "") if result.startswith("done:") else ""
 
@@ -6660,8 +6668,9 @@ def admin_delete_narrated_fb_post(article_id):
     for k in (media_key, result_key, status_key):
         execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
 
+    action = "Post already removed from Facebook, archived locally" if already_gone else f"Post {media_id} deleted from Facebook and archived"
     _add_activity_log(article_id, "Facebook Video Post Deleted",
-                      f"Post {media_id} deleted from Facebook and archived", component="narrated")
+                      action, component="narrated")
 
     return jsonify({"ok": True, "history": history})
 
