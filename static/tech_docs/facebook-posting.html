@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Facebook Posting — Technical Documentation</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --sidebar-width: 260px;
+      --code-bg: #f3f4f6;
+      --border-color: #dee2e6;
+      --accent: #0d6efd;
+    }
+
+    body {
+      font-size: 0.94rem;
+      color: #212529;
+      background: #fff;
+    }
+
+    /* ── Layout ── */
+    #wrapper {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    #sidebar {
+      width: var(--sidebar-width);
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--border-color);
+      padding: 1.5rem 1rem;
+      background: #f8f9fa;
+    }
+
+    #main {
+      flex: 1;
+      padding: 2rem 3rem 4rem 3rem;
+      max-width: 920px;
+    }
+
+    /* ── TOC ── */
+    #toc-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6c757d;
+      margin-bottom: 0.75rem;
+    }
+
+    #toc a {
+      display: block;
+      color: #495057;
+      text-decoration: none;
+      font-size: 0.85rem;
+      padding: 0.2rem 0;
+      line-height: 1.4;
+    }
+
+    #toc a:hover { color: var(--accent); }
+
+    #toc .toc-sub {
+      padding-left: 0.9rem;
+      font-size: 0.8rem;
+      color: #6c757d;
+    }
+
+    #toc .toc-sub:hover { color: var(--accent); }
+
+    /* ── Headings ── */
+    h1 { font-size: 1.65rem; font-weight: 700; }
+    h2 { font-size: 1.25rem; font-weight: 700; margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); }
+    h3 { font-size: 1.05rem; font-weight: 600; margin-top: 1.6rem; }
+    h4 { font-size: 0.95rem; font-weight: 600; margin-top: 1.2rem; color: #343a40; }
+
+    /* ── Meta bar ── */
+    .meta-bar {
+      font-size: 0.82rem;
+      color: #6c757d;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .meta-bar span { margin-right: 1.5rem; }
+
+    /* ── Code ── */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid #e2e4e7;
+      border-radius: 6px;
+      padding: 1rem 1.1rem;
+      font-size: 0.82rem;
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.85em;
+    }
+
+    p code, li code, td code {
+      background: var(--code-bg);
+      padding: 0.1em 0.4em;
+      border-radius: 3px;
+      color: #d63384;
+    }
+
+    /* ── Tables ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      margin: 1rem 0 1.5rem;
+    }
+
+    th {
+      background: #f0f1f3;
+      font-weight: 600;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border-color);
+      text-align: left;
+    }
+
+    td {
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border-color);
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td { background: #fafafa; }
+
+    /* ── Callout boxes ── */
+    .callout {
+      border-left: 4px solid;
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1rem 0;
+      font-size: 0.875rem;
+    }
+
+    .callout-info  { border-color: #0dcaf0; background: #f0fbff; }
+    .callout-warn  { border-color: #ffc107; background: #fffbf0; }
+    .callout-key   { border-color: #0d6efd; background: #f0f5ff; }
+
+    /* ── Flow steps ── */
+    ol.flow li {
+      margin-bottom: 0.4rem;
+      padding-left: 0.25rem;
+    }
+
+    /* ── Badge-like labels ── */
+    .method-badge {
+      display: inline-block;
+      padding: 0.15em 0.5em;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-family: monospace;
+      margin-right: 0.35rem;
+    }
+    .get  { background: #d1e7dd; color: #0a3622; }
+    .post { background: #cfe2ff; color: #082a6a; }
+    .del  { background: #f8d7da; color: #58151c; }
+
+    @media print {
+      #sidebar { display: none; }
+      #main { max-width: 100%; padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+<div id="wrapper">
+
+  <!-- ── Sidebar TOC ── -->
+  <nav id="sidebar">
+    <div id="toc-title">Contents</div>
+    <nav id="toc">
+      <a href="#overview">1. Overview</a>
+      <a href="#prerequisites">2. Prerequisites</a>
+      <a class="toc-sub" href="#env-vars">Environment Variables</a>
+      <a class="toc-sub" href="#meta-app-setup">Meta App Setup</a>
+      <a href="#token-management">3. Token Management</a>
+      <a class="toc-sub" href="#token-types">Token Types</a>
+      <a class="toc-sub" href="#token-generate">Generating a Page Token</a>
+      <a class="toc-sub" href="#token-deploy">Deploying the Token</a>
+      <a class="toc-sub" href="#token-debug">Debugging Tokens</a>
+      <a class="toc-sub" href="#token-troubleshooting">Troubleshooting</a>
+      <a href="#database">4. Database Schema</a>
+      <a class="toc-sub" href="#db-keys-car">Carousel / Cinemagraph Keys</a>
+      <a class="toc-sub" href="#db-keys-nv">Narrated Video Keys</a>
+      <a class="toc-sub" href="#db-status-values">Status Values</a>
+      <a class="toc-sub" href="#db-snapshot">Post Snapshot</a>
+      <a href="#backend">5. Backend API Routes</a>
+      <a class="toc-sub" href="#route-post">Post to Facebook</a>
+      <a class="toc-sub" href="#route-status">Check Post Status</a>
+      <a class="toc-sub" href="#route-check-live">Check if Post is Live</a>
+      <a class="toc-sub" href="#route-edit-caption">Edit Caption</a>
+      <a class="toc-sub" href="#route-archive">Archive Post</a>
+      <a class="toc-sub" href="#route-delete">Delete and Archive Post</a>
+      <a class="toc-sub" href="#route-narrated">Narrated Video Routes</a>
+      <a href="#workers">6. Background Workers</a>
+      <a class="toc-sub" href="#worker-car-cine">Carousel / Cinemagraph Worker</a>
+      <a class="toc-sub" href="#worker-narrated">Narrated Video Worker</a>
+      <a href="#frontend">7. Frontend JavaScript</a>
+      <a class="toc-sub" href="#js-car-cine">Carousel / Cinemagraph Functions</a>
+      <a class="toc-sub" href="#js-narrated">Narrated Video Functions</a>
+      <a class="toc-sub" href="#js-progress">Progress Bar Calculation</a>
+      <a href="#flows">8. Logic Flows</a>
+      <a class="toc-sub" href="#flow-post">A. Posting Flow</a>
+      <a class="toc-sub" href="#flow-archive">B. Archive Flow</a>
+      <a class="toc-sub" href="#flow-delete">C. Delete and Archive Flow</a>
+      <a class="toc-sub" href="#flow-restore">D. Page Load Restore</a>
+      <a href="#error-handling">9. Error Handling</a>
+      <a href="#activity-log">10. Activity Logging</a>
+      <a href="#graph-api">11. Facebook Graph API Reference</a>
+    </nav>
+  </nav>
+
+  <!-- ── Main content ── -->
+  <main id="main">
+
+    <h1>Facebook Posting</h1>
+    <div class="meta-bar">
+      <span><strong>Project:</strong> Obelisk Stamps</span>
+      <span><strong>File:</strong> Technical Reference</span>
+      <span><strong>Date:</strong> March 2026</span>
+    </div>
+
+    <!-- ── 1. Overview ── -->
+    <section id="overview">
+      <h2>1. Overview</h2>
+      <p>
+        The Facebook posting module allows publishing content from the admin article editor
+        directly to a Facebook Page. It supports three content types:
+      </p>
+      <ul>
+        <li><strong>Carousel</strong> — Multi-photo post using generated carousel images (up to 10 photos)</li>
+        <li><strong>Cinemagraph</strong> — Single video post using a cinemagraph clip</li>
+        <li><strong>Narrated Video</strong> — Single video post using a generated narrated MP4</li>
+      </ul>
+      <p>
+        Posts are published via the <strong>Facebook Graph API v21.0</strong> in background threads.
+        The frontend polls for status updates and displays a progress bar until completion.
+        Successful posts can be archived or deleted from the admin UI.
+      </p>
+    </section>
+
+    <!-- ── 2. Prerequisites ── -->
+    <section id="prerequisites">
+      <h2>2. Prerequisites</h2>
+
+      <h3 id="env-vars">Environment Variables</h3>
+      <table>
+        <tr><th>Variable</th><th>Description</th><th>Required</th></tr>
+        <tr>
+          <td><code>FB_PAGE_ID</code></td>
+          <td>The numeric ID of the Facebook Page to post to (e.g. <code>911333915406357</code>)</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td><code>FB_PAGE_ACCESS_TOKEN</code></td>
+          <td>A permanent Page Access Token with <code>pages_manage_posts</code> permission</td>
+          <td>Yes</td>
+        </tr>
+      </table>
+      <p>
+        Both variables must be set for the Facebook sections to appear in the article editor.
+        They are stored in <strong>GitHub Secrets</strong> and passed to Cloud Run at deploy time
+        via the GitHub Actions workflow (<code>.github/workflows/main.yml</code>).
+      </p>
+
+      <h3 id="meta-app-setup">Meta App Setup</h3>
+      <ol>
+        <li>Create a Meta App at <a href="https://developers.facebook.com" target="_blank">developers.facebook.com</a></li>
+        <li>Add the <strong>Facebook Login for Business</strong> use case</li>
+        <li>Request these permissions: <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>pages_manage_posts</code></li>
+        <li><strong>Publish the app</strong> (Settings &rarr; Publish). In Development mode, tokens expire after a few hours even if generated as "long-lived"</li>
+      </ol>
+      <div class="callout callout-warn">
+        <strong>Important:</strong> The Meta app must be in <strong>Live</strong> (Published) mode.
+        Development mode tokens expire rapidly and will cause posting failures.
+      </div>
+    </section>
+
+    <!-- ── 3. Token Management ── -->
+    <section id="token-management">
+      <h2>3. Token Management</h2>
+
+      <h3 id="token-types">Token Types</h3>
+      <table>
+        <tr><th>Type</th><th>Lifespan</th><th>Use</th></tr>
+        <tr>
+          <td>Short-lived User Token</td>
+          <td>~1&ndash;2 hours</td>
+          <td>Generated by Graph API Explorer; used only to obtain a long-lived token</td>
+        </tr>
+        <tr>
+          <td>Long-lived User Token</td>
+          <td>~60 days</td>
+          <td>Intermediate step; used only to obtain a permanent Page Token</td>
+        </tr>
+        <tr>
+          <td>Page Access Token</td>
+          <td><strong>Never expires</strong> (when derived from a long-lived user token on a Published app)</td>
+          <td>This is what the app uses as <code>FB_PAGE_ACCESS_TOKEN</code></td>
+        </tr>
+      </table>
+
+      <h3 id="token-generate">Generating a Permanent Page Token</h3>
+      <p>Follow these three steps in the <a href="https://developers.facebook.com/tools/explorer/" target="_blank">Graph API Explorer</a>:</p>
+
+      <h4>Step 1: Get a fresh User Token</h4>
+      <ol>
+        <li>Open the Graph API Explorer</li>
+        <li>Select your app (<strong>Obelisk Stamps</strong>) in the top-right dropdown</li>
+        <li>Ensure permissions include: <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>pages_manage_posts</code></li>
+        <li>Click <strong>"Generate Access Token"</strong> (green button)</li>
+        <li>Authorise when prompted &mdash; you now have a short-lived User Token in the Access Token field</li>
+      </ol>
+
+      <h4>Step 2: Exchange for a Long-lived User Token</h4>
+      <ol>
+        <li>In the URL bar, enter:
+<pre>/oauth/access_token?grant_type=fb_exchange_token
+  &amp;client_id=<strong>YOUR_APP_ID</strong>
+  &amp;client_secret=<strong>YOUR_APP_SECRET</strong>
+  &amp;fb_exchange_token=<strong>CURRENT_USER_TOKEN</strong></pre>
+        </li>
+        <li>Replace <code>YOUR_APP_ID</code> with your App ID (found in App Settings &rarr; Basic)</li>
+        <li>Replace <code>YOUR_APP_SECRET</code> with your App Secret (found in App Settings &rarr; Basic, click "Show")</li>
+        <li>Replace <code>CURRENT_USER_TOKEN</code> with the token currently in the Access Token field</li>
+        <li>Click <strong>Submit</strong></li>
+        <li>The response will contain an <code>access_token</code> with <code>expires_in: ~5184000</code> (~60 days)</li>
+      </ol>
+
+      <h4>Step 3: Get the Permanent Page Token</h4>
+      <ol>
+        <li>Copy the long-lived user token from the Step 2 response</li>
+        <li>Paste it into the <strong>Access Token field</strong> on the right side panel (replacing the old token)</li>
+        <li>In the URL bar, enter:
+<pre>/<strong>YOUR_PAGE_ID</strong>?fields=access_token</pre>
+          <p>(e.g. <code>/911333915406357?fields=access_token</code>)</p>
+        </li>
+        <li>Click <strong>Submit</strong></li>
+        <li>The response contains the <strong>permanent Page Access Token</strong></li>
+      </ol>
+      <div class="callout callout-info">
+        <strong>Note:</strong> The <code>?fields=access_token</code> in the URL is the literal text &mdash;
+        it tells the API "return the access_token field for this Page". It is <em>not</em> where you paste your token.
+        Your token goes in the <strong>Access Token field</strong> on the right panel.
+      </div>
+
+      <h3 id="token-deploy">Deploying the Token</h3>
+      <ol>
+        <li>Copy the permanent Page Token from Step 3</li>
+        <li>Update it in <strong>GitHub Secrets</strong>: Repository &rarr; Settings &rarr; Secrets and variables &rarr; Actions &rarr; <code>FB_PAGE_ACCESS_TOKEN</code></li>
+        <li>Trigger a deploy by pushing a commit (the GitHub Actions workflow passes secrets to Cloud Run via <code>--set-env-vars</code>)</li>
+        <li>Verify: after deploy, open an article editor and check that the Facebook section loads without errors</li>
+      </ol>
+
+      <h3 id="token-debug">Debugging Tokens</h3>
+      <p>
+        Use the <a href="https://developers.facebook.com/tools/debug/accesstoken/" target="_blank">Access Token Debugger</a>
+        to inspect any token. Paste the token and check:
+      </p>
+      <ul>
+        <li><strong>Type:</strong> should say "Page"</li>
+        <li><strong>Expires:</strong> should say "Never" for a permanent page token</li>
+        <li><strong>Valid:</strong> should be "True"</li>
+        <li><strong>Scopes:</strong> should include <code>pages_manage_posts</code></li>
+      </ul>
+
+      <h3 id="token-troubleshooting">Troubleshooting</h3>
+      <table>
+        <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+        <tr>
+          <td>"Session has expired" error</td>
+          <td>Token was generated while app was in Development mode, or a User Token was used instead of a Page Token</td>
+          <td>Publish the app, then regenerate the token following all three steps above</td>
+        </tr>
+        <tr>
+          <td>Token expires after ~2 hours</td>
+          <td>Short-lived User Token used directly as <code>FB_PAGE_ACCESS_TOKEN</code></td>
+          <td>Complete all three steps &mdash; you need the Page Token from Step 3, not the User Token</td>
+        </tr>
+        <tr>
+          <td>Token expires after ~60 days</td>
+          <td>Long-lived User Token used instead of Page Token</td>
+          <td>Complete Step 3 to convert to a permanent Page Token</td>
+        </tr>
+        <tr>
+          <td>"Error validating access token" after deploy</td>
+          <td>Cloud Run still running old container with cached env vars</td>
+          <td>Push a new commit to trigger a fresh deploy, or manually deploy a new revision in Cloud Run console</td>
+        </tr>
+        <tr>
+          <td>Facebook sections not visible in editor</td>
+          <td><code>FB_PAGE_ID</code> or <code>FB_PAGE_ACCESS_TOKEN</code> not set in environment</td>
+          <td>Add both to GitHub Secrets and redeploy</td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- ── 4. Database Schema ── -->
+    <section id="database">
+      <h2>4. Database Schema</h2>
+      <p>
+        Facebook posting state is stored in the <code>site_settings</code> table using key-value pairs.
+        Keys are generated by the <code>_fb_keys()</code> helper function.
+      </p>
+
+      <h3 id="db-keys-car">Carousel / Cinemagraph Keys</h3>
+      <p>Generated by <code>_fb_keys(post_type, article_id)</code>:</p>
+      <table>
+        <tr><th>Key Pattern</th><th>Type: <code>car</code></th><th>Type: <code>cine</code></th><th>Description</th></tr>
+        <tr><td>status</td><td><code>fb_car_post_status_{id}</code></td><td><code>fb_post_status_{id}</code></td><td>Current worker status</td></tr>
+        <tr><td>result</td><td><code>fb_car_post_result_{id}</code></td><td><code>fb_post_result_{id}</code></td><td>Final result (done/error)</td></tr>
+        <tr><td>media_id</td><td><code>fb_car_post_media_id_{id}</code></td><td><code>fb_post_media_id_{id}</code></td><td>Facebook post ID</td></tr>
+        <tr><td>history</td><td><code>fb_car_post_history_{id}</code></td><td><code>fb_post_history_{id}</code></td><td>JSON array of archived posts</td></tr>
+        <tr><td>snapshot</td><td><code>fb_car_post_snapshot_{id}</code></td><td><code>fb_post_snapshot_{id}</code></td><td>JSON snapshot of posted content</td></tr>
+      </table>
+
+      <h3 id="db-keys-nv">Narrated Video Keys</h3>
+      <table>
+        <tr><th>Key Pattern</th><th>Description</th></tr>
+        <tr><td><code>narrated_fb_status_{article_id}_{run_ts}</code></td><td>Current worker status</td></tr>
+        <tr><td><code>narrated_fb_result_{article_id}_{run_ts}</code></td><td>Final result (done/error)</td></tr>
+        <tr><td><code>narrated_fb_media_id_{article_id}_{run_ts}</code></td><td>Facebook video ID</td></tr>
+        <tr><td><code>narrated_fb_history_{article_id}_{run_ts}</code></td><td>JSON array of archived posts</td></tr>
+      </table>
+
+      <h3 id="db-status-values">Status Values</h3>
+      <table>
+        <tr><th>Value</th><th>Meaning</th></tr>
+        <tr><td><code>idle</code></td><td>No post in progress</td></tr>
+        <tr><td><code>running:0</code></td><td>Worker started, preparing</td></tr>
+        <tr><td><code>running:upload:N/M</code></td><td>Uploading carousel photo N of M</td></tr>
+        <tr><td><code>running:upload</code></td><td>Uploading video</td></tr>
+        <tr><td><code>running:publishing</code></td><td>Creating the feed post</td></tr>
+      </table>
+      <p>Result values: <code>done:{permalink}</code> on success, <code>error:{message}</code> on failure.</p>
+
+      <h3 id="db-snapshot">Post Snapshot</h3>
+      <p>Stored as JSON when a post succeeds:</p>
+<pre>{
+  "caption": "The posted caption text...",
+  "post_type": "car",          // or "cine"
+  "posted_at": "2026-03-15T14:25:00Z",
+  "image_urls": ["url1", ...], // carousel only
+  "video_urls": ["url1", ...]  // cinemagraph only
+}</pre>
+    </section>
+
+    <!-- ── 5. Backend API Routes ── -->
+    <section id="backend">
+      <h2>5. Backend API Routes</h2>
+      <p>All routes require <code>@login_required</code> and <code>@admin_required</code>.</p>
+
+      <h3 id="route-post">Post to Facebook</h3>
+      <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/post-to-facebook</code></p>
+      <p>Spawns a background worker to upload and publish content.</p>
+      <table>
+        <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+        <tr><td><code>caption</code></td><td>string</td><td>Post caption (max 2200 chars)</td></tr>
+        <tr><td><code>type</code></td><td>string</td><td><code>"car"</code> (carousel) or <code>"cine"</code> (cinemagraph)</td></tr>
+      </table>
+      <p><strong>Response:</strong> <code>{"ok": true}</code> or <code>{"error": "..."}</code></p>
+
+      <h3 id="route-status">Check Post Status</h3>
+      <p><span class="method-badge get">GET</span> <code>/admin/articles/&lt;id&gt;/fb-post-status?type={car|cine}</code></p>
+      <p>Returns current posting status. Polled by frontend every 5 seconds.</p>
+<pre>// Response
+{
+  "status": "running:upload:3/10",
+  "result": "",
+  "media_id": "",
+  "history": [...],
+  "caption": ""      // populated from snapshot when post is done
+}</pre>
+
+      <h3 id="route-check-live">Check if Post is Live</h3>
+      <p><span class="method-badge get">GET</span> <code>/admin/articles/&lt;id&gt;/check-facebook-post?type={car|cine}</code></p>
+      <p>Queries the Facebook Graph API to verify the post still exists.</p>
+<pre>// Response
+{
+  "live": true,
+  "permalink": "https://www.facebook.com/...",
+  "reason": ""       // populated when live=false
+}</pre>
+
+      <h3 id="route-edit-caption">Edit Caption</h3>
+      <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/edit-facebook-caption</code></p>
+      <p>Updates the caption of a published post via the Graph API.</p>
+      <table>
+        <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+        <tr><td><code>caption</code></td><td>string</td><td>New caption (max 2200 chars)</td></tr>
+        <tr><td><code>type</code></td><td>string</td><td><code>"car"</code> or <code>"cine"</code></td></tr>
+      </table>
+
+      <h3 id="route-archive">Archive Post</h3>
+      <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/archive-facebook-post</code></p>
+      <p>Archives the post locally (moves to history). Does <strong>not</strong> delete from Facebook.</p>
+      <table>
+        <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+        <tr><td><code>type</code></td><td>string</td><td><code>"car"</code> or <code>"cine"</code></td></tr>
+      </table>
+
+      <h3 id="route-delete">Delete and Archive Post</h3>
+      <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/delete-facebook-post</code></p>
+      <p>Deletes the post from Facebook via the Graph API, then archives locally.</p>
+      <table>
+        <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+        <tr><td><code>type</code></td><td>string</td><td><code>"car"</code> or <code>"cine"</code></td></tr>
+      </table>
+
+      <h3 id="route-narrated">Narrated Video Routes</h3>
+      <p>Narrated video Facebook posting uses a separate set of routes with a <code>run_ts</code> parameter:</p>
+      <table>
+        <tr><th>Method</th><th>Route</th><th>Extra Params</th></tr>
+        <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/post-narrated-to-facebook</code></td><td><code>video_url</code>, <code>caption</code>, <code>run_ts</code></td></tr>
+        <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/narrated-fb-status?ts={ts}</code></td><td>&mdash;</td></tr>
+        <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/check-narrated-fb-post?ts={ts}</code></td><td>&mdash;</td></tr>
+        <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/archive-narrated-fb-post</code></td><td><code>run_ts</code></td></tr>
+        <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/delete-narrated-fb-post</code></td><td><code>run_ts</code></td></tr>
+      </table>
+    </section>
+
+    <!-- ── 6. Background Workers ── -->
+    <section id="workers">
+      <h2>6. Background Workers</h2>
+
+      <h3 id="worker-car-cine">Carousel / Cinemagraph Worker</h3>
+      <p><code>_post_to_facebook_worker(article_id, caption, post_type="cine")</code></p>
+      <p>Runs in a background thread spawned by the post route.</p>
+
+      <h4>Carousel Flow (<code>post_type="car"</code>)</h4>
+      <ol class="flow">
+        <li>Set status to <code>running:0</code></li>
+        <li>Fetch article data (title, carousel_images, carousel_punchlines)</li>
+        <li>For each image (up to 10): upload to <code>/{page_id}/photos</code> with <code>published=false</code></li>
+        <li>Update status to <code>running:upload:N/M</code> after each upload</li>
+        <li>Set status to <code>running:publishing</code></li>
+        <li>Create feed post via <code>/{page_id}/feed</code> with all photo IDs as <code>attached_media</code></li>
+        <li>Save post ID, permalink, and snapshot</li>
+        <li>Set result to <code>done:{permalink}</code></li>
+      </ol>
+
+      <h4>Cinemagraph Flow (<code>post_type="cine"</code>)</h4>
+      <ol class="flow">
+        <li>Set status to <code>running:0</code></li>
+        <li>Fetch article data</li>
+        <li>Set status to <code>running:upload</code></li>
+        <li>Upload video to <code>/{page_id}/videos</code> with <code>file_url</code> and <code>description</code></li>
+        <li>Save post ID and permalink</li>
+        <li>Set result to <code>done:{permalink}</code></li>
+      </ol>
+
+      <h3 id="worker-narrated">Narrated Video Worker</h3>
+      <p><code>_post_narrated_fb_worker(article_id, video_url, caption, run_ts)</code></p>
+      <ol class="flow">
+        <li>Set status to <code>running:upload</code></li>
+        <li>Upload video to <code>/{page_id}/videos</code> with <code>file_url</code> and <code>description</code></li>
+        <li>Save media ID</li>
+        <li>Set result to <code>done:{permalink}</code></li>
+      </ol>
+
+      <div class="callout callout-key">
+        <strong>Error handling:</strong> All workers set status to <code>idle</code> and result to
+        <code>error:{message}</code> on failure. Full tracebacks are logged to the activity log.
+      </div>
+    </section>
+
+    <!-- ── 7. Frontend JavaScript ── -->
+    <section id="frontend">
+      <h2>7. Frontend JavaScript</h2>
+
+      <h3 id="js-car-cine">Carousel / Cinemagraph Functions</h3>
+      <table>
+        <tr><th>Function</th><th>Purpose</th></tr>
+        <tr><td><code>_fbId(mode, suffix)</code></td><td>Returns element ID, e.g. <code>"cine-fb-status-area"</code></td></tr>
+        <tr><td><code>toggleFbSection(mode)</code></td><td>Collapse/expand the FB section body</td></tr>
+        <tr><td><code>postToFacebook(mode)</code></td><td>POST to backend, show progress, start polling</td></tr>
+        <tr><td><code>pollFbStatus(mode)</code></td><td>Poll <code>/fb-post-status</code> every 5s</td></tr>
+        <tr><td><code>showFbRunning(mode, status)</code></td><td>Update progress bar and status text</td></tr>
+        <tr><td><code>showFbDone(mode, permalink, caption)</code></td><td>Show success state, populate caption, disable editing</td></tr>
+        <tr><td><code>showFbError(mode, msg)</code></td><td>Display error alert, re-enable post button</td></tr>
+        <tr><td><code>fbDeleteAndArchive(mode)</code></td><td>Delete from Facebook and archive locally</td></tr>
+        <tr><td><code>renderFbHistory(mode, history)</code></td><td>Render archived posts list</td></tr>
+        <tr><td><code>checkFbRunning(mode)</code></td><td>Page load: restore UI state from DB</td></tr>
+        <tr><td><code>copyIgCaptionToFb(mode)</code></td><td>Copy the Instagram caption into the FB textarea</td></tr>
+        <tr><td><code>_setFbIconLive(mode)</code></td><td>Add coloured icon to section header when post is live</td></tr>
+        <tr><td><code>_clearFbIconLive(mode)</code></td><td>Remove coloured icon from section header</td></tr>
+      </table>
+
+      <h3 id="js-narrated">Narrated Video Functions</h3>
+      <table>
+        <tr><th>Function</th><th>Purpose</th></tr>
+        <tr><td><code>_nvFbId(ts, suffix)</code></td><td>Returns element ID, e.g. <code>"nv-fb-123456-status-area"</code></td></tr>
+        <tr><td><code>toggleNvFbSection(ts)</code></td><td>Collapse/expand NV FB section body</td></tr>
+        <tr><td><code>postNarratedToFb(ts, videoUrl)</code></td><td>POST to backend, show progress, start polling</td></tr>
+        <tr><td><code>pollNvFbStatus(ts)</code></td><td>Poll <code>/narrated-fb-status</code> every 5s</td></tr>
+        <tr><td><code>showNvFbRunning(ts, status)</code></td><td>Update progress bar</td></tr>
+        <tr><td><code>showNvFbDone(ts, permalink)</code></td><td>Show success state with view/archive buttons</td></tr>
+        <tr><td><code>showNvFbError(ts, msg)</code></td><td>Display error alert</td></tr>
+        <tr><td><code>nvFbDeleteAndArchive(ts)</code></td><td>Delete from Facebook and archive locally</td></tr>
+        <tr><td><code>restoreNvFbState(ts)</code></td><td>Page load: restore UI state for this run</td></tr>
+        <tr><td><code>_setNvFbIconLive(ts)</code></td><td>Add blue Facebook icon to run header</td></tr>
+        <tr><td><code>_clearNvFbIconLive(ts)</code></td><td>Remove blue Facebook icon from run header</td></tr>
+      </table>
+
+      <h3 id="js-progress">Progress Bar Calculation</h3>
+      <table>
+        <tr><th>Status</th><th>Progress %</th></tr>
+        <tr><td><code>running:0</code></td><td>10%</td></tr>
+        <tr><td><code>running:upload:1/N</code></td><td>20%</td></tr>
+        <tr><td><code>running:upload:K/N</code></td><td>20 + (K/N &times; 60)%</td></tr>
+        <tr><td><code>running:upload</code></td><td>50%</td></tr>
+        <tr><td><code>running:publishing</code></td><td>80%</td></tr>
+        <tr><td>Done</td><td>100%</td></tr>
+      </table>
+    </section>
+
+    <!-- ── 8. Logic Flows ── -->
+    <section id="flows">
+      <h2>8. Logic Flows</h2>
+
+      <h3 id="flow-post">A. Posting Flow</h3>
+      <ol class="flow">
+        <li>User enters caption in textarea (max 2200 characters)</li>
+        <li>User clicks <strong>"Post to Facebook"</strong> button</li>
+        <li>Frontend disables button, shows progress bar</li>
+        <li>POST to backend &rarr; backend spawns background worker thread</li>
+        <li>Frontend polls <code>/fb-post-status</code> every 5 seconds</li>
+        <li>Progress bar updates based on status string</li>
+        <li>On <code>done:{permalink}</code>: show success UI, populate caption as read-only, disable "Copy from Instagram" link</li>
+        <li>On <code>error:{message}</code>: show error alert, re-enable post button</li>
+      </ol>
+
+      <h3 id="flow-archive">B. Archive Flow</h3>
+      <ol class="flow">
+        <li>User clicks <strong>"Archive"</strong></li>
+        <li>POST to <code>/archive-facebook-post</code></li>
+        <li>Backend moves snapshot to history array in <code>site_settings</code>, clears status/result/media_id</li>
+        <li>Frontend resets UI to initial state, renders updated history</li>
+      </ol>
+
+      <h3 id="flow-delete">C. Delete and Archive Flow</h3>
+      <ol class="flow">
+        <li>User clicks <strong>"Delete and archive post"</strong></li>
+        <li>Browser confirmation dialog shown</li>
+        <li>POST to <code>/delete-facebook-post</code></li>
+        <li>Backend sends DELETE to Facebook Graph API (<code>/{media_id}</code>)</li>
+        <li>Backend moves snapshot to history, clears current state</li>
+        <li>Frontend resets UI, renders updated history</li>
+      </ol>
+
+      <h3 id="flow-restore">D. Page Load Restore</h3>
+      <ol class="flow">
+        <li><code>checkFbRunning(mode)</code> called on page load</li>
+        <li>Fetches <code>/fb-post-status</code></li>
+        <li>If result is <code>done:{permalink}</code>: call <code>showFbDone()</code></li>
+        <li>If status is <code>running:*</code> and no error result: resume polling</li>
+        <li>If status is <code>running:*</code> but result is <code>error:*</code>: skip (stale state, don't show error on load)</li>
+        <li>Render history if present</li>
+      </ol>
+      <div class="callout callout-info">
+        <strong>Stale error handling:</strong> If the worker crashed and left status as "running" but the result
+        is an error, the frontend does <strong>not</strong> show the error on page load. Errors are only displayed
+        when the user actively triggers a posting action.
+      </div>
+    </section>
+
+    <!-- ── 9. Error Handling ── -->
+    <section id="error-handling">
+      <h2>9. Error Handling</h2>
+
+      <h4>Backend Workers</h4>
+      <ul>
+        <li>All error paths set status to <code>idle</code> and result to <code>error:{message}</code></li>
+        <li>Full exception tracebacks are logged to the activity log</li>
+        <li>HTTP timeouts: 60s for photo uploads, 120&ndash;180s for video uploads, 15s for status checks</li>
+      </ul>
+
+      <h4>API Routes</h4>
+      <ul>
+        <li>Return <code>400</code> if FB credentials not configured</li>
+        <li>Return <code>400</code> for validation errors (empty caption, missing parameters)</li>
+        <li>Return <code>500</code> on unexpected exceptions</li>
+      </ul>
+
+      <h4>Frontend</h4>
+      <ul>
+        <li>Polling <code>.catch()</code> handlers retry silently (don't fail the entire flow)</li>
+        <li>Error messages displayed in Bootstrap <code>alert-danger</code> divs</li>
+        <li>Post button re-enabled on error so the user can retry</li>
+        <li>Stale errors from previous sessions are not shown on page load</li>
+      </ul>
+    </section>
+
+    <!-- ── 10. Activity Logging ── -->
+    <section id="activity-log">
+      <h2>10. Activity Logging</h2>
+      <p>All major actions are recorded in the activity log via <code>_add_activity_log()</code>:</p>
+      <table>
+        <tr><th>Event</th><th>Details Logged</th></tr>
+        <tr><td>Post started</td><td>Caption, post type, content URLs</td></tr>
+        <tr><td>Upload progress</td><td>Photo/video index, response data</td></tr>
+        <tr><td>Post published</td><td>Permalink, post ID</td></tr>
+        <tr><td>Post failed</td><td>Error message, full traceback, API response</td></tr>
+        <tr><td>Caption edited</td><td>New caption text</td></tr>
+        <tr><td>Post archived</td><td>Post ID, permalink</td></tr>
+        <tr><td>Post deleted</td><td>Post ID, API response</td></tr>
+      </table>
+    </section>
+
+    <!-- ── 11. Graph API Reference ── -->
+    <section id="graph-api">
+      <h2>11. Facebook Graph API Reference</h2>
+      <p>Base URL: <code>https://graph.facebook.com/v21.0</code></p>
+
+      <h3>Endpoints Used</h3>
+      <table>
+        <tr><th>Action</th><th>Method</th><th>Endpoint</th><th>Key Parameters</th></tr>
+        <tr>
+          <td>Upload photo (unpublished)</td>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/{page_id}/photos</code></td>
+          <td><code>url</code>, <code>published=false</code>, <code>access_token</code></td>
+        </tr>
+        <tr>
+          <td>Create carousel post</td>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/{page_id}/feed</code></td>
+          <td><code>message</code>, <code>attached_media[N]</code>, <code>access_token</code></td>
+        </tr>
+        <tr>
+          <td>Upload video</td>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/{page_id}/videos</code></td>
+          <td><code>file_url</code>, <code>description</code>, <code>access_token</code></td>
+        </tr>
+        <tr>
+          <td>Update caption</td>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/{media_id}</code></td>
+          <td><code>message</code>, <code>access_token</code></td>
+        </tr>
+        <tr>
+          <td>Check post exists</td>
+          <td><span class="method-badge get">GET</span></td>
+          <td><code>/{media_id}?fields=id</code></td>
+          <td><code>access_token</code></td>
+        </tr>
+        <tr>
+          <td>Delete post</td>
+          <td><span class="method-badge post">POST</span></td>
+          <td><code>/{media_id}</code> (DELETE method)</td>
+          <td><code>access_token</code></td>
+        </tr>
+      </table>
+
+      <h3>Required Permissions</h3>
+      <ul>
+        <li><code>pages_show_list</code> — List pages the user manages</li>
+        <li><code>pages_read_engagement</code> — Read page content and engagement</li>
+        <li><code>pages_manage_posts</code> — Create, edit, and delete posts on the page</li>
+      </ul>
+
+      <h3>Useful Tools</h3>
+      <ul>
+        <li><a href="https://developers.facebook.com/tools/explorer/" target="_blank">Graph API Explorer</a> — Test API calls and generate tokens</li>
+        <li><a href="https://developers.facebook.com/tools/debug/accesstoken/" target="_blank">Access Token Debugger</a> — Inspect token type, expiry, and permissions</li>
+      </ul>
+    </section>
+
+  </main>
+</div>
+</body>
+</html>
