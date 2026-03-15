@@ -3360,7 +3360,30 @@ def admin_article_video_data(article_id):
         "cinemagraph_result":     cinemagraph_result or None,
         "has_cinemagraph_log":    bool(cinemagraph_log_raw and cinemagraph_log_raw.strip()),
         "has_narrated_log":       bool(narrated_log_raw and narrated_log_raw.strip()),
+        "hidden_narrated_runs":   json.loads(get_setting(f"narrated_hidden_runs_{article_id}") or "[]"),
     })
+
+
+@app.route("/admin/articles/<int:article_id>/toggle-narrated-run-visibility", methods=["POST"])
+@login_required
+@admin_required
+def admin_toggle_narrated_run_visibility(article_id):
+    data = request.get_json() or {}
+    ts = data.get("ts")
+    hidden = data.get("hidden", True)
+    if not ts:
+        return jsonify({"error": "Missing ts"}), 400
+    key = f"narrated_hidden_runs_{article_id}"
+    current = json.loads(get_setting(key) or "[]")
+    ts = int(ts)
+    if hidden and ts not in current:
+        current.append(ts)
+    elif not hidden and ts in current:
+        current.remove(ts)
+    val = json.dumps(current)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (key, val, val))
+    return jsonify({"ok": True})
 
 
 @app.route("/admin/articles/<int:article_id>/component-log/<component>")
@@ -6624,6 +6647,8 @@ def admin_article_delete_facebook_post(article_id):
             "caption":     snapshot.get("caption", ""),
             "post_type":   snapshot.get("post_type", post_type),
             "posted_at":   snapshot.get("posted_at", ""),
+            "image_urls":  snapshot.get("image_urls", []),
+            "video_urls":  snapshot.get("video_urls", []),
         })
         hist_val = json.dumps(history)
         execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "

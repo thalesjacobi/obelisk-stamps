@@ -25,6 +25,10 @@
     .nv-run-yt-live { stroke: #ff0000 !important; }
     .nv-run-fb-live { stroke: #1877F2 !important; }
 
+    /* Narrated run hide/show eye icon */
+    .nv-eye-btn { opacity: 0; transition: opacity 0.15s; cursor: pointer; flex-shrink: 0; }
+    .accordion-item:hover .nv-eye-btn { opacity: 1; }
+
     /* Instagram section shared styles */
     .ig-section-link { text-decoration: none; }
     .ig-section-link:hover { text-decoration: underline; }
@@ -1012,6 +1016,16 @@
             </div>
             <div id="narrated-runs-wrap" class="d-none">
                 <div class="accordion accordion-flush" id="narrated-runs-accordion"></div>
+            </div>
+            <div id="narrated-past-wrap" class="d-none mt-3">
+                <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1"
+                   data-bs-toggle="collapse" href="#narrated-past-list" role="button" aria-expanded="false">
+                    <span>Past Videos</span>
+                    <span class="text-muted" style="font-size:.7rem;">&#9660;</span>
+                </a>
+                <div class="collapse" id="narrated-past-list">
+                    <div class="accordion accordion-flush" id="narrated-past-accordion"></div>
+                </div>
             </div>
             <div id="narrated-empty" class="text-muted small text-center py-3">
                 Generate a carousel first, then click <strong>Generate Narrated Video</strong>.
@@ -2267,20 +2281,19 @@ function renderFbHistory(mode, history) {
     var list = document.getElementById(_fbId(mode, 'history-list'));
     if (!wrap || !list || !history || !history.length) return;
     list.innerHTML = '';
-    history.forEach(function(entry) {
-        var div = document.createElement('div');
-        div.className = 'mb-1 small text-muted';
+    history.slice().reverse().forEach(function(entry) {
+        var row = document.createElement('div');
+        row.className = 'mb-1 small text-muted';
+        row.style.cursor = 'pointer';
+        row.title = 'Click to view archived post';
         var cap = (entry.caption || '').slice(0, 20);
         var label = cap ? cap + '...' : 'Post archived';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
-        div.textContent = '\u2022 ' + label + (date ? ' \u2014 ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
-        list.appendChild(div);
+        row.textContent = '\u2022 ' + label + (date ? ' \u2014 ' + date : '');
+        row.addEventListener('mouseenter', function() { row.style.color = '#0d6efd'; });
+        row.addEventListener('mouseleave', function() { row.style.color = ''; });
+        (function(e) { row.onclick = function() { showIgArchiveModal(e); }; })(entry);
+        list.appendChild(row);
     });
     wrap.classList.remove('d-none');
 }
@@ -2453,18 +2466,17 @@ function renderNvFbHistory(ts, history) {
     var list = document.getElementById(_nvFbId(ts, 'history-list'));
     if (!wrap || !list || !history || !history.length) return;
     list.innerHTML = '';
-    history.forEach(function(entry) {
-        var div = document.createElement('div');
-        div.className = 'mb-1 small text-muted';
+    history.slice().reverse().forEach(function(entry) {
+        var row = document.createElement('div');
+        row.className = 'mb-1 small text-muted';
+        row.style.cursor = 'pointer';
+        row.title = 'Click to view archived post';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
-        div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
-        list.appendChild(div);
+        row.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
+        row.addEventListener('mouseenter', function() { row.style.color = '#0d6efd'; });
+        row.addEventListener('mouseleave', function() { row.style.color = ''; });
+        (function(e) { row.onclick = function() { showIgArchiveModal(e); }; })(entry);
+        list.appendChild(row);
     });
     wrap.classList.remove('d-none');
 }
@@ -3455,11 +3467,18 @@ function buildRunItem(run, expandIt) {
     const item = document.createElement('div');
     item.className = 'accordion-item';
     item.id = 'narrated-run-item-' + run.ts;
+    const eyeIcon = `<svg class="nv-eye-btn me-2" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+         fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+         title="Move to Past Videos" onclick="event.stopPropagation();hideNarratedRun(${run.ts})">
+         <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+         <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+         <line x1="1" y1="1" x2="23" y2="23"/>
+    </svg>`;
     item.innerHTML = `
         <h2 class="accordion-header">
             <button class="accordion-button ${collapsed} py-2" type="button"
                     data-bs-toggle="collapse" data-bs-target="#${collapseId}">
-                ${fmtBadge}${vBadge}${sBadge}${cineBadge}
+                ${eyeIcon}${fmtBadge}${vBadge}${sBadge}${cineBadge}
                 <span class="small text-muted ms-1">${run.ts_label}</span>
                 <span style="flex:1"></span>
                 <span class="d-flex align-items-center gap-2 me-3" onclick="event.stopPropagation()" style="pointer-events:none">
@@ -4085,15 +4104,99 @@ function pollYouTube(runTs, btn) {
     }, 5000);
 }
 
+/* ── Hide / restore narrated runs ─────────────────────────────── */
+var _hiddenRunTs = new Set();
+
+function hideNarratedRun(ts) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/toggle-narrated-run-visibility', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ts: ts, hidden: true})
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (!d.ok) return;
+        _hiddenRunTs.add(ts);
+        var item = document.getElementById('narrated-run-item-' + ts);
+        if (!item) return;
+        // Swap eye icon to restore (open eye)
+        var eye = item.querySelector('.nv-eye-btn');
+        if (eye) {
+            eye.setAttribute('title', 'Restore to main list');
+            eye.setAttribute('onclick', 'event.stopPropagation();restoreNarratedRun(' + ts + ')');
+            eye.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+        }
+        // Collapse the run item and disconnect from main accordion
+        var collapseEl = item.querySelector('.accordion-collapse');
+        if (collapseEl) {
+            collapseEl.classList.remove('show');
+            collapseEl.removeAttribute('data-bs-parent');
+        }
+        var btn = item.querySelector('.accordion-button');
+        if (btn) btn.classList.add('collapsed');
+        var pastAcc = document.getElementById('narrated-past-accordion');
+        pastAcc.appendChild(item);
+        document.getElementById('narrated-past-wrap').classList.remove('d-none');
+        // Hide main wrap if empty
+        if (!document.getElementById('narrated-runs-accordion').children.length) {
+            document.getElementById('narrated-runs-wrap').classList.add('d-none');
+        }
+    });
+}
+
+function restoreNarratedRun(ts) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/toggle-narrated-run-visibility', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ts: ts, hidden: false})
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (!d.ok) return;
+        _hiddenRunTs.delete(ts);
+        var item = document.getElementById('narrated-run-item-' + ts);
+        if (!item) return;
+        // Swap eye icon back to hide (eye-off)
+        var eye = item.querySelector('.nv-eye-btn');
+        if (eye) {
+            eye.setAttribute('title', 'Move to Past Videos');
+            eye.setAttribute('onclick', 'event.stopPropagation();hideNarratedRun(' + ts + ')');
+            eye.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>';
+        }
+        // Re-attach to main accordion
+        var collapseEl = item.querySelector('.accordion-collapse');
+        if (collapseEl) collapseEl.setAttribute('data-bs-parent', '#narrated-runs-accordion');
+        var mainAcc = document.getElementById('narrated-runs-accordion');
+        mainAcc.insertBefore(item, mainAcc.firstChild);
+        document.getElementById('narrated-runs-wrap').classList.remove('d-none');
+        // Hide past wrap if empty
+        if (!document.getElementById('narrated-past-accordion').children.length) {
+            document.getElementById('narrated-past-wrap').classList.add('d-none');
+        }
+    });
+}
+
 /* ── Load all existing runs on page load ─────────────────────── */
-function loadNarratedRuns(runs) {
+function loadNarratedRuns(runs, hiddenTs) {
     if (!runs || !runs.length) return;
-    const accordion = document.getElementById('narrated-runs-accordion');
-    let rendered = 0;
+    if (hiddenTs && hiddenTs.length) hiddenTs.forEach(function(t) { _hiddenRunTs.add(t); });
+    const mainAcc = document.getElementById('narrated-runs-accordion');
+    const pastAcc = document.getElementById('narrated-past-accordion');
+    let mainCount = 0, pastCount = 0;
     runs.forEach((run, i) => {
         try {
-            accordion.appendChild(buildRunItem(run, false));
-            rendered++;
+            var isHidden = _hiddenRunTs.has(run.ts);
+            var item = buildRunItem(run, false);
+            if (isHidden) {
+                // Swap eye icon to restore
+                var eye = item.querySelector('.nv-eye-btn');
+                if (eye) {
+                    eye.setAttribute('title', 'Restore to main list');
+                    eye.setAttribute('onclick', 'event.stopPropagation();restoreNarratedRun(' + run.ts + ')');
+                    eye.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+                }
+                var collapseEl = item.querySelector('.accordion-collapse');
+                if (collapseEl) collapseEl.removeAttribute('data-bs-parent');
+                pastAcc.appendChild(item);
+                pastCount++;
+            } else {
+                mainAcc.appendChild(item);
+                mainCount++;
+            }
             restoreNvIgState(run.ts);
             restoreNvFbState(run.ts);
             // Restore YouTube icon + button if a successful upload exists
@@ -4115,9 +4218,14 @@ function loadNarratedRuns(runs) {
             console.warn('Could not render narrated run', i, e);
         }
     });
-    if (rendered > 0) {
-        document.getElementById('narrated-runs-wrap').classList.remove('d-none');
+    if (mainCount > 0 || pastCount > 0) {
         document.getElementById('narrated-empty').classList.add('d-none');
+    }
+    if (mainCount > 0) {
+        document.getElementById('narrated-runs-wrap').classList.remove('d-none');
+    }
+    if (pastCount > 0) {
+        document.getElementById('narrated-past-wrap').classList.remove('d-none');
     }
 }
 
@@ -4340,7 +4448,7 @@ function narratedFinish(error) {
     fetch('/admin/articles/' + ARTICLE_ID + '/video-data')
         .then(r => r.json())
         .then(d => {
-            if (d.narrated_runs && d.narrated_runs.length) loadNarratedRuns(d.narrated_runs);
+            if (d.narrated_runs && d.narrated_runs.length) loadNarratedRuns(d.narrated_runs, d.hidden_narrated_runs || []);
             else if (d.narrated_url) loadNarratedRuns([{   // ← back-compat: wrap legacy single entry
                 ts: 0, ts_label: 'Previous run',
                 url: d.narrated_url,
