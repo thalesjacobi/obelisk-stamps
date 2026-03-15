@@ -2117,10 +2117,14 @@ function _clearXIconLive(mode) {
 }
 /* Narrated video X header icon */
 function _setNvXIconLive(ts) {
+    var el = document.getElementById('nv-x-icon-' + ts);
+    if (el) { el.classList.add('nv-run-x-live'); el.setAttribute('stroke', '#000'); }
     var hdr = document.getElementById('nv-x-hdr-' + ts);
     if (hdr) hdr.setAttribute('stroke', '#000');
 }
 function _clearNvXIconLive(ts) {
+    var el = document.getElementById('nv-x-icon-' + ts);
+    if (el) { el.classList.remove('nv-run-x-live'); el.setAttribute('stroke', '#ccc'); }
     var hdr = document.getElementById('nv-x-hdr-' + ts);
     if (hdr) hdr.setAttribute('stroke', 'currentColor');
 }
@@ -2527,7 +2531,7 @@ function showXError(mode, msg) {
     if (progress) progress.classList.add('d-none');
     if (result) {
         result.classList.remove('d-none');
-        result.innerHTML = '<div class="alert alert-danger py-1 small mb-2">' + msg + '</div>';
+        result.innerHTML = '<div class="alert alert-danger alert-dismissible py-1 small mb-2">' + msg + '<button type="button" class="btn-close" style="padding:.3rem" data-bs-dismiss="alert"></button></div>';
     }
     var postBtn = document.getElementById(_xId(mode, 'post-btn'));
     if (postBtn) postBtn.disabled = false;
@@ -2717,7 +2721,7 @@ function showNvXError(ts, msg) {
     if (progress) progress.classList.add('d-none');
     if (result) {
         result.classList.remove('d-none');
-        result.innerHTML = '<div class="alert alert-danger py-1 small mb-2">' + msg + '</div>';
+        result.innerHTML = '<div class="alert alert-danger alert-dismissible py-1 small mb-2">' + msg + '<button type="button" class="btn-close" style="padding:.3rem" data-bs-dismiss="alert"></button></div>';
     }
     var postBtn = document.getElementById(_nvXId(ts, 'post-btn'));
     if (postBtn) postBtn.disabled = false;
@@ -3982,6 +3986,11 @@ function buildRunItem(run, expandIt) {
                     <svg id="nv-fb-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
                          fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Facebook">
                         <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+                    </svg>
+                    <svg id="nv-x-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="X">
+                        <path d="M4 4l11.733 16H20L8.267 4z"/>
+                        <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
                     </svg>
                 </span>
             </button>
