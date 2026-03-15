@@ -2228,6 +2228,10 @@ function fbArchivePost(mode) {
 
 function fbDeleteAndArchive(mode) {
     if (!confirm('Delete this post from Facebook and archive it here?')) return;
+    var statusArea = document.getElementById(_fbId(mode, 'status-area'));
+    var resultEl   = document.getElementById(_fbId(mode, 'result'));
+    if (statusArea) statusArea.classList.remove('d-none');
+    if (resultEl) { resultEl.classList.remove('d-none'); resultEl.innerHTML = '<span class="text-muted small">Deleting and archiving…</span>'; }
     fetch('/admin/articles/' + ARTICLE_ID + '/delete-facebook-post', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -2237,29 +2241,24 @@ function fbDeleteAndArchive(mode) {
     .then(function(d) {
         if (d.ok) {
             _clearFbIconLive(mode);
-            var result = document.getElementById(_fbId(mode, 'result'));
-            if (result) result.innerHTML = '<span class="text-muted small">Post deleted and archived.</span>';
+            if (resultEl) resultEl.innerHTML = '<span class="text-success small">Post deleted and archived.</span>';
             var postBtn = document.getElementById(_fbId(mode, 'post-btn'));
             _restorePostBtn(postBtn);
             var textarea = document.getElementById(_fbId(mode, 'caption'));
-            if (textarea) { textarea.readOnly = false; textarea.value = ''; }
-            var copyLink = document.getElementById(_fbId(mode, 'copy-ig'));
-            if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.removeAttribute('aria-disabled'); }
-            var genLink = document.getElementById(_fbId(mode, 'gen-caption'));
+            if (textarea) { textarea.readOnly = false; textarea.value = ''; textarea.style.opacity = '1'; }
+            var copyLink = document.querySelector('#' + mode + '-fb-body .ig-section-link');
+            if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = '1'; }
+            var genLink = document.getElementById(mode + '-fb-generate-link');
             if (genLink) genLink.classList.remove('d-none');
             var btnRow = document.getElementById(_fbId(mode, 'btn-row'));
             if (btnRow) btnRow.querySelectorAll('.fb-done-btn').forEach(function(b) { b.remove(); });
             if (d.history && d.history.length) renderFbHistory(mode, d.history);
         } else {
-            var area = document.getElementById(_fbId(mode, 'result'));
-            if (area) area.innerHTML = '<div class="alert alert-danger small mt-2">' + (d.error || 'Something went wrong. Please try again.') + '</div>';
-            else alert(d.error || 'Something went wrong. Please try again.');
+            if (resultEl) resultEl.innerHTML = '<div class="alert alert-danger small mt-2 mb-0">' + (d.error || 'Something went wrong. Please try again.') + '</div>';
         }
     })
     .catch(function() {
-        var area = document.getElementById(_fbId(mode, 'result'));
-        if (area) area.innerHTML = '<div class="alert alert-danger small mt-2">Network error — could not reach the server. Please try again.</div>';
-        else alert('Network error — could not reach the server.');
+        if (resultEl) resultEl.innerHTML = '<div class="alert alert-danger small mt-2 mb-0">Network error — could not reach the server. Please try again.</div>';
     });
 }
 
@@ -2423,6 +2422,8 @@ function nvFbArchivePost(ts) {
 
 function nvFbDeleteAndArchive(ts) {
     if (!confirm('Delete this post from Facebook and archive it here?')) return;
+    var resultEl = document.getElementById(_nvFbId(ts, 'result'));
+    if (resultEl) { resultEl.classList.remove('d-none'); resultEl.innerHTML = '<span class="text-muted small">Deleting and archiving…</span>'; }
     fetch('/admin/articles/' + ARTICLE_ID + '/delete-narrated-fb-post', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -2432,23 +2433,18 @@ function nvFbDeleteAndArchive(ts) {
     .then(function(d) {
         if (d.ok) {
             _clearNvFbIconLive(ts);
-            var result = document.getElementById(_nvFbId(ts, 'result'));
-            if (result) result.innerHTML = '<span class="text-muted small">Post deleted and archived.</span>';
+            if (resultEl) resultEl.innerHTML = '<span class="text-success small">Post deleted and archived.</span>';
             var postBtn = document.getElementById(_nvFbId(ts, 'post-btn'));
             _restorePostBtn(postBtn);
             var btnRow = document.getElementById(_nvFbId(ts, 'btn-row'));
             if (btnRow) btnRow.querySelectorAll('.nv-fb-done-btn').forEach(function(b) { b.remove(); });
             if (d.history && d.history.length) renderNvFbHistory(ts, d.history);
         } else {
-            var area = document.getElementById(_nvFbId(ts, 'result'));
-            if (area) area.innerHTML = '<div class="alert alert-danger small mt-2">' + (d.error || 'Something went wrong. Please try again.') + '</div>';
-            else alert(d.error || 'Something went wrong. Please try again.');
+            if (resultEl) resultEl.innerHTML = '<div class="alert alert-danger small mt-2 mb-0">' + (d.error || 'Something went wrong. Please try again.') + '</div>';
         }
     })
     .catch(function() {
-        var area = document.getElementById(_nvFbId(ts, 'result'));
-        if (area) area.innerHTML = '<div class="alert alert-danger small mt-2">Network error — could not reach the server. Please try again.</div>';
-        else alert('Network error — could not reach the server.');
+        if (resultEl) resultEl.innerHTML = '<div class="alert alert-danger small mt-2 mb-0">Network error — could not reach the server. Please try again.</div>';
     });
 }
 

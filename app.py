@@ -6562,38 +6562,58 @@ def admin_archive_narrated_fb_post(article_id):
 @admin_required
 def admin_article_delete_facebook_post(article_id):
     import requests as _req
+    import traceback as _tb
     data      = request.get_json() or {}
     post_type = data.get("type", "cine")
     keys      = _fb_keys(post_type, article_id)
     media_id  = get_setting(keys["media_id"])
+    component_label = "carousel" if post_type == "car" else "cinemagraph"
+
     if not media_id:
-        return jsonify({"error": "No post to delete"}), 400
+        return jsonify({"error": "No post record found to archive."}), 400
 
-    resp = _req.delete(
-        f"{_IG_GRAPH_URL}/{media_id}",
-        params={"access_token": FB_PAGE_ACCESS_TOKEN},
-        timeout=15,
-    )
-    if not resp.ok and resp.status_code != 404:
-        try:
-            err_data = resp.json().get("error", {})
-            msg = err_data.get("message", resp.text)
-        except Exception:
-            msg = resp.text
-        # Treat "does not exist" or "Unsupported delete" as already-deleted
-        if "does not exist" not in msg and "Unsupported delete" not in msg:
-            component_label = "carousel" if post_type == "car" else "cinemagraph"
-            _add_activity_log(article_id, f"Facebook {component_label.title()} Delete Failed",
-                              f"media_id={media_id}\nHTTP {resp.status_code}: {msg}", component=component_label)
-            return jsonify({"error": f"Could not delete the post from Facebook: {msg}"}), 400
+    # Step 1: Attempt to delete from Facebook
+    already_gone = False
+    try:
+        _add_activity_log(article_id, f"Facebook {component_label.title()} Delete Started",
+                          f"Attempting to delete post {media_id} from Facebook…", component=component_label)
+        resp = _req.delete(
+            f"{_IG_GRAPH_URL}/{media_id}",
+            params={"access_token": FB_PAGE_ACCESS_TOKEN},
+            timeout=15,
+        )
+        if resp.ok or resp.status_code == 404:
+            # Successfully deleted, or already gone (404)
+            already_gone = resp.status_code == 404
+        else:
+            try:
+                err_data = resp.json().get("error", {})
+                msg = err_data.get("message", resp.text)
+            except Exception:
+                msg = resp.text
+            # If Facebook says post doesn't exist or can't be deleted, treat as already gone
+            if "does not exist" in msg or "Unsupported delete" in msg or "cannot be loaded" in msg:
+                already_gone = True
+                _add_activity_log(article_id, f"Facebook {component_label.title()} Post Not Found",
+                                  f"Post {media_id} no longer exists on Facebook (HTTP {resp.status_code}).\n{msg}",
+                                  component=component_label)
+            else:
+                # Genuine error — log and return
+                _add_activity_log(article_id, f"Facebook {component_label.title()} Delete Failed",
+                                  f"media_id={media_id}\nHTTP {resp.status_code}: {msg}", component=component_label)
+                return jsonify({"error": f"Could not delete the post from Facebook: {msg}"}), 400
+    except Exception as e:
+        # Network error, timeout, etc. — still allow archiving
+        already_gone = True
+        _add_activity_log(article_id, f"Facebook {component_label.title()} Delete Error",
+                          f"media_id={media_id}\nException: {e}\n{_tb.format_exc()}", component=component_label)
 
-    # Archive (same logic as archive-facebook-post)
+    # Step 2: Archive locally (always runs if we get here)
     snap_raw  = get_setting(keys["snapshot"])
     snapshot  = json.loads(snap_raw) if snap_raw else {}
-    result    = get_setting(keys["result"]) or ""
-    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    result_val = get_setting(keys["result"]) or ""
+    permalink = result_val.replace("done:", "") if result_val.startswith("done:") else ""
 
-    already_gone = not resp.ok  # Post was already deleted from Facebook
     history = json.loads(get_setting(keys["history"]) or "[]")
     history.append({
         "media_id":    media_id,
@@ -6609,10 +6629,9 @@ def admin_article_delete_facebook_post(article_id):
     for k in ("media_id", "result", "status", "snapshot"):
         execute("DELETE FROM site_settings WHERE `key` = %s", (keys[k],))
 
-    component_label = "carousel" if post_type == "car" else "cinemagraph"
     action = "Post already removed from Facebook, archived locally" if already_gone else f"Post {media_id} deleted from Facebook and archived"
-    _add_activity_log(article_id, f"Facebook {component_label.title()} Post Deleted",
-                      action, component=component_label)
+    _add_activity_log(article_id, f"Facebook {component_label.title()} Post Archived",
+                      f"{action}\npermalink={permalink}", component=component_label)
 
     return jsonify({"ok": True, "history": history})
 
@@ -6622,6 +6641,7 @@ def admin_article_delete_facebook_post(article_id):
 @admin_required
 def admin_delete_narrated_fb_post(article_id):
     import requests as _req
+    import traceback as _tb
     data   = request.get_json() or {}
     run_ts = str(data.get("run_ts", "0"))
 
@@ -6632,29 +6652,43 @@ def admin_delete_narrated_fb_post(article_id):
 
     media_id = get_setting(media_key)
     if not media_id:
-        return jsonify({"error": "No post to delete"}), 400
+        return jsonify({"error": "No post record found to archive."}), 400
 
-    resp = _req.delete(
-        f"{_IG_GRAPH_URL}/{media_id}",
-        params={"access_token": FB_PAGE_ACCESS_TOKEN},
-        timeout=15,
-    )
-    if not resp.ok and resp.status_code != 404:
-        try:
-            err_data = resp.json().get("error", {})
-            msg = err_data.get("message", resp.text)
-        except Exception:
-            msg = resp.text
-        # Treat "does not exist" or "Unsupported delete" as already-deleted
-        if "does not exist" not in msg and "Unsupported delete" not in msg:
-            _add_activity_log(article_id, "Facebook Video Delete Failed",
-                              f"media_id={media_id}\nHTTP {resp.status_code}: {msg}", component="narrated")
-            return jsonify({"error": f"Could not delete the post from Facebook: {msg}"}), 400
+    # Step 1: Attempt to delete from Facebook
+    already_gone = False
+    try:
+        _add_activity_log(article_id, "Facebook Video Delete Started",
+                          f"Attempting to delete post {media_id} from Facebook…", component="narrated")
+        resp = _req.delete(
+            f"{_IG_GRAPH_URL}/{media_id}",
+            params={"access_token": FB_PAGE_ACCESS_TOKEN},
+            timeout=15,
+        )
+        if resp.ok or resp.status_code == 404:
+            already_gone = resp.status_code == 404
+        else:
+            try:
+                err_data = resp.json().get("error", {})
+                msg = err_data.get("message", resp.text)
+            except Exception:
+                msg = resp.text
+            if "does not exist" in msg or "Unsupported delete" in msg or "cannot be loaded" in msg:
+                already_gone = True
+                _add_activity_log(article_id, "Facebook Video Post Not Found",
+                                  f"Post {media_id} no longer exists on Facebook (HTTP {resp.status_code}).\n{msg}",
+                                  component="narrated")
+            else:
+                _add_activity_log(article_id, "Facebook Video Delete Failed",
+                                  f"media_id={media_id}\nHTTP {resp.status_code}: {msg}", component="narrated")
+                return jsonify({"error": f"Could not delete the post from Facebook: {msg}"}), 400
+    except Exception as e:
+        already_gone = True
+        _add_activity_log(article_id, "Facebook Video Delete Error",
+                          f"media_id={media_id}\nException: {e}\n{_tb.format_exc()}", component="narrated")
 
-    # Archive (same logic as archive-narrated-fb-post)
-    already_gone = not resp.ok
-    result    = get_setting(result_key) or ""
-    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    # Step 2: Archive locally (always runs if we get here)
+    result_val = get_setting(result_key) or ""
+    permalink  = result_val.replace("done:", "") if result_val.startswith("done:") else ""
 
     history = json.loads(get_setting(history_key) or "[]")
     history.append({
@@ -6669,8 +6703,8 @@ def admin_delete_narrated_fb_post(article_id):
         execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
 
     action = "Post already removed from Facebook, archived locally" if already_gone else f"Post {media_id} deleted from Facebook and archived"
-    _add_activity_log(article_id, "Facebook Video Post Deleted",
-                      action, component="narrated")
+    _add_activity_log(article_id, "Facebook Video Post Archived",
+                      f"{action}\npermalink={permalink}", component="narrated")
 
     return jsonify({"ok": True, "history": history})
 
