@@ -22,4 +22,4 @@ Runs on port 8080. Admin panel at `/admin`.
 ## Deployment
 - Hosted on Google Cloud Run (europe-west1).
 - CI/CD via GitHub Actions (`.github/workflows/main.yml`).
-- Env vars are passed from GitHub secrets to Cloud Run at deploy time.
+- Env vars are passed from GitHub Secrets to Cloud Run at deploy time.
