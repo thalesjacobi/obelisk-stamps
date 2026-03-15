@@ -4171,6 +4171,21 @@ function buildRunItem(run, expandIt) {
     if (captionEl) captionEl.value = defaultCaption;
     var ytTitleEl = item.querySelector('#nv-yt-' + run.ts + '-title');
     if (ytTitleEl && ARTICLE_TITLE) ytTitleEl.value = ARTICLE_TITLE;
+    /* Check video duration — X rejects videos > 2 min */
+    if (X_CONFIGURED) {
+        var videoEl = item.querySelector('video');
+        var xBody   = item.querySelector('#nv-x-' + run.ts + '-body');
+        var _xTooLongNotice = '<div class="alert alert-info small mb-0 d-flex align-items-center gap-2" style="padding:.6rem .8rem"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>X.com doesn\'t accept videos longer than 2 minutes.</span></div>';
+        function _applyXDurationCheck() {
+            if (videoEl && xBody && videoEl.duration > 120) {
+                xBody.innerHTML = _xTooLongNotice;
+            }
+        }
+        if (videoEl) {
+            if (videoEl.readyState >= 1) { _applyXDurationCheck(); }
+            else { videoEl.addEventListener('loadedmetadata', _applyXDurationCheck); }
+        }
+    }
     return item;
 }
 
