@@ -1169,6 +1169,21 @@
                         </div>
                     </div>
 
+                    <!-- Playback Speed -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">Speed</label>
+                        <div class="btn-group btn-group-sm mt-1" role="group">
+                            <input type="radio" class="btn-check" name="nv-speed" id="nv-speed-1" value="1.0">
+                            <label class="btn btn-outline-secondary" for="nv-speed-1">1.0×</label>
+                            <input type="radio" class="btn-check" name="nv-speed" id="nv-speed-135" value="1.35" checked>
+                            <label class="btn btn-outline-secondary" for="nv-speed-135">1.35×</label>
+                            <input type="radio" class="btn-check" name="nv-speed" id="nv-speed-15" value="1.5">
+                            <label class="btn btn-outline-secondary" for="nv-speed-15">1.5×</label>
+                            <input type="radio" class="btn-check" name="nv-speed" id="nv-speed-2" value="2.0">
+                            <label class="btn btn-outline-secondary" for="nv-speed-2">2.0×</label>
+                        </div>
+                    </div>
+
                     <!-- Video Quality -->
                     <div class="mb-3">
                         <label class="form-label fw-semibold small text-uppercase text-muted">Video Quality</label>
@@ -2512,12 +2527,24 @@ function showXDone(mode, permalink) {
     var btnRow = document.getElementById(_xId(mode, 'btn-row'));
     if (btnRow) {
         btnRow.querySelectorAll('.x-done-btn').forEach(function(b) { b.remove(); });
+        var m = mode;
+        var checkBtn = document.createElement('button');
+        checkBtn.type = 'button';
+        checkBtn.className = 'btn btn-outline-primary btn-sm x-done-btn';
+        checkBtn.id = _xId(mode, 'check-live-btn');
+        checkBtn.textContent = 'Check if post is still live';
+        checkBtn.onclick = function() { xCheckPostLive(m); };
+        btnRow.appendChild(checkBtn);
         var archiveBtn = document.createElement('button');
         archiveBtn.type = 'button';
         archiveBtn.className = 'btn btn-outline-danger btn-sm x-done-btn';
         archiveBtn.textContent = 'Delete and archive post';
-        archiveBtn.onclick = function() { xDeleteAndArchive(mode); };
+        archiveBtn.onclick = function() { xDeleteAndArchive(m); };
         btnRow.appendChild(archiveBtn);
+    }
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div id="' + mode + '-x-check-live-status" class="small mb-2"></div>';
     }
 }
 
@@ -2562,6 +2589,64 @@ function xDeleteAndArchive(mode) {
         if (d.history && d.history.length) renderXHistory(mode, d.history);
     })
     .catch(function(e) { alert('Archive failed: ' + e); });
+}
+
+function xCheckPostLive(mode) {
+    if (!ARTICLE_ID) return;
+    var btn = document.getElementById(_xId(mode, 'check-live-btn'));
+    var status = document.getElementById(mode + '-x-check-live-status');
+    if (!status) {
+        status = document.createElement('div');
+        status.id = mode + '-x-check-live-status';
+        status.className = 'small mb-2';
+        var area = document.getElementById(_xId(mode, 'status-area'));
+        if (area) area.appendChild(status);
+    }
+    if (btn) btn.disabled = true;
+    status.textContent = 'Checking\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/check-carousel-x-post?type=' + mode)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (btn) btn.disabled = false;
+            if (d.error) { status.innerHTML = '<span class="text-danger">' + d.error + '</span>'; return; }
+            if (d.live) {
+                status.innerHTML = '<span class="text-success">\u2713 Post is still live on X.</span>';
+            } else {
+                var apiNote = d.api_error ? ' <span class="text-muted">(' + d.api_error + ')</span>' : '';
+                status.innerHTML =
+                    '<span class="text-warning fw-semibold">Post not found on X.</span>' + apiNote + ' ' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="xArchivePost(\'' + mode + '\')">Archive this post record</button>';
+            }
+        })
+        .catch(function(err) { if (btn) btn.disabled = false; status.innerHTML = '<span class="text-danger">Network error: ' + err + '</span>'; });
+}
+
+function xArchivePost(mode) {
+    if (!ARTICLE_ID) return;
+    var status = document.getElementById(mode + '-x-check-live-status');
+    if (status) status.innerHTML = 'Archiving\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-carousel-x-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { if (status) status.innerHTML = '<span class="text-danger">' + (d.error) + '</span>'; return; }
+        _clearXIconLive(mode);
+        var ta = document.getElementById(mode + '-x-caption');
+        if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
+        var copyLink = document.getElementById(mode + '-x-copy-link');
+        if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+        var postBtn = document.getElementById(_xId(mode, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_xId(mode, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.x-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_xId(mode, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderXHistory(mode, d.history);
+    })
+    .catch(function(e) { if (status) status.innerHTML = '<span class="text-danger">Archive failed: ' + e + '</span>'; });
 }
 
 function renderXHistory(mode, history) {
@@ -2702,12 +2787,24 @@ function showNvXDone(ts, permalink) {
     var btnRow = document.getElementById(_nvXId(ts, 'btn-row'));
     if (btnRow) {
         btnRow.querySelectorAll('.nv-x-done-btn').forEach(function(b) { b.remove(); });
+        var t = ts;
+        var checkBtn = document.createElement('button');
+        checkBtn.type = 'button';
+        checkBtn.className = 'btn btn-outline-primary btn-sm nv-x-done-btn';
+        checkBtn.id = _nvXId(ts, 'check-live-btn');
+        checkBtn.textContent = 'Check if post is still live';
+        checkBtn.onclick = (function(t) { return function() { nvXCheckPostLive(t); }; })(ts);
+        btnRow.appendChild(checkBtn);
         var archiveBtn = document.createElement('button');
         archiveBtn.type = 'button';
         archiveBtn.className = 'btn btn-outline-danger btn-sm nv-x-done-btn';
         archiveBtn.textContent = 'Delete and archive post';
         archiveBtn.onclick = (function(t) { return function() { nvXDeleteAndArchive(t); }; })(ts);
         btnRow.appendChild(archiveBtn);
+    }
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div id="nv-x-' + ts + '-check-live-status" class="small mb-2"></div>';
     }
 }
 
@@ -2755,6 +2852,67 @@ function nvXDeleteAndArchive(ts) {
         if (d.history && d.history.length) renderNvXHistory(ts, d.history);
     })
     .catch(function(e) { alert('Archive failed: ' + e); });
+}
+
+function nvXCheckPostLive(ts) {
+    if (!ARTICLE_ID) return;
+    var btn = document.getElementById(_nvXId(ts, 'check-live-btn'));
+    var status = document.getElementById('nv-x-' + ts + '-check-live-status');
+    if (!status) {
+        status = document.createElement('div');
+        status.id = 'nv-x-' + ts + '-check-live-status';
+        status.className = 'small mb-2';
+        var area = document.getElementById(_nvXId(ts, 'status-area'));
+        if (area) area.appendChild(status);
+    }
+    if (btn) btn.disabled = true;
+    status.textContent = 'Checking\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/check-narrated-x-post?ts=' + ts)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (btn) btn.disabled = false;
+            if (d.error) { status.innerHTML = '<span class="text-danger">' + d.error + '</span>'; return; }
+            if (d.live) {
+                status.innerHTML = '<span class="text-success">\u2713 Post is still live on X.</span>';
+            } else {
+                var apiNote = d.api_error ? ' <span class="text-muted">(' + d.api_error + ')</span>' : '';
+                status.innerHTML =
+                    '<span class="text-warning fw-semibold">Post not found on X.</span>' + apiNote + ' ' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="nvXArchivePost(\'' + ts + '\')">Archive this post record</button>';
+            }
+        })
+        .catch(function(err) { if (btn) btn.disabled = false; status.innerHTML = '<span class="text-danger">Network error: ' + err + '</span>'; });
+}
+
+function nvXArchivePost(ts) {
+    if (!ARTICLE_ID) return;
+    var status = document.getElementById('nv-x-' + ts + '-check-live-status');
+    if (status) status.innerHTML = 'Archiving\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-x-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { if (status) status.innerHTML = '<span class="text-danger">' + (d.error) + '</span>'; return; }
+        _clearNvXIconLive(ts);
+        var ta = document.getElementById(_nvXId(ts, 'caption'));
+        if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
+        var body = document.getElementById(_nvXId(ts, 'body'));
+        if (body) {
+            var copyLink = body.querySelector('.ig-section-link');
+            if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+        }
+        var postBtn = document.getElementById(_nvXId(ts, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_nvXId(ts, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.nv-x-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_nvXId(ts, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderNvXHistory(ts, d.history);
+    })
+    .catch(function(e) { if (status) status.innerHTML = '<span class="text-danger">Archive failed: ' + e + '</span>'; });
 }
 
 function renderNvXHistory(ts, history) {
@@ -4850,6 +5008,7 @@ function narratedGenerate() {
             tts_model:  document.querySelector('input[name="nv-tts-model"]:checked')?.value || 'tts-1',
             script_len: document.querySelector('input[name="nv-script"]:checked')?.value   || 'medium',
             kb_speed:   document.querySelector('input[name="nv-kb"]:checked')?.value        || 'slow',
+            speed:      parseFloat(document.querySelector('input[name="nv-speed"]:checked')?.value || '1.35'),
             crf:        parseInt(document.querySelector('input[name="nv-crf"]:checked')?.value || '23'),
             fps:        parseInt(document.getElementById('nv-fps')?.value                   || '25'),
         }),

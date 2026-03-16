@@ -3485,7 +3485,9 @@ def _narrated_video_worker(article_id, cfg):
 
     W, H         = (720, 1280) if fmt == "vertical" else (720, 720)
     render_fps   = 12   # Ken Burns on still images looks identical at 12fps vs 25fps
-    speed_factor = 1.35  # Speed up final video for social-media pacing
+    speed_factor = float(cfg.get("speed", 1.35))
+    if speed_factor < 0.5 or speed_factor > 3.0:
+        speed_factor = 1.35  # Clamp to safe range
     zoom_step    = {"slow": 0.0010, "medium": 0.0015, "fast": 0.0025}.get(kb_speed, 0.0010)
     word_range = {"short": "20-40", "medium": "40-70", "long": "70-100"}.get(script_len, "40-70")
 
@@ -7107,6 +7109,42 @@ def admin_narrated_x_status(article_id):
     })
 
 
+@app.route("/admin/articles/<int:article_id>/check-narrated-x-post")
+@login_required
+@admin_required
+def admin_check_narrated_x_post(article_id):
+    """Check if narrated-video tweet is still live on X."""
+    import requests as _req
+    if not X_CONFIGURED:
+        return jsonify({"error": "X credentials not configured."}), 400
+    run_ts    = request.args.get("ts", "0")
+    tweet_key = f"x_narrated_tweet_id_{article_id}_{run_ts}"
+    tweet_id  = get_setting(tweet_key)
+    if not tweet_id:
+        return jsonify({"error": "No published post found for this article."}), 400
+    try:
+        resp = _req.get(f"{_X_TWEET_URL}/{tweet_id}", auth=_x_auth(), timeout=15)
+        data = resp.json()
+        print(f"[X] check-narrated-post-live: tweet_id={tweet_id} resp={data}", flush=True)
+        tweet_data = data.get("data")
+        if tweet_data and tweet_data.get("id"):
+            _add_activity_log(article_id, "Check X Post Live (narrated)",
+                              f"Post is live. tweet_id={tweet_id}", component="narrated")
+            return jsonify({"live": True})
+        # Check for errors array (tweet deleted / not found)
+        api_err = ""
+        errors = data.get("errors", [])
+        if errors:
+            api_err = errors[0].get("detail", errors[0].get("message", "Tweet not found"))
+        _add_activity_log(article_id, "Check X Post Live (narrated)",
+                          f"Post not found. tweet_id={tweet_id}, API: {api_err}",
+                          component="narrated")
+        return jsonify({"live": False, "api_error": api_err})
+    except Exception as exc:
+        print(f"[X] check-narrated-post-live exception: {exc}", flush=True)
+        return jsonify({"error": f"Failed to reach X API: {exc}"}), 500
+
+
 @app.route("/admin/articles/<int:article_id>/archive-narrated-x-post", methods=["POST"])
 @login_required
 @admin_required
@@ -7216,6 +7254,43 @@ def admin_carousel_x_status(article_id):
         "result":  get_setting(result_key) or "",
         "history": json.loads(get_setting(history_key) or "[]"),
     })
+
+
+@app.route("/admin/articles/<int:article_id>/check-carousel-x-post")
+@login_required
+@admin_required
+def admin_check_carousel_x_post(article_id):
+    """Check if carousel/cinemagraph tweet is still live on X."""
+    import requests as _req
+    if not X_CONFIGURED:
+        return jsonify({"error": "X credentials not configured."}), 400
+    component = request.args.get("type", "car")
+    if component not in ("car", "cine"):
+        component = "car"
+    tweet_key = f"x_{component}_tweet_id_{article_id}"
+    tweet_id  = get_setting(tweet_key)
+    if not tweet_id:
+        return jsonify({"error": "No published post found for this article."}), 400
+    try:
+        resp = _req.get(f"{_X_TWEET_URL}/{tweet_id}", auth=_x_auth(), timeout=15)
+        data = resp.json()
+        print(f"[X] check-{component}-post-live: tweet_id={tweet_id} resp={data}", flush=True)
+        tweet_data = data.get("data")
+        if tweet_data and tweet_data.get("id"):
+            _add_activity_log(article_id, f"Check X Post Live ({component})",
+                              f"Post is live. tweet_id={tweet_id}", component=component)
+            return jsonify({"live": True})
+        api_err = ""
+        errors = data.get("errors", [])
+        if errors:
+            api_err = errors[0].get("detail", errors[0].get("message", "Tweet not found"))
+        _add_activity_log(article_id, f"Check X Post Live ({component})",
+                          f"Post not found. tweet_id={tweet_id}, API: {api_err}",
+                          component=component)
+        return jsonify({"live": False, "api_error": api_err})
+    except Exception as exc:
+        print(f"[X] check-{component}-post-live exception: {exc}", flush=True)
+        return jsonify({"error": f"Failed to reach X API: {exc}"}), 500
 
 
 @app.route("/admin/articles/<int:article_id>/archive-carousel-x-post", methods=["POST"])
