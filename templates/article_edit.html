@@ -21,13 +21,29 @@
     .fb-icon-live { stroke: #1877F2 !important; }
 
     /* X (Twitter) live icon */
-    .x-icon-live { stroke: #000 !important; }
+    .x-icon-live { stroke: #1D9BF0 !important; }
+
+    /* Threads live icon */
+    .threads-icon-live { stroke: #000 !important; }
+
+    /* Pinterest live icon */
+    .pinterest-icon-live { stroke: #E60023 !important; }
+
+    /* LinkedIn live icon */
+    .linkedin-icon-live { stroke: #0A66C2 !important; }
+
+    /* TikTok live icon */
+    .tiktok-icon-live { fill: #000 !important; }
 
     /* Narrated run per-item social icons */
     .nv-run-ig-live { stroke: url(#ig-gradient) !important; }
     .nv-run-yt-live { stroke: #ff0000 !important; }
     .nv-run-fb-live { stroke: #1877F2 !important; }
-    .nv-run-x-live  { stroke: #000 !important; }
+    .nv-run-x-live  { stroke: #1D9BF0 !important; }
+    .nv-run-threads-live { stroke: #000 !important; }
+    .nv-run-pinterest-live { stroke: #E60023 !important; }
+    .nv-run-linkedin-live { stroke: #0A66C2 !important; }
+    .nv-run-tiktok-live { fill: #000 !important; }
 
     /* Narrated run hide/show eye icon */
     .nv-eye-btn { opacity: 0; transition: opacity 0.15s; cursor: pointer; flex-shrink: 0; }
@@ -55,8 +71,8 @@
     /* Social posting sections: consistent font + padding */
     /* Tab text and section header icons both start at card-body edge */
     #carousel-tabs .nav-link, #cine-tabs .nav-link { padding-left: 0; padding-right: 0.75rem; }
-    #car-ig-body, #car-fb-body, #car-x-body, #cine-ig-body, #cine-fb-body, #cine-x-body, .nv-social-body,
-    #car-ig-body *, #car-fb-body *, #car-x-body *, #cine-ig-body *, #cine-fb-body *, #cine-x-body *, .nv-social-body * {
+    #car-ig-body, #car-fb-body, #car-x-body, #car-threads-body, #car-pinterest-body, #car-linkedin-body, #cine-ig-body, #cine-fb-body, #cine-x-body, #cine-threads-body, #cine-pinterest-body, #cine-linkedin-body, .nv-social-body,
+    #car-ig-body *, #car-fb-body *, #car-x-body *, #car-threads-body *, #car-pinterest-body *, #car-linkedin-body *, #cine-ig-body *, #cine-fb-body *, #cine-x-body *, #cine-threads-body *, #cine-pinterest-body *, #cine-linkedin-body *, .nv-social-body * {
         font-family: var(--bs-font-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif) !important;
         font-size: 0.8125rem !important;
     }
@@ -590,6 +606,201 @@
                 {% endif %}
             </div><!-- /car-x-body -->
 
+            <!-- Threads Carousel Posting -->
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="toggleThreadsSection('car')">
+                <svg id="car-threads-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0">
+                    <path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/>
+                    <path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/>
+                    <path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/>
+                </svg>
+                <span class="small fw-semibold">Post Carousel Images to Threads</span>
+                <svg id="car-threads-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
+                     style="transition:transform 0.2s;flex-shrink:0">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+            <div id="car-threads-body" class="d-none pt-1">
+                {% if not threads_configured %}
+                <div class="alert alert-warning py-2 small mb-0">
+                    Threads credentials not configured.
+                    Set <code>THREADS_USER_ID</code> and <code>THREADS_ACCESS_TOKEN</code> in your environment.
+                </div>
+                {% else %}
+                <div class="mb-2">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <label class="small text-muted mb-0" for="car-threads-caption">Caption<span class="ig-caption-tooltip" data-tip="Threads supports up to 20 images in a single carousel. Caption limited to 500 characters.">?</span></label>
+                        <a href="#" class="small ms-auto ig-section-link" id="car-threads-copy-link"
+                           onclick="event.preventDefault(); copyIgCaptionToThreads('car')">Copy from Instagram</a>
+                    </div>
+                    <textarea id="car-threads-caption" class="form-control form-control-sm" rows="3"
+                              maxlength="500" placeholder="Write your Threads caption… #stamps #philately"
+                              oninput="document.getElementById('car-threads-char-count').textContent=this.value.length+' / 500'"></textarea>
+                    <div class="text-end text-muted small mt-1" id="car-threads-char-count">0 / 500</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-threads-btn-row">
+                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToThreads('car')" id="car-threads-post-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
+                            <path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/>
+                            <path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/>
+                            <path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/>
+                        </svg>Post to Threads
+                    </button>
+                </div>
+                <div id="car-threads-status-area" class="d-none">
+                    <div class="d-flex align-items-center gap-2 mb-1" id="car-threads-status-running">
+                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
+                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
+                        <span id="car-threads-status-text" class="text-muted small">Starting…</span>
+                    </div>
+                    <div class="progress mb-2" style="height:4px" id="car-threads-progress-wrap">
+                        <div id="car-threads-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width:0%"></div>
+                    </div>
+                    <div id="car-threads-result" class="d-none small"></div>
+                    <div id="car-threads-history" class="d-none mt-3">
+                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-threads-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
+                        <div class="collapse" id="car-threads-history-list"></div>
+                    </div>
+                </div>
+                {% endif %}
+            </div><!-- /car-threads-body -->
+
+            <!-- Pinterest Carousel Posting -->
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="togglePinterestSection('car')">
+                <svg id="car-pinterest-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0">
+                    <path d="M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5"/>
+                    <path d="M12 2a10 10 0 1 0 4 19.17"/>
+                    <path d="M9.5 15.5L11 12"/>
+                </svg>
+                <span class="small fw-semibold">Post Carousel Images to Pinterest</span>
+                <svg id="car-pinterest-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
+                     style="transition:transform 0.2s;flex-shrink:0">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+            <div id="car-pinterest-body" class="d-none pt-1">
+                {% if not pinterest_configured %}
+                <div class="alert alert-warning py-2 small mb-0">
+                    Pinterest credentials not configured.
+                    Set <code>PINTEREST_ACCESS_TOKEN</code> and <code>PINTEREST_BOARD_ID</code> in your environment.
+                </div>
+                {% else %}
+                <div class="mb-2">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <label class="small text-muted mb-0" for="car-pinterest-caption">Caption<span class="ig-caption-tooltip" data-tip="Pinterest supports up to 800 characters for pin descriptions.">?</span></label>
+                        <a href="#" class="small ms-auto ig-section-link" id="car-pinterest-copy-link"
+                           onclick="event.preventDefault(); copyIgCaptionToPinterest('car')">Copy from Instagram</a>
+                    </div>
+                    <textarea id="car-pinterest-caption" class="form-control form-control-sm" rows="3"
+                              maxlength="800" placeholder="Write your Pinterest description… #stamps #philately"
+                              oninput="document.getElementById('car-pinterest-char-count').textContent=this.value.length+' / 800'"></textarea>
+                    <div class="text-end text-muted small mt-1" id="car-pinterest-char-count">0 / 800</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-pinterest-btn-row">
+                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToPinterest('car')" id="car-pinterest-post-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
+                            <path d="M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5"/>
+                            <path d="M12 2a10 10 0 1 0 4 19.17"/>
+                            <path d="M9.5 15.5L11 12"/>
+                        </svg>Post to Pinterest
+                    </button>
+                </div>
+                <div id="car-pinterest-status-area" class="d-none">
+                    <div class="d-flex align-items-center gap-2 mb-1" id="car-pinterest-status-running">
+                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
+                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
+                        <span id="car-pinterest-status-text" class="text-muted small">Starting…</span>
+                    </div>
+                    <div class="progress mb-2" style="height:4px" id="car-pinterest-progress-wrap">
+                        <div id="car-pinterest-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width:0%"></div>
+                    </div>
+                    <div id="car-pinterest-result" class="d-none small"></div>
+                    <div id="car-pinterest-history" class="d-none mt-3">
+                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-pinterest-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
+                        <div class="collapse" id="car-pinterest-history-list"></div>
+                    </div>
+                </div>
+                {% endif %}
+            </div><!-- /car-pinterest-body -->
+
+            <!-- LinkedIn Carousel Posting -->
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="toggleLinkedinSection('car')">
+                <svg id="car-linkedin-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0">
+                    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
+                    <rect x="2" y="9" width="4" height="12"/>
+                    <circle cx="4" cy="4" r="2"/>
+                </svg>
+                <span class="small fw-semibold">Post Carousel Images to LinkedIn</span>
+                <svg id="car-linkedin-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
+                     style="transition:transform 0.2s;flex-shrink:0">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+            <div id="car-linkedin-body" class="d-none pt-1">
+                {% if not linkedin_configured %}
+                <div class="alert alert-warning py-2 small mb-0">
+                    LinkedIn credentials not configured.
+                    Set <code>LINKEDIN_ACCESS_TOKEN</code> and <code>LINKEDIN_PERSON_URN</code> in your environment.
+                </div>
+                {% else %}
+                <div class="mb-2">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <label class="small text-muted mb-0" for="car-linkedin-caption">Caption<span class="ig-caption-tooltip" data-tip="LinkedIn supports up to 3000 characters for post text.">?</span></label>
+                        <a href="#" class="small ms-auto ig-section-link" id="car-linkedin-copy-link"
+                           onclick="event.preventDefault(); copyIgCaptionToLinkedin('car')">Copy from Instagram</a>
+                    </div>
+                    <textarea id="car-linkedin-caption" class="form-control form-control-sm" rows="3"
+                              maxlength="3000" placeholder="Write your LinkedIn post… #stamps #philately"
+                              oninput="document.getElementById('car-linkedin-char-count').textContent=this.value.length+' / 3000'"></textarea>
+                    <div class="text-end text-muted small mt-1" id="car-linkedin-char-count">0 / 3000</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-linkedin-btn-row">
+                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToLinkedin()" id="car-linkedin-post-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
+                            <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
+                            <rect x="2" y="9" width="4" height="12"/>
+                            <circle cx="4" cy="4" r="2"/>
+                        </svg>Post to LinkedIn
+                    </button>
+                </div>
+                <div id="car-linkedin-status-area" class="d-none">
+                    <div class="d-flex align-items-center gap-2 mb-1" id="car-linkedin-status-running">
+                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
+                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
+                        <span id="car-linkedin-status-text" class="text-muted small">Starting…</span>
+                    </div>
+                    <div class="progress mb-2" style="height:4px" id="car-linkedin-progress-wrap">
+                        <div id="car-linkedin-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width:0%"></div>
+                    </div>
+                    <div id="car-linkedin-result" class="d-none small"></div>
+                    <div id="car-linkedin-history" class="d-none mt-3">
+                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-linkedin-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
+                        <div class="collapse" id="car-linkedin-history-list"></div>
+                    </div>
+                </div>
+                {% endif %}
+            </div><!-- /car-linkedin-body -->
+
             {% endif %}<!-- /article.id -->
         </div>
     </div>
@@ -905,6 +1116,123 @@
                     <span>X (Twitter) doesn't support cinemagraph-style looping videos. Use <strong>Carousel Images</strong> or <strong>Narrated Videos</strong> to post to X instead.</span>
                 </div>
             </div>
+
+            <!-- Threads Cinemagraph Posting (info notice only) -->
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="toggleThreadsSection('cine')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0">
+                    <path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/>
+                    <path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/>
+                    <path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/>
+                </svg>
+                <span class="small fw-semibold">Post Cinemagraph to Threads</span>
+                <svg id="cine-threads-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
+                     style="transition:transform 0.2s;flex-shrink:0">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+            <div id="cine-threads-body" class="d-none pt-1">
+                <div class="alert alert-info small mb-0 d-flex align-items-center gap-2" style="padding:.6rem .8rem">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    <span>Threads doesn't support cinemagraph-style looping videos. Use <strong>Carousel Images</strong> or <strong>Narrated Videos</strong> to post to Threads instead.</span>
+                </div>
+            </div>
+
+            <!-- Pinterest Cinemagraph Posting (info notice only) -->
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="togglePinterestSection('cine')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0">
+                    <path d="M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5"/>
+                    <path d="M12 2a10 10 0 1 0 4 19.17"/>
+                    <path d="M9.5 15.5L11 12"/>
+                </svg>
+                <span class="small fw-semibold">Post Cinemagraph to Pinterest</span>
+                <svg id="cine-pinterest-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
+                     style="transition:transform 0.2s;flex-shrink:0">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+            <div id="cine-pinterest-body" class="d-none pt-1">
+                <div class="alert alert-info small mb-0 d-flex align-items-center gap-2" style="padding:.6rem .8rem">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    <span>Pinterest doesn't support cinemagraph-style looping videos. Use <strong>Carousel Images</strong> or <strong>Narrated Videos</strong> to post to Pinterest instead.</span>
+                </div>
+            </div>
+
+            <!-- LinkedIn Cinemagraph Posting -->
+            <hr class="mt-3 mb-0">
+            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
+                 style="cursor:pointer" onclick="toggleLinkedinSection('cine')">
+                <svg id="cine-linkedin-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0">
+                    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
+                    <rect x="2" y="9" width="4" height="12"/>
+                    <circle cx="4" cy="4" r="2"/>
+                </svg>
+                <span class="small fw-semibold">Post Cinemagraph to LinkedIn</span>
+                <svg id="cine-linkedin-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
+                     style="transition:transform 0.2s;flex-shrink:0">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+            <div id="cine-linkedin-body" class="d-none pt-1">
+                {% if not linkedin_configured %}
+                <div class="alert alert-warning py-2 small mb-0">
+                    LinkedIn credentials not configured.
+                    Set <code>LINKEDIN_ACCESS_TOKEN</code> and <code>LINKEDIN_PERSON_URN</code> in your environment.
+                </div>
+                {% else %}
+                <div class="mb-2">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <label class="small text-muted mb-0" for="cine-linkedin-caption">Caption<span class="ig-caption-tooltip" data-tip="LinkedIn supports up to 3000 characters for post text.">?</span></label>
+                        <a href="#" class="small ms-auto ig-section-link" id="cine-linkedin-copy-link"
+                           onclick="event.preventDefault(); copyIgCaptionToLinkedin('cine')">Copy from Instagram</a>
+                    </div>
+                    <textarea id="cine-linkedin-caption" class="form-control form-control-sm" rows="3"
+                              maxlength="3000" placeholder="Write your LinkedIn post… #stamps #philately"
+                              oninput="document.getElementById('cine-linkedin-char-count').textContent=this.value.length+' / 3000'"></textarea>
+                    <div class="text-end text-muted small mt-1" id="cine-linkedin-char-count">0 / 3000</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="cine-linkedin-btn-row">
+                    <button type="button" class="btn btn-sm btn-dark" onclick="postCineToLinkedin()" id="cine-linkedin-post-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
+                            <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
+                            <rect x="2" y="9" width="4" height="12"/>
+                            <circle cx="4" cy="4" r="2"/>
+                        </svg>Post to LinkedIn
+                    </button>
+                </div>
+                <div id="cine-linkedin-status-area" class="d-none">
+                    <div class="d-flex align-items-center gap-2 mb-1" id="cine-linkedin-status-running">
+                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
+                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
+                        <span id="cine-linkedin-status-text" class="text-muted small">Starting…</span>
+                    </div>
+                    <div class="progress mb-2" style="height:4px" id="cine-linkedin-progress-wrap">
+                        <div id="cine-linkedin-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width:0%"></div>
+                    </div>
+                    <div id="cine-linkedin-result" class="d-none small"></div>
+                    <div id="cine-linkedin-history" class="d-none mt-3">
+                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#cine-linkedin-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
+                        <div class="collapse" id="cine-linkedin-history-list"></div>
+                    </div>
+                </div>
+                {% endif %}
+            </div><!-- /cine-linkedin-body -->
 
             {% endif %}<!-- /article.id -->
         </div>
@@ -1529,7 +1857,11 @@ function toggleSlideshow(enabled) {
 }
 const FB_CONFIGURED  = {{ fb_configured | tojson }};
 const YT_CONFIGURED  = {{ yt_configured | tojson }};
-const X_CONFIGURED   = {{ x_configured | tojson }};
+const X_CONFIGURED       = {{ x_configured | tojson }};
+const THREADS_CONFIGURED = {{ threads_configured | tojson }};
+const PINTEREST_CONFIGURED = {{ pinterest_configured | tojson }};
+const LINKEDIN_CONFIGURED = {{ linkedin_configured | tojson }};
+const TIKTOK_CONFIGURED = {{ tiktok_configured | tojson }};
 
 function openCarouselStyleModal() {
     document.getElementById('carousel-style-text').value = CAROUSEL_STYLE;
@@ -1822,6 +2154,10 @@ var _platformIconSvg = {
     fb: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
     yt: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.54C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/></svg>',
     x:  '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M4 4l11.733 16H20L8.267 4z"/><path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/></svg>',
+    threads: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/><path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/><path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/></svg>',
+    pinterest: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5"/><path d="M12 2a10 10 0 1 0 4 19.17"/><path d="M9.5 15.5L11 12"/></svg>',
+    tiktok: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="me-1" style="vertical-align:-1px"><path d="M16.6 5.82C15.6 5.24 14.9 4.29 14.7 3.18 14.66 2.95 14.64 2.72 14.64 2.5h-3.3v13.36c0 1.31-1.07 2.37-2.38 2.37-1.31 0-2.38-1.06-2.38-2.37s1.07-2.38 2.38-2.38c.25 0 .49.04.71.11V10.2a5.82 5.82 0 0 0-.71-.04c-3.08 0-5.58 2.5-5.58 5.58s2.5 5.58 5.58 5.58 5.58-2.5 5.58-5.58V9.14c1.18.85 2.63 1.35 4.18 1.35V7.2c-.85 0-1.65-.25-2.32-.69l-.01-.01-.03-.02c-.22-.14-.42-.3-.62-.48z"/></svg>',
+    linkedin: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>',
 };
 
 function _makeViewPostBtn(btn, permalink, platform) {
@@ -2133,9 +2469,9 @@ function _clearXIconLive(mode) {
 /* Narrated video X header icon */
 function _setNvXIconLive(ts) {
     var el = document.getElementById('nv-x-icon-' + ts);
-    if (el) { el.classList.add('nv-run-x-live'); el.setAttribute('stroke', '#000'); }
+    if (el) { el.classList.add('nv-run-x-live'); el.setAttribute('stroke', '#1D9BF0'); }
     var hdr = document.getElementById('nv-x-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', '#000');
+    if (hdr) hdr.setAttribute('stroke', '#1D9BF0');
 }
 function _clearNvXIconLive(ts) {
     var el = document.getElementById('nv-x-icon-' + ts);
@@ -2185,6 +2521,30 @@ function toggleNvXSection(ts) {
     if (!body) return;
     body.classList.toggle('d-none');
     if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function toggleNvThreadsSection(ts) {
+    var body    = document.getElementById('nv-threads-' + ts + '-body');
+    var chevron = document.getElementById('nv-threads-' + ts + '-chevron');
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function toggleNvPinterestSection(ts) {
+    var body    = document.getElementById('nv-pinterest-' + ts + '-body');
+    var chevron = document.getElementById('nv-pinterest-' + ts + '-chevron');
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function toggleNvTiktokSection(ts) {
+    var body    = document.getElementById('nv-tiktok-' + ts + '-body');
+    var chevron = document.getElementById('nv-tiktok-' + ts + '-chevron');
+    if (!body) return;
+    var collapsed = body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = collapsed ? '' : 'rotate(180deg)';
 }
 
 function toggleXSection(mode) {
@@ -2682,6 +3042,806 @@ function checkXRunning(mode) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   Threads Carousel posting
+   ═══════════════════════════════════════════════════════════════ */
+function _threadsId(mode, suffix) { return mode + '-threads-' + suffix; }
+
+function _setThreadsIconLive(mode) {
+    var icon = document.getElementById(mode + '-threads-icon');
+    if (icon) icon.classList.add('threads-icon-live');
+}
+function _clearThreadsIconLive(mode) {
+    var icon = document.getElementById(mode + '-threads-icon');
+    if (icon) icon.classList.remove('threads-icon-live');
+}
+
+function toggleThreadsSection(mode) {
+    var body    = document.getElementById(mode + '-threads-body');
+    var chevron = document.getElementById(mode + '-threads-chevron');
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function copyIgCaptionToThreads(mode) {
+    var igCaption      = document.getElementById(mode + '-ig-caption');
+    var threadsCaption = document.getElementById(_threadsId(mode, 'caption'));
+    if (igCaption && threadsCaption) {
+        threadsCaption.value = igCaption.value.slice(0, 500);
+        var countEl = document.getElementById(_threadsId(mode, 'char-count'));
+        if (countEl) countEl.textContent = threadsCaption.value.length + ' / 500';
+    }
+}
+
+function postCarouselToThreads(mode) {
+    if (!ARTICLE_ID) return;
+    var caption = (document.getElementById(_threadsId(mode, 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_threadsId(mode, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showThreadsRunning(mode, 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-carousel-to-threads', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({caption: caption, type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showThreadsError(mode, d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollCarouselThreadsStatus(mode);
+    })
+    .catch(function(e) { showThreadsError(mode, 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function pollCarouselThreadsStatus(mode) {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/carousel-threads-status?type=' + mode)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) {
+                showThreadsDone(mode, d.result.slice(5));
+            } else if (d.result && d.result.startsWith('error:')) {
+                showThreadsError(mode, d.result.slice(6));
+            } else {
+                showThreadsRunning(mode, d.status || '');
+                pollCarouselThreadsStatus(mode);
+            }
+            if (d.history && d.history.length) renderThreadsHistory(mode, d.history);
+        })
+        .catch(function() { pollCarouselThreadsStatus(mode); });
+    }, 5000);
+}
+
+function showThreadsRunning(mode, statusStr) {
+    var area    = document.getElementById(_threadsId(mode, 'status-area'));
+    var running = document.getElementById(_threadsId(mode, 'status-running'));
+    var textEl  = document.getElementById(_threadsId(mode, 'status-text'));
+    var bar     = document.getElementById(_threadsId(mode, 'progress-bar'));
+    var result  = document.getElementById(_threadsId(mode, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (result) result.classList.add('d-none');
+    var labels = {'running:0': 'Starting…', 'running:compose': 'Composing images…',
+                  'running:containers': 'Creating containers…', 'running:carousel': 'Creating carousel…',
+                  'running:poll': 'Processing…', 'running:publish': 'Publishing…'};
+    var label = labels[statusStr];
+    if (!label) {
+        for (var k in labels) { if (statusStr && statusStr.startsWith(k)) { label = statusStr.replace(k, labels[k].replace('…', ': ')); break; } }
+    }
+    if (textEl) textEl.textContent = label || statusStr || 'Processing…';
+    var pct = 10;
+    if (statusStr && statusStr.startsWith('running:containers')) pct = 40;
+    if (statusStr && statusStr.startsWith('running:carousel')) pct = 60;
+    if (statusStr && statusStr.startsWith('running:poll')) pct = 70;
+    if (statusStr && statusStr.startsWith('running:publish')) pct = 90;
+    if (bar) bar.style.width = pct + '%';
+}
+
+function showThreadsDone(mode, permalink) {
+    _setThreadsIconLive(mode);
+    var area     = document.getElementById(_threadsId(mode, 'status-area'));
+    var running  = document.getElementById(_threadsId(mode, 'status-running'));
+    var progress = document.getElementById(_threadsId(mode, 'progress-wrap'));
+    var result   = document.getElementById(_threadsId(mode, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    var ta = document.getElementById(mode + '-threads-caption');
+    if (ta) { ta.readOnly = true; ta.style.opacity = '0.7'; }
+    var copyLink = document.getElementById(mode + '-threads-copy-link');
+    if (copyLink) { copyLink.classList.add('text-muted', 'pe-none'); copyLink.style.opacity = '0.5'; }
+    var postBtn = document.getElementById(_threadsId(mode, 'post-btn'));
+    _makeViewPostBtn(postBtn, permalink, 'threads');
+    var btnRow = document.getElementById(_threadsId(mode, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.threads-done-btn').forEach(function(b) { b.remove(); });
+        var m = mode;
+        var checkBtn = document.createElement('button');
+        checkBtn.type = 'button';
+        checkBtn.className = 'btn btn-outline-primary btn-sm threads-done-btn';
+        checkBtn.id = _threadsId(mode, 'check-live-btn');
+        checkBtn.textContent = 'Check if post is still live';
+        checkBtn.onclick = function() { threadsCheckPostLive(m); };
+        btnRow.appendChild(checkBtn);
+    }
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div id="' + mode + '-threads-check-live-status" class="small mb-2"></div>';
+    }
+}
+
+function showThreadsError(mode, msg) {
+    var area     = document.getElementById(_threadsId(mode, 'status-area'));
+    var running  = document.getElementById(_threadsId(mode, 'status-running'));
+    var progress = document.getElementById(_threadsId(mode, 'progress-wrap'));
+    var result   = document.getElementById(_threadsId(mode, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-danger alert-dismissible py-1 small mb-2">' + msg + '<button type="button" class="btn-close" style="padding:.3rem" data-bs-dismiss="alert"></button></div>';
+    }
+    var postBtn = document.getElementById(_threadsId(mode, 'post-btn'));
+    if (postBtn) postBtn.disabled = false;
+}
+
+function threadsCheckPostLive(mode) {
+    if (!ARTICLE_ID) return;
+    var btn = document.getElementById(_threadsId(mode, 'check-live-btn'));
+    var status = document.getElementById(mode + '-threads-check-live-status');
+    if (!status) {
+        status = document.createElement('div');
+        status.id = mode + '-threads-check-live-status';
+        status.className = 'small mb-2';
+        var area = document.getElementById(_threadsId(mode, 'status-area'));
+        if (area) area.appendChild(status);
+    }
+    if (btn) btn.disabled = true;
+    status.textContent = 'Checking\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/check-carousel-threads-post?type=' + mode)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (btn) btn.disabled = false;
+            if (d.error) { status.innerHTML = '<span class="text-danger">' + d.error + '</span>'; return; }
+            if (d.live) {
+                status.innerHTML = '<span class="text-success">\u2713 Post is still live on Threads.</span>';
+            } else {
+                var apiNote = d.api_error ? ' <span class="text-muted">(' + d.api_error + ')</span>' : '';
+                status.innerHTML =
+                    '<span class="text-warning fw-semibold">Post not found on Threads.</span>' + apiNote + ' ' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="threadsArchivePost(\'' + mode + '\')">Archive this post record</button>';
+            }
+        })
+        .catch(function(err) { if (btn) btn.disabled = false; status.innerHTML = '<span class="text-danger">Network error: ' + err + '</span>'; });
+}
+
+function threadsArchivePost(mode) {
+    if (!ARTICLE_ID) return;
+    var status = document.getElementById(mode + '-threads-check-live-status');
+    if (status) status.innerHTML = 'Archiving\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-carousel-threads-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { if (status) status.innerHTML = '<span class="text-danger">' + d.error + '</span>'; return; }
+        _clearThreadsIconLive(mode);
+        var ta = document.getElementById(mode + '-threads-caption');
+        if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
+        var copyLink = document.getElementById(mode + '-threads-copy-link');
+        if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+        var postBtn = document.getElementById(_threadsId(mode, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_threadsId(mode, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.threads-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_threadsId(mode, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderThreadsHistory(mode, d.history);
+    })
+    .catch(function(e) { if (status) status.innerHTML = '<span class="text-danger">Archive failed: ' + e + '</span>'; });
+}
+
+function renderThreadsHistory(mode, history) {
+    var wrap = document.getElementById(_threadsId(mode, 'history'));
+    var list = document.getElementById(mode + '-threads-history-list');
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.slice().reverse().forEach(function(entry) {
+        var row = document.createElement('div');
+        row.className = 'mb-1 small text-muted';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        row.textContent = '\u2022 Post archived' + (date ? ' \u2014 ' + date : '');
+        list.appendChild(row);
+    });
+    wrap.classList.remove('d-none');
+}
+
+function checkThreadsRunning(mode) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/carousel-threads-status?type=' + mode)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.result && d.result.startsWith('done:')) {
+            showThreadsDone(mode, d.result.slice(5));
+        } else if (d.status && d.status.startsWith('running') && !(d.result && d.result.startsWith('error:'))) {
+            showThreadsRunning(mode, d.status);
+            pollCarouselThreadsStatus(mode);
+        }
+        if (d.history && d.history.length) renderThreadsHistory(mode, d.history);
+    })
+    .catch(function() {});
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Pinterest Carousel posting
+   ═══════════════════════════════════════════════════════════════ */
+function _pinterestId(mode, suffix) { return mode + '-pinterest-' + suffix; }
+
+function _setPinterestIconLive(mode) {
+    var icon = document.getElementById(mode + '-pinterest-icon');
+    if (icon) icon.classList.add('pinterest-icon-live');
+}
+function _clearPinterestIconLive(mode) {
+    var icon = document.getElementById(mode + '-pinterest-icon');
+    if (icon) icon.classList.remove('pinterest-icon-live');
+}
+
+function togglePinterestSection(mode) {
+    var body    = document.getElementById(mode + '-pinterest-body');
+    var chevron = document.getElementById(mode + '-pinterest-chevron');
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function copyIgCaptionToPinterest(mode) {
+    var igCaption        = document.getElementById(mode + '-ig-caption');
+    var pinterestCaption = document.getElementById(_pinterestId(mode, 'caption'));
+    if (igCaption && pinterestCaption) {
+        pinterestCaption.value = igCaption.value.slice(0, 800);
+        var countEl = document.getElementById(_pinterestId(mode, 'char-count'));
+        if (countEl) countEl.textContent = pinterestCaption.value.length + ' / 800';
+    }
+}
+
+function postCarouselToPinterest(mode) {
+    if (!ARTICLE_ID) return;
+    var caption = (document.getElementById(_pinterestId(mode, 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_pinterestId(mode, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showPinterestRunning(mode, 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-carousel-to-pinterest', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({caption: caption, type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showPinterestError(mode, d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollCarouselPinterestStatus(mode);
+    })
+    .catch(function(e) { showPinterestError(mode, 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function pollCarouselPinterestStatus(mode) {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/carousel-pinterest-status?type=' + mode)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) {
+                showPinterestDone(mode, d.result.slice(5));
+            } else if (d.result && d.result.startsWith('error:')) {
+                showPinterestError(mode, d.result.slice(6));
+            } else {
+                showPinterestRunning(mode, d.status || '');
+                pollCarouselPinterestStatus(mode);
+            }
+            if (d.history && d.history.length) renderPinterestHistory(mode, d.history);
+        })
+        .catch(function() { pollCarouselPinterestStatus(mode); });
+    }, 5000);
+}
+
+function showPinterestRunning(mode, statusStr) {
+    var area    = document.getElementById(_pinterestId(mode, 'status-area'));
+    var running = document.getElementById(_pinterestId(mode, 'status-running'));
+    var textEl  = document.getElementById(_pinterestId(mode, 'status-text'));
+    var bar     = document.getElementById(_pinterestId(mode, 'progress-bar'));
+    var result  = document.getElementById(_pinterestId(mode, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (result) result.classList.add('d-none');
+    var labels = {'running:0': 'Starting…', 'running:compose': 'Composing images…',
+                  'running:upload': 'Uploading to Pinterest…', 'running:create': 'Creating pin…',
+                  'running:poll': 'Processing…', 'running:publish': 'Publishing…'};
+    var label = labels[statusStr];
+    if (!label) {
+        for (var k in labels) { if (statusStr && statusStr.startsWith(k)) { label = statusStr.replace(k, labels[k].replace('…', ': ')); break; } }
+    }
+    if (textEl) textEl.textContent = label || statusStr || 'Processing…';
+    var pct = 10;
+    if (statusStr && statusStr.startsWith('running:upload')) pct = 40;
+    if (statusStr && statusStr.startsWith('running:create')) pct = 60;
+    if (statusStr && statusStr.startsWith('running:poll')) pct = 70;
+    if (statusStr && statusStr.startsWith('running:publish')) pct = 90;
+    if (bar) bar.style.width = pct + '%';
+}
+
+function showPinterestDone(mode, permalink) {
+    _setPinterestIconLive(mode);
+    var area     = document.getElementById(_pinterestId(mode, 'status-area'));
+    var running  = document.getElementById(_pinterestId(mode, 'status-running'));
+    var progress = document.getElementById(_pinterestId(mode, 'progress-wrap'));
+    var result   = document.getElementById(_pinterestId(mode, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    var ta = document.getElementById(mode + '-pinterest-caption');
+    if (ta) { ta.readOnly = true; ta.style.opacity = '0.7'; }
+    var copyLink = document.getElementById(mode + '-pinterest-copy-link');
+    if (copyLink) { copyLink.classList.add('text-muted', 'pe-none'); copyLink.style.opacity = '0.5'; }
+    var postBtn = document.getElementById(_pinterestId(mode, 'post-btn'));
+    _makeViewPostBtn(postBtn, permalink, 'pinterest');
+    var btnRow = document.getElementById(_pinterestId(mode, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.pinterest-done-btn').forEach(function(b) { b.remove(); });
+        var m = mode;
+        var checkBtn = document.createElement('button');
+        checkBtn.type = 'button';
+        checkBtn.className = 'btn btn-outline-primary btn-sm pinterest-done-btn';
+        checkBtn.id = _pinterestId(mode, 'check-live-btn');
+        checkBtn.textContent = 'Check if post is still live';
+        checkBtn.onclick = function() { pinterestCheckPostLive(m); };
+        btnRow.appendChild(checkBtn);
+
+        var delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn btn-outline-danger btn-sm pinterest-done-btn';
+        delBtn.id = _pinterestId(mode, 'delete-btn');
+        delBtn.textContent = 'Delete from Pinterest';
+        delBtn.onclick = function() { pinterestDeleteAndArchive(m); };
+        btnRow.appendChild(delBtn);
+    }
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div id="' + mode + '-pinterest-check-live-status" class="small mb-2"></div>';
+    }
+}
+
+function showPinterestError(mode, msg) {
+    var area     = document.getElementById(_pinterestId(mode, 'status-area'));
+    var running  = document.getElementById(_pinterestId(mode, 'status-running'));
+    var progress = document.getElementById(_pinterestId(mode, 'progress-wrap'));
+    var result   = document.getElementById(_pinterestId(mode, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-danger alert-dismissible py-1 small mb-2">' + msg + '<button type="button" class="btn-close" style="padding:.3rem" data-bs-dismiss="alert"></button></div>';
+    }
+    var postBtn = document.getElementById(_pinterestId(mode, 'post-btn'));
+    if (postBtn) postBtn.disabled = false;
+}
+
+function pinterestCheckPostLive(mode) {
+    if (!ARTICLE_ID) return;
+    var btn = document.getElementById(_pinterestId(mode, 'check-live-btn'));
+    var status = document.getElementById(mode + '-pinterest-check-live-status');
+    if (!status) {
+        status = document.createElement('div');
+        status.id = mode + '-pinterest-check-live-status';
+        status.className = 'small mb-2';
+        var area = document.getElementById(_pinterestId(mode, 'status-area'));
+        if (area) area.appendChild(status);
+    }
+    if (btn) btn.disabled = true;
+    status.textContent = 'Checking\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/check-carousel-pinterest-post?type=' + mode)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (btn) btn.disabled = false;
+            if (d.error) { status.innerHTML = '<span class="text-danger">' + d.error + '</span>'; return; }
+            if (d.live) {
+                status.innerHTML = '<span class="text-success">\u2713 Post is still live on Pinterest.</span>';
+            } else {
+                var apiNote = d.api_error ? ' <span class="text-muted">(' + d.api_error + ')</span>' : '';
+                status.innerHTML =
+                    '<span class="text-warning fw-semibold">Post not found on Pinterest.</span>' + apiNote + ' ' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="pinterestArchivePost(\'' + mode + '\')">Archive this post record</button>';
+            }
+        })
+        .catch(function(err) { if (btn) btn.disabled = false; status.innerHTML = '<span class="text-danger">Network error: ' + err + '</span>'; });
+}
+
+function pinterestDeleteAndArchive(mode) {
+    if (!ARTICLE_ID) return;
+    var delBtn = document.getElementById(_pinterestId(mode, 'delete-btn'));
+    if (delBtn) delBtn.disabled = true;
+    var status = document.getElementById(mode + '-pinterest-check-live-status');
+    if (status) status.innerHTML = 'Deleting from Pinterest\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/delete-carousel-pinterest-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) {
+            if (status) status.innerHTML = '<span class="text-danger">' + d.error + '</span>';
+            if (delBtn) delBtn.disabled = false;
+            return;
+        }
+        _clearPinterestIconLive(mode);
+        var ta = document.getElementById(mode + '-pinterest-caption');
+        if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
+        var copyLink = document.getElementById(mode + '-pinterest-copy-link');
+        if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+        var postBtn = document.getElementById(_pinterestId(mode, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_pinterestId(mode, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.pinterest-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_pinterestId(mode, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderPinterestHistory(mode, d.history);
+    })
+    .catch(function(e) { if (status) status.innerHTML = '<span class="text-danger">Delete failed: ' + e + '</span>'; if (delBtn) delBtn.disabled = false; });
+}
+
+function pinterestArchivePost(mode) {
+    if (!ARTICLE_ID) return;
+    var status = document.getElementById(mode + '-pinterest-check-live-status');
+    if (status) status.innerHTML = 'Archiving\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-carousel-pinterest-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { if (status) status.innerHTML = '<span class="text-danger">' + d.error + '</span>'; return; }
+        _clearPinterestIconLive(mode);
+        var ta = document.getElementById(mode + '-pinterest-caption');
+        if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
+        var copyLink = document.getElementById(mode + '-pinterest-copy-link');
+        if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+        var postBtn = document.getElementById(_pinterestId(mode, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_pinterestId(mode, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.pinterest-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_pinterestId(mode, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderPinterestHistory(mode, d.history);
+    })
+    .catch(function(e) { if (status) status.innerHTML = '<span class="text-danger">Archive failed: ' + e + '</span>'; });
+}
+
+function renderPinterestHistory(mode, history) {
+    var wrap = document.getElementById(_pinterestId(mode, 'history'));
+    var list = document.getElementById(mode + '-pinterest-history-list');
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.slice().reverse().forEach(function(entry) {
+        var row = document.createElement('div');
+        row.className = 'mb-1 small text-muted';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        row.textContent = '\u2022 Post archived' + (date ? ' \u2014 ' + date : '');
+        list.appendChild(row);
+    });
+    wrap.classList.remove('d-none');
+}
+
+function checkPinterestRunning(mode) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/carousel-pinterest-status?type=' + mode)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.result && d.result.startsWith('done:')) {
+            showPinterestDone(mode, d.result.slice(5));
+        } else if (d.status && d.status.startsWith('running') && !(d.result && d.result.startsWith('error:'))) {
+            showPinterestRunning(mode, d.status);
+            pollCarouselPinterestStatus(mode);
+        }
+        if (d.history && d.history.length) renderPinterestHistory(mode, d.history);
+    })
+    .catch(function() {});
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LinkedIn Carousel posting
+   ═══════════════════════════════════════════════════════════════ */
+function _linkedinId(mode, suffix) { return mode + '-linkedin-' + suffix; }
+
+function _setLinkedinIconLive(mode) {
+    var icon = document.getElementById(mode + '-linkedin-icon');
+    if (icon) icon.classList.add('linkedin-icon-live');
+}
+function _clearLinkedinIconLive(mode) {
+    var icon = document.getElementById(mode + '-linkedin-icon');
+    if (icon) icon.classList.remove('linkedin-icon-live');
+}
+
+function toggleLinkedinSection(mode) {
+    var body    = document.getElementById(mode + '-linkedin-body');
+    var chevron = document.getElementById(mode + '-linkedin-chevron');
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function copyIgCaptionToLinkedin(mode) {
+    var igCaption       = document.getElementById(mode + '-ig-caption');
+    var linkedinCaption = document.getElementById(_linkedinId(mode, 'caption'));
+    if (igCaption && linkedinCaption) {
+        linkedinCaption.value = igCaption.value.slice(0, 3000);
+        var countEl = document.getElementById(_linkedinId(mode, 'char-count'));
+        if (countEl) countEl.textContent = linkedinCaption.value.length + ' / 3000';
+    }
+}
+
+function postCarouselToLinkedin() {
+    if (!ARTICLE_ID) return;
+    var caption = (document.getElementById(_linkedinId('car', 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_linkedinId('car', 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showLinkedinRunning('car', 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-carousel-to-linkedin', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({caption: caption, type: 'car'})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showLinkedinError('car', d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollCarouselLinkedinStatus('car');
+    })
+    .catch(function(e) { showLinkedinError('car', 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function postCineToLinkedin() {
+    if (!ARTICLE_ID) return;
+    var caption = (document.getElementById(_linkedinId('cine', 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_linkedinId('cine', 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showLinkedinRunning('cine', 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-carousel-to-linkedin', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({caption: caption, type: 'cine'})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showLinkedinError('cine', d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollCarouselLinkedinStatus('cine');
+    })
+    .catch(function(e) { showLinkedinError('cine', 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function pollCarouselLinkedinStatus(type) {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/carousel-linkedin-status?type=' + type)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) {
+                showLinkedinDone(type, d.result.slice(5));
+            } else if (d.result && d.result.startsWith('error:')) {
+                showLinkedinError(type, d.result.slice(6));
+            } else {
+                showLinkedinRunning(type, d.status || '');
+                pollCarouselLinkedinStatus(type);
+            }
+            if (d.history && d.history.length) renderLinkedinHistory(type, d.history);
+        })
+        .catch(function() { pollCarouselLinkedinStatus(type); });
+    }, 5000);
+}
+
+function showLinkedinRunning(type, statusStr) {
+    var area    = document.getElementById(_linkedinId(type, 'status-area'));
+    var running = document.getElementById(_linkedinId(type, 'status-running'));
+    var textEl  = document.getElementById(_linkedinId(type, 'status-text'));
+    var bar     = document.getElementById(_linkedinId(type, 'progress-bar'));
+    var result  = document.getElementById(_linkedinId(type, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (result) result.classList.add('d-none');
+    var labels = {'running:0': 'Starting…', 'running:compose': 'Composing images…',
+                  'running:upload': 'Uploading to LinkedIn…', 'running:create': 'Creating post…',
+                  'running:poll': 'Processing…', 'running:publish': 'Publishing…'};
+    var label = labels[statusStr];
+    if (!label) {
+        for (var k in labels) { if (statusStr && statusStr.startsWith(k)) { label = statusStr.replace(k, labels[k].replace('…', ': ')); break; } }
+    }
+    if (textEl) textEl.textContent = label || statusStr || 'Processing…';
+    var pct = 10;
+    if (statusStr && statusStr.startsWith('running:upload')) pct = 40;
+    if (statusStr && statusStr.startsWith('running:create')) pct = 60;
+    if (statusStr && statusStr.startsWith('running:poll')) pct = 70;
+    if (statusStr && statusStr.startsWith('running:publish')) pct = 90;
+    if (bar) bar.style.width = pct + '%';
+}
+
+function showLinkedinDone(type, permalink) {
+    _setLinkedinIconLive(type);
+    var area     = document.getElementById(_linkedinId(type, 'status-area'));
+    var running  = document.getElementById(_linkedinId(type, 'status-running'));
+    var progress = document.getElementById(_linkedinId(type, 'progress-wrap'));
+    var result   = document.getElementById(_linkedinId(type, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    var ta = document.getElementById(type + '-linkedin-caption');
+    if (ta) { ta.readOnly = true; ta.style.opacity = '0.7'; }
+    var copyLink = document.getElementById(type + '-linkedin-copy-link');
+    if (copyLink) { copyLink.classList.add('text-muted', 'pe-none'); copyLink.style.opacity = '0.5'; }
+    var postBtn = document.getElementById(_linkedinId(type, 'post-btn'));
+    _makeViewPostBtn(postBtn, permalink, 'linkedin');
+    var btnRow = document.getElementById(_linkedinId(type, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.linkedin-done-btn').forEach(function(b) { b.remove(); });
+        var m = type;
+        var checkBtn = document.createElement('button');
+        checkBtn.type = 'button';
+        checkBtn.className = 'btn btn-outline-primary btn-sm linkedin-done-btn';
+        checkBtn.id = _linkedinId(type, 'check-live-btn');
+        checkBtn.textContent = 'Check if post is still live';
+        checkBtn.onclick = function() { linkedinCheckPostLive(m); };
+        btnRow.appendChild(checkBtn);
+
+        var delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn btn-outline-danger btn-sm linkedin-done-btn';
+        delBtn.id = _linkedinId(type, 'delete-btn');
+        delBtn.textContent = 'Delete from LinkedIn';
+        delBtn.onclick = function() { linkedinDeletePost(m); };
+        btnRow.appendChild(delBtn);
+    }
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div id="' + type + '-linkedin-check-live-status" class="small mb-2"></div>';
+    }
+}
+
+function showLinkedinError(type, msg) {
+    var area     = document.getElementById(_linkedinId(type, 'status-area'));
+    var running  = document.getElementById(_linkedinId(type, 'status-running'));
+    var progress = document.getElementById(_linkedinId(type, 'progress-wrap'));
+    var result   = document.getElementById(_linkedinId(type, 'result'));
+    if (area) area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-danger alert-dismissible py-1 small mb-2">' + msg + '<button type="button" class="btn-close" style="padding:.3rem" data-bs-dismiss="alert"></button></div>';
+    }
+    var postBtn = document.getElementById(_linkedinId(type, 'post-btn'));
+    if (postBtn) postBtn.disabled = false;
+}
+
+function linkedinCheckPostLive(type) {
+    if (!ARTICLE_ID) return;
+    var btn = document.getElementById(_linkedinId(type, 'check-live-btn'));
+    var status = document.getElementById(type + '-linkedin-check-live-status');
+    if (!status) {
+        status = document.createElement('div');
+        status.id = type + '-linkedin-check-live-status';
+        status.className = 'small mb-2';
+        var area = document.getElementById(_linkedinId(type, 'status-area'));
+        if (area) area.appendChild(status);
+    }
+    if (btn) btn.disabled = true;
+    status.textContent = 'Checking\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/check-carousel-linkedin-post?type=' + type)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (btn) btn.disabled = false;
+            if (d.error) { status.innerHTML = '<span class="text-danger">' + d.error + '</span>'; return; }
+            if (d.live) {
+                status.innerHTML = '<span class="text-success">\u2713 Post is still live on LinkedIn.</span>';
+            } else {
+                var apiNote = d.api_error ? ' <span class="text-muted">(' + d.api_error + ')</span>' : '';
+                status.innerHTML =
+                    '<span class="text-warning fw-semibold">Post not found on LinkedIn.</span>' + apiNote + ' ' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="linkedinArchivePost(\'' + type + '\')">Archive this post record</button>';
+            }
+        })
+        .catch(function(err) { if (btn) btn.disabled = false; status.innerHTML = '<span class="text-danger">Network error: ' + err + '</span>'; });
+}
+
+function linkedinDeletePost(type) {
+    if (!ARTICLE_ID) return;
+    if (!confirm('Delete this post from LinkedIn?')) return;
+    var delBtn = document.getElementById(_linkedinId(type, 'delete-btn'));
+    if (delBtn) delBtn.disabled = true;
+    var status = document.getElementById(type + '-linkedin-check-live-status');
+    if (status) status.innerHTML = 'Deleting from LinkedIn\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/delete-carousel-linkedin-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: type})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) {
+            if (status) status.innerHTML = '<span class="text-danger">' + d.error + '</span>';
+            if (delBtn) delBtn.disabled = false;
+            return;
+        }
+        _clearLinkedinIconLive(type);
+        var ta = document.getElementById(type + '-linkedin-caption');
+        if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
+        var copyLink = document.getElementById(type + '-linkedin-copy-link');
+        if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+        var postBtn = document.getElementById(_linkedinId(type, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_linkedinId(type, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.linkedin-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_linkedinId(type, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderLinkedinHistory(type, d.history);
+    })
+    .catch(function(e) { if (status) status.innerHTML = '<span class="text-danger">Delete failed: ' + e + '</span>'; if (delBtn) delBtn.disabled = false; });
+}
+
+function linkedinArchivePost(type) {
+    if (!ARTICLE_ID) return;
+    var status = document.getElementById(type + '-linkedin-check-live-status');
+    if (status) status.innerHTML = 'Archiving\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-carousel-linkedin-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: type})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { if (status) status.innerHTML = '<span class="text-danger">' + d.error + '</span>'; return; }
+        _clearLinkedinIconLive(type);
+        var ta = document.getElementById(type + '-linkedin-caption');
+        if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
+        var copyLink = document.getElementById(type + '-linkedin-copy-link');
+        if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+        var postBtn = document.getElementById(_linkedinId(type, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_linkedinId(type, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.linkedin-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_linkedinId(type, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderLinkedinHistory(type, d.history);
+    })
+    .catch(function(e) { if (status) status.innerHTML = '<span class="text-danger">Archive failed: ' + e + '</span>'; });
+}
+
+function renderLinkedinHistory(type, history) {
+    var wrap = document.getElementById(_linkedinId(type, 'history'));
+    var list = document.getElementById(type + '-linkedin-history-list');
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.slice().reverse().forEach(function(entry) {
+        var row = document.createElement('div');
+        row.className = 'mb-1 small text-muted';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        row.textContent = '\u2022 Post archived' + (date ? ' \u2014 ' + date : '');
+        list.appendChild(row);
+    });
+    wrap.classList.remove('d-none');
+}
+
+function checkLinkedinRunning(type) {
+    fetch('/admin/articles/' + ARTICLE_ID + '/carousel-linkedin-status?type=' + type)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.result && d.result.startsWith('done:')) {
+            showLinkedinDone(type, d.result.slice(5));
+        } else if (d.status && d.status.startsWith('running') && !(d.result && d.result.startsWith('error:'))) {
+            showLinkedinRunning(type, d.status);
+            pollCarouselLinkedinStatus(type);
+        }
+        if (d.history && d.history.length) renderLinkedinHistory(type, d.history);
+    })
+    .catch(function() {});
+}
+
+/* ═══════════════════════════════════════════════════════════════
    X (Twitter) Narrated Video posting
    ═══════════════════════════════════════════════════════════════ */
 function _nvXId(ts, suffix) { return 'nv-x-' + ts + '-' + suffix; }
@@ -2943,6 +4103,947 @@ function restoreNvXState(ts) {
         } else if (d.status && d.status.startsWith('running')) {
             showNvXRunning(ts, d.status);
             pollNvXStatus(ts);
+        }
+    })
+    .catch(function() {});
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Threads Narrated Video posting
+   ═══════════════════════════════════════════════════════════════ */
+function _nvThreadsId(ts, suffix) { return 'nv-threads-' + ts + '-' + suffix; }
+
+function _setNvThreadsIconLive(ts) {
+    var el = document.getElementById('nv-threads-icon-' + ts);
+    if (el) { el.classList.add('nv-run-threads-live'); el.setAttribute('stroke', '#000'); }
+    var hdr = document.getElementById('nv-threads-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', '#000');
+}
+function _clearNvThreadsIconLive(ts) {
+    var el = document.getElementById('nv-threads-icon-' + ts);
+    if (el) { el.classList.remove('nv-run-threads-live'); el.setAttribute('stroke', '#ccc'); }
+    var hdr = document.getElementById('nv-threads-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', 'currentColor');
+}
+
+function copyNvIgCaptionToThreads(ts) {
+    var igCaption      = document.getElementById('nv-ig-' + ts + '-caption');
+    var threadsCaption = document.getElementById('nv-threads-' + ts + '-caption');
+    if (igCaption && threadsCaption) {
+        threadsCaption.value = igCaption.value.slice(0, 500);
+        var countEl = document.getElementById('nv-threads-' + ts + '-count');
+        if (countEl) countEl.textContent = threadsCaption.value.length + ' / 500';
+    }
+}
+
+function postNarratedToThreads(ts, videoUrl) {
+    if (!ARTICLE_ID) return;
+    var caption = (document.getElementById(_nvThreadsId(ts, 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_nvThreadsId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showNvThreadsRunning(ts, 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-narrated-to-threads', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({video_url: videoUrl, caption: caption, run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showNvThreadsError(ts, d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollNvThreadsStatus(ts);
+    })
+    .catch(function(e) { showNvThreadsError(ts, 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function pollNvThreadsStatus(ts) {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/narrated-threads-status?ts=' + ts)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) {
+                showNvThreadsDone(ts, d.result.slice(5));
+            } else if (d.result && d.result.startsWith('error:')) {
+                showNvThreadsError(ts, d.result.slice(6));
+            } else {
+                showNvThreadsRunning(ts, d.status || '');
+                pollNvThreadsStatus(ts);
+            }
+            if (d.history && d.history.length) renderNvThreadsHistory(ts, d.history);
+        })
+        .catch(function() { pollNvThreadsStatus(ts); });
+    }, 5000);
+}
+
+function showNvThreadsRunning(ts, statusStr) {
+    var area    = document.getElementById(_nvThreadsId(ts, 'status-area'));
+    var running = document.getElementById(_nvThreadsId(ts, 'status-running'));
+    var textEl  = document.getElementById(_nvThreadsId(ts, 'status-text'));
+    var bar     = document.getElementById(_nvThreadsId(ts, 'progress-bar'));
+    var result  = document.getElementById(_nvThreadsId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (result) result.classList.add('d-none');
+    var labels = {'running:0': 'Starting…', 'running:container': 'Creating container…',
+                  'running:poll': 'Processing video…', 'running:publish': 'Publishing…'};
+    var pcts   = {'running:0': 10, 'running:container': 30, 'running:poll': 55, 'running:publish': 85};
+    if (textEl) textEl.textContent = labels[statusStr] || statusStr || 'Running…';
+    if (bar) bar.style.width = (pcts[statusStr] || 10) + '%';
+}
+
+function showNvThreadsDone(ts, permalink) {
+    _setNvThreadsIconLive(ts);
+    var area     = document.getElementById(_nvThreadsId(ts, 'status-area'));
+    var running  = document.getElementById(_nvThreadsId(ts, 'status-running'));
+    var progress = document.getElementById(_nvThreadsId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvThreadsId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    var genLink = document.getElementById('nv-threads-' + ts + '-gen-link');
+    if (genLink) genLink.classList.add('d-none');
+    var postBtn = document.getElementById(_nvThreadsId(ts, 'post-btn'));
+    _makeViewPostBtn(postBtn, permalink, 'threads');
+    var btnRow = document.getElementById(_nvThreadsId(ts, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.nv-threads-done-btn').forEach(function(b) { b.remove(); });
+        var checkBtn = document.createElement('button');
+        checkBtn.type = 'button';
+        checkBtn.className = 'btn btn-outline-primary btn-sm nv-threads-done-btn';
+        checkBtn.textContent = 'Check if post is still live';
+        checkBtn.onclick = function() { nvThreadsCheckPostLive(ts); };
+        btnRow.appendChild(checkBtn);
+    }
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div id="nv-threads-' + ts + '-check-live-status" class="small mb-2"></div>';
+    }
+}
+
+function showNvThreadsError(ts, msg) {
+    var area     = document.getElementById(_nvThreadsId(ts, 'status-area'));
+    var running  = document.getElementById(_nvThreadsId(ts, 'status-running'));
+    var progress = document.getElementById(_nvThreadsId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvThreadsId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-danger alert-dismissible py-1 small mb-2">' + msg + '<button type="button" class="btn-close" style="padding:.3rem" data-bs-dismiss="alert"></button></div>';
+    }
+    var postBtn = document.getElementById(_nvThreadsId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = false;
+}
+
+function nvThreadsCheckPostLive(ts) {
+    if (!ARTICLE_ID) return;
+    var statusDiv = document.getElementById('nv-threads-' + ts + '-check-live-status');
+    if (statusDiv) statusDiv.innerHTML = 'Checking\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/check-narrated-threads-post?ts=' + ts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.live) {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-success">\u2713 Post is live on Threads</span>';
+        } else if (d.error) {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Error: ' + d.error + '</span>';
+        } else {
+            var apiNote = d.api_error ? ' <span class="text-muted">(' + d.api_error + ')</span>' : '';
+            if (statusDiv) statusDiv.innerHTML =
+                '<span class="text-warning fw-semibold">Post not found on Threads.</span>' + apiNote + ' ' +
+                '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="nvThreadsArchivePost(' + ts + ')">Archive this post record</button>';
+        }
+    })
+    .catch(function() { if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Request failed</span>'; });
+}
+
+function nvThreadsArchivePost(ts) {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-threads-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.ok) {
+            _clearNvThreadsIconLive(ts);
+            var postBtn = document.getElementById(_nvThreadsId(ts, 'post-btn'));
+            _restorePostBtn(postBtn);
+            var btnRow = document.getElementById(_nvThreadsId(ts, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.nv-threads-done-btn').forEach(function(b) { b.remove(); });
+            var area = document.getElementById(_nvThreadsId(ts, 'status-area'));
+            if (area) area.classList.add('d-none');
+            if (d.history && d.history.length) renderNvThreadsHistory(ts, d.history);
+        }
+    })
+    .catch(function() {});
+}
+
+function renderNvThreadsHistory(ts, history) {
+    var wrap = document.getElementById(_nvThreadsId(ts, 'history'));
+    var list = document.getElementById(_nvThreadsId(ts, 'history-list'));
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.forEach(function(entry) {
+        var div = document.createElement('div');
+        div.className = 'mb-1 small text-muted';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
+        if (entry.permalink) {
+            var a = document.createElement('a');
+            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
+            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
+            div.appendChild(a);
+        }
+        list.appendChild(div);
+    });
+    wrap.classList.remove('d-none');
+    var area     = document.getElementById(_nvThreadsId(ts, 'status-area'));
+    var running  = document.getElementById(_nvThreadsId(ts, 'status-running'));
+    var progress = document.getElementById(_nvThreadsId(ts, 'progress-wrap'));
+    if (area)     area.classList.remove('d-none');
+    if (running)  running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+}
+
+function restoreNvThreadsState(ts) {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/narrated-threads-status?ts=' + ts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.history && d.history.length) renderNvThreadsHistory(ts, d.history);
+        if (d.result && d.result.startsWith('done:')) {
+            showNvThreadsDone(ts, d.result.slice(5));
+        } else if (d.status && d.status.startsWith('running')) {
+            showNvThreadsRunning(ts, d.status);
+            pollNvThreadsStatus(ts);
+        }
+    })
+    .catch(function() {});
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Pinterest Narrated Video posting
+   ═══════════════════════════════════════════════════════════════ */
+function _nvPinterestId(ts, suffix) { return 'nv-pinterest-' + ts + '-' + suffix; }
+
+function _setNvPinterestIconLive(ts) {
+    var el = document.getElementById('nv-pinterest-icon-' + ts);
+    if (el) { el.classList.add('nv-run-pinterest-live'); el.setAttribute('stroke', '#E60023'); }
+    var hdr = document.getElementById('nv-pinterest-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', '#E60023');
+}
+function _clearNvPinterestIconLive(ts) {
+    var el = document.getElementById('nv-pinterest-icon-' + ts);
+    if (el) { el.classList.remove('nv-run-pinterest-live'); el.setAttribute('stroke', '#ccc'); }
+    var hdr = document.getElementById('nv-pinterest-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', 'currentColor');
+}
+
+function copyNvIgCaptionToPinterest(ts) {
+    var igCaption        = document.getElementById('nv-ig-' + ts + '-caption');
+    var pinterestCaption = document.getElementById('nv-pinterest-' + ts + '-caption');
+    if (igCaption && pinterestCaption) {
+        pinterestCaption.value = igCaption.value.slice(0, 800);
+        var countEl = document.getElementById('nv-pinterest-' + ts + '-count');
+        if (countEl) countEl.textContent = pinterestCaption.value.length + ' / 800';
+    }
+}
+
+function postNarratedToPinterest(ts, videoUrl) {
+    if (!ARTICLE_ID) return;
+    var caption = (document.getElementById(_nvPinterestId(ts, 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_nvPinterestId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showNvPinterestRunning(ts, 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-narrated-to-pinterest', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({video_url: videoUrl, caption: caption, run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showNvPinterestError(ts, d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollNvPinterestStatus(ts);
+    })
+    .catch(function(e) { showNvPinterestError(ts, 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function pollNvPinterestStatus(ts) {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/narrated-pinterest-status?ts=' + ts)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) {
+                showNvPinterestDone(ts, d.result.slice(5));
+            } else if (d.result && d.result.startsWith('error:')) {
+                showNvPinterestError(ts, d.result.slice(6));
+            } else {
+                showNvPinterestRunning(ts, d.status || '');
+                pollNvPinterestStatus(ts);
+            }
+            if (d.history && d.history.length) renderNvPinterestHistory(ts, d.history);
+        })
+        .catch(function() { pollNvPinterestStatus(ts); });
+    }, 5000);
+}
+
+function showNvPinterestRunning(ts, statusStr) {
+    var area    = document.getElementById(_nvPinterestId(ts, 'status-area'));
+    var running = document.getElementById(_nvPinterestId(ts, 'status-running'));
+    var textEl  = document.getElementById(_nvPinterestId(ts, 'status-text'));
+    var bar     = document.getElementById(_nvPinterestId(ts, 'progress-bar'));
+    var result  = document.getElementById(_nvPinterestId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (result) result.classList.add('d-none');
+    var labels = {'running:0': 'Starting…', 'running:upload': 'Uploading video…',
+                  'running:create': 'Creating pin…', 'running:poll': 'Processing video…',
+                  'running:publish': 'Publishing…'};
+    var pcts   = {'running:0': 10, 'running:upload': 30, 'running:create': 50,
+                  'running:poll': 55, 'running:publish': 85};
+    if (textEl) textEl.textContent = labels[statusStr] || statusStr || 'Running…';
+    if (bar) bar.style.width = (pcts[statusStr] || 10) + '%';
+}
+
+function showNvPinterestDone(ts, permalink) {
+    _setNvPinterestIconLive(ts);
+    var area     = document.getElementById(_nvPinterestId(ts, 'status-area'));
+    var running  = document.getElementById(_nvPinterestId(ts, 'status-running'));
+    var progress = document.getElementById(_nvPinterestId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvPinterestId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    var genLink = document.getElementById('nv-pinterest-' + ts + '-gen-link');
+    if (genLink) genLink.classList.add('d-none');
+    var postBtn = document.getElementById(_nvPinterestId(ts, 'post-btn'));
+    _makeViewPostBtn(postBtn, permalink, 'pinterest');
+    var btnRow = document.getElementById(_nvPinterestId(ts, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.nv-pinterest-done-btn').forEach(function(b) { b.remove(); });
+        var checkBtn = document.createElement('button');
+        checkBtn.type = 'button';
+        checkBtn.className = 'btn btn-outline-primary btn-sm nv-pinterest-done-btn';
+        checkBtn.textContent = 'Check if post is still live';
+        checkBtn.onclick = function() { nvPinterestCheckPostLive(ts); };
+        btnRow.appendChild(checkBtn);
+
+        var delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn btn-outline-danger btn-sm nv-pinterest-done-btn';
+        delBtn.textContent = 'Delete from Pinterest';
+        delBtn.onclick = function() { nvPinterestDeleteAndArchive(ts); };
+        btnRow.appendChild(delBtn);
+    }
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div id="nv-pinterest-' + ts + '-check-live-status" class="small mb-2"></div>';
+    }
+}
+
+function showNvPinterestError(ts, msg) {
+    var area     = document.getElementById(_nvPinterestId(ts, 'status-area'));
+    var running  = document.getElementById(_nvPinterestId(ts, 'status-running'));
+    var progress = document.getElementById(_nvPinterestId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvPinterestId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-danger alert-dismissible py-1 small mb-2">' + msg + '<button type="button" class="btn-close" style="padding:.3rem" data-bs-dismiss="alert"></button></div>';
+    }
+    var postBtn = document.getElementById(_nvPinterestId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = false;
+}
+
+function nvPinterestCheckPostLive(ts) {
+    if (!ARTICLE_ID) return;
+    var statusDiv = document.getElementById('nv-pinterest-' + ts + '-check-live-status');
+    if (statusDiv) statusDiv.innerHTML = 'Checking\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/check-narrated-pinterest-post?ts=' + ts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.live) {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-success">\u2713 Post is live on Pinterest</span>';
+        } else if (d.error) {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Error: ' + d.error + '</span>';
+        } else {
+            var apiNote = d.api_error ? ' <span class="text-muted">(' + d.api_error + ')</span>' : '';
+            if (statusDiv) statusDiv.innerHTML =
+                '<span class="text-warning fw-semibold">Post not found on Pinterest.</span>' + apiNote + ' ' +
+                '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="nvPinterestArchivePost(' + ts + ')">Archive this post record</button>';
+        }
+    })
+    .catch(function() { if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Request failed</span>'; });
+}
+
+function nvPinterestDeleteAndArchive(ts) {
+    if (!ARTICLE_ID) return;
+    var statusDiv = document.getElementById('nv-pinterest-' + ts + '-check-live-status');
+    if (statusDiv) statusDiv.innerHTML = 'Deleting from Pinterest\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/delete-narrated-pinterest-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">' + d.error + '</span>';
+            return;
+        }
+        _clearNvPinterestIconLive(ts);
+        var postBtn = document.getElementById(_nvPinterestId(ts, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_nvPinterestId(ts, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.nv-pinterest-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_nvPinterestId(ts, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderNvPinterestHistory(ts, d.history);
+    })
+    .catch(function(e) { if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Delete failed: ' + e + '</span>'; });
+}
+
+function nvPinterestArchivePost(ts) {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-pinterest-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.ok) {
+            _clearNvPinterestIconLive(ts);
+            var postBtn = document.getElementById(_nvPinterestId(ts, 'post-btn'));
+            _restorePostBtn(postBtn);
+            var btnRow = document.getElementById(_nvPinterestId(ts, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.nv-pinterest-done-btn').forEach(function(b) { b.remove(); });
+            var area = document.getElementById(_nvPinterestId(ts, 'status-area'));
+            if (area) area.classList.add('d-none');
+            if (d.history && d.history.length) renderNvPinterestHistory(ts, d.history);
+        }
+    })
+    .catch(function() {});
+}
+
+function renderNvPinterestHistory(ts, history) {
+    var wrap = document.getElementById(_nvPinterestId(ts, 'history'));
+    var list = document.getElementById(_nvPinterestId(ts, 'history-list'));
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.forEach(function(entry) {
+        var div = document.createElement('div');
+        div.className = 'mb-1 small text-muted';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
+        if (entry.permalink) {
+            var a = document.createElement('a');
+            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
+            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
+            div.appendChild(a);
+        }
+        list.appendChild(div);
+    });
+    wrap.classList.remove('d-none');
+    var area     = document.getElementById(_nvPinterestId(ts, 'status-area'));
+    var running  = document.getElementById(_nvPinterestId(ts, 'status-running'));
+    var progress = document.getElementById(_nvPinterestId(ts, 'progress-wrap'));
+    if (area)     area.classList.remove('d-none');
+    if (running)  running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+}
+
+function restoreNvPinterestState(ts) {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/narrated-pinterest-status?ts=' + ts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.history && d.history.length) renderNvPinterestHistory(ts, d.history);
+        if (d.result && d.result.startsWith('done:')) {
+            showNvPinterestDone(ts, d.result.slice(5));
+        } else if (d.status && d.status.startsWith('running')) {
+            showNvPinterestRunning(ts, d.status);
+            pollNvPinterestStatus(ts);
+        }
+    })
+    .catch(function() {});
+}
+
+/* ── Narrated Video TikTok functions ── */
+function _nvTiktokId(ts, suffix) { return 'nv-tiktok-' + ts + '-' + suffix; }
+
+function _setNvTiktokIconLive(ts) {
+    var el = document.getElementById('nv-tiktok-icon-' + ts);
+    if (el) { el.classList.add('nv-run-tiktok-live'); el.setAttribute('fill', '#000'); }
+    var hdr = document.getElementById('nv-tiktok-hdr-' + ts);
+    if (hdr) { hdr.classList.add('nv-run-tiktok-live'); hdr.setAttribute('fill', '#000'); }
+}
+function _clearNvTiktokIconLive(ts) {
+    var el = document.getElementById('nv-tiktok-icon-' + ts);
+    if (el) { el.classList.remove('nv-run-tiktok-live'); el.setAttribute('fill', '#ccc'); }
+    var hdr = document.getElementById('nv-tiktok-hdr-' + ts);
+    if (hdr) { hdr.classList.remove('nv-run-tiktok-live'); hdr.setAttribute('fill', 'currentColor'); }
+}
+
+function copyNvIgCaptionToTiktok(ts) {
+    var igCaption     = document.getElementById('nv-ig-' + ts + '-caption');
+    var tiktokCaption = document.getElementById('nv-tiktok-' + ts + '-caption');
+    if (igCaption && tiktokCaption) {
+        tiktokCaption.value = igCaption.value.slice(0, 2200);
+        var countEl = document.getElementById('nv-tiktok-' + ts + '-count');
+        if (countEl) countEl.textContent = tiktokCaption.value.length + ' / 2200';
+    }
+}
+
+function postNarratedToTiktok(ts, videoUrl) {
+    if (!ARTICLE_ID) return;
+    var caption = (document.getElementById(_nvTiktokId(ts, 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_nvTiktokId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+
+    /* ── Demo mode when TikTok is not configured ── */
+    if (!TIKTOK_CONFIGURED) {
+        showNvTiktokRunning(ts, 'running:0');
+        setTimeout(function() { showNvTiktokRunning(ts, 'running:uploading'); }, 800);
+        setTimeout(function() { showNvTiktokRunning(ts, 'running:processing'); }, 2000);
+        setTimeout(function() {
+            showNvTiktokDone(ts, 'https://www.tiktok.com/@obelisk_stamps/video/demo');
+            if (postBtn) postBtn.disabled = false;
+        }, 3500);
+        return;
+    }
+
+    showNvTiktokRunning(ts, 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-narrated-to-tiktok', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({video_url: videoUrl, caption: caption, run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showNvTiktokError(ts, d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollNvTiktokStatus(ts);
+    })
+    .catch(function(e) { showNvTiktokError(ts, 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function pollNvTiktokStatus(ts) {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/narrated-tiktok-status?ts=' + ts)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) {
+                showNvTiktokDone(ts, d.result.slice(5));
+            } else if (d.result && d.result.startsWith('error:')) {
+                showNvTiktokError(ts, d.result.slice(6));
+            } else {
+                showNvTiktokRunning(ts, d.status || '');
+                pollNvTiktokStatus(ts);
+            }
+            if (d.history && d.history.length) renderNvTiktokHistory(ts, d.history);
+        })
+        .catch(function() { pollNvTiktokStatus(ts); });
+    }, 5000);
+}
+
+function showNvTiktokRunning(ts, statusStr) {
+    var area    = document.getElementById(_nvTiktokId(ts, 'status-area'));
+    var running = document.getElementById(_nvTiktokId(ts, 'status-running'));
+    var textEl  = document.getElementById(_nvTiktokId(ts, 'status-text'));
+    var bar     = document.getElementById(_nvTiktokId(ts, 'progress-bar'));
+    var result  = document.getElementById(_nvTiktokId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (result) result.classList.add('d-none');
+    var labels = {'running:0': 'Starting…', 'running:upload': 'Uploading video…',
+                  'running:create': 'Creating post…', 'running:poll': 'Processing video…',
+                  'running:publish': 'Publishing…'};
+    var pcts   = {'running:0': 10, 'running:upload': 30, 'running:create': 50,
+                  'running:poll': 55, 'running:publish': 85};
+    if (textEl) textEl.textContent = labels[statusStr] || statusStr || 'Running…';
+    if (bar) bar.style.width = (pcts[statusStr] || 10) + '%';
+}
+
+function showNvTiktokDone(ts, permalink) {
+    _setNvTiktokIconLive(ts);
+    var area     = document.getElementById(_nvTiktokId(ts, 'status-area'));
+    var running  = document.getElementById(_nvTiktokId(ts, 'status-running'));
+    var progress = document.getElementById(_nvTiktokId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvTiktokId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    var genLink = document.getElementById('nv-tiktok-' + ts + '-gen-link');
+    if (genLink) genLink.classList.add('d-none');
+    var postBtn = document.getElementById(_nvTiktokId(ts, 'post-btn'));
+    _makeViewPostBtn(postBtn, permalink, 'tiktok');
+    var btnRow = document.getElementById(_nvTiktokId(ts, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.nv-tiktok-done-btn').forEach(function(b) { b.remove(); });
+        var archBtn = document.createElement('button');
+        archBtn.type = 'button';
+        archBtn.className = 'btn btn-outline-secondary btn-sm nv-tiktok-done-btn';
+        archBtn.textContent = 'Archive post record';
+        archBtn.onclick = function() { nvTiktokArchivePost(ts); };
+        btnRow.appendChild(archBtn);
+    }
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '';
+    }
+}
+
+function showNvTiktokError(ts, msg) {
+    var area     = document.getElementById(_nvTiktokId(ts, 'status-area'));
+    var running  = document.getElementById(_nvTiktokId(ts, 'status-running'));
+    var progress = document.getElementById(_nvTiktokId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvTiktokId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-danger alert-dismissible py-1 small mb-2">' + msg + '<button type="button" class="btn-close" style="padding:.3rem" data-bs-dismiss="alert"></button></div>';
+    }
+    var postBtn = document.getElementById(_nvTiktokId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = false;
+}
+
+function nvTiktokArchivePost(ts) {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-tiktok-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.ok) {
+            _clearNvTiktokIconLive(ts);
+            var postBtn = document.getElementById(_nvTiktokId(ts, 'post-btn'));
+            _restorePostBtn(postBtn);
+            var btnRow = document.getElementById(_nvTiktokId(ts, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.nv-tiktok-done-btn').forEach(function(b) { b.remove(); });
+            var area = document.getElementById(_nvTiktokId(ts, 'status-area'));
+            if (area) area.classList.add('d-none');
+            if (d.history && d.history.length) renderNvTiktokHistory(ts, d.history);
+        }
+    })
+    .catch(function() {});
+}
+
+function renderNvTiktokHistory(ts, history) {
+    var wrap = document.getElementById(_nvTiktokId(ts, 'history'));
+    var list = document.getElementById(_nvTiktokId(ts, 'history-list'));
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.forEach(function(entry) {
+        var div = document.createElement('div');
+        div.className = 'mb-1 small text-muted';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
+        if (entry.permalink) {
+            var a = document.createElement('a');
+            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
+            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
+            div.appendChild(a);
+        }
+        list.appendChild(div);
+    });
+    wrap.classList.remove('d-none');
+    var area     = document.getElementById(_nvTiktokId(ts, 'status-area'));
+    var running  = document.getElementById(_nvTiktokId(ts, 'status-running'));
+    var progress = document.getElementById(_nvTiktokId(ts, 'progress-wrap'));
+    if (area)     area.classList.remove('d-none');
+    if (running)  running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+}
+
+function restoreNvTiktokState(ts) {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/narrated-tiktok-status?ts=' + ts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.history && d.history.length) renderNvTiktokHistory(ts, d.history);
+        if (d.result && d.result.startsWith('done:')) {
+            showNvTiktokDone(ts, d.result.slice(5));
+        } else if (d.status && d.status.startsWith('running')) {
+            showNvTiktokRunning(ts, d.status);
+            pollNvTiktokStatus(ts);
+        }
+    })
+    .catch(function() {});
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LinkedIn Narrated Video posting
+   ═══════════════════════════════════════════════════════════════ */
+function _nvLinkedinId(ts, suffix) { return 'nv-linkedin-' + ts + '-' + suffix; }
+
+function _setNvLinkedinIconLive(ts) {
+    var el = document.getElementById('nv-linkedin-icon-' + ts);
+    if (el) { el.classList.add('nv-run-linkedin-live'); el.setAttribute('stroke', '#0A66C2'); }
+    var hdr = document.getElementById('nv-linkedin-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', '#0A66C2');
+}
+function _clearNvLinkedinIconLive(ts) {
+    var el = document.getElementById('nv-linkedin-icon-' + ts);
+    if (el) { el.classList.remove('nv-run-linkedin-live'); el.setAttribute('stroke', '#ccc'); }
+    var hdr = document.getElementById('nv-linkedin-hdr-' + ts);
+    if (hdr) hdr.setAttribute('stroke', 'currentColor');
+}
+
+function toggleNvLinkedinSection(ts) {
+    var body    = document.getElementById('nv-linkedin-' + ts + '-body');
+    var chevron = document.getElementById('nv-linkedin-' + ts + '-chevron');
+    if (!body) return;
+    body.classList.toggle('d-none');
+    if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
+}
+
+function copyNvIgCaptionToLinkedin(ts) {
+    var igCaption       = document.getElementById('nv-ig-' + ts + '-caption');
+    var linkedinCaption = document.getElementById('nv-linkedin-' + ts + '-caption');
+    if (igCaption && linkedinCaption) {
+        linkedinCaption.value = igCaption.value.slice(0, 3000);
+        var countEl = document.getElementById('nv-linkedin-' + ts + '-count');
+        if (countEl) countEl.textContent = linkedinCaption.value.length + ' / 3000';
+    }
+}
+
+function postNarratedToLinkedin(ts, videoUrl) {
+    if (!ARTICLE_ID) return;
+    var caption = (document.getElementById(_nvLinkedinId(ts, 'caption')) || {}).value || '';
+    var postBtn = document.getElementById(_nvLinkedinId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
+    showNvLinkedinRunning(ts, 'running:0');
+    fetch('/admin/articles/' + ARTICLE_ID + '/post-narrated-to-linkedin', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({video_url: videoUrl, caption: caption, run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { showNvLinkedinError(ts, d.error); if (postBtn) postBtn.disabled = false; return; }
+        pollNvLinkedinStatus(ts);
+    })
+    .catch(function(e) { showNvLinkedinError(ts, 'Request failed: ' + e); if (postBtn) postBtn.disabled = false; });
+}
+
+function pollNvLinkedinStatus(ts) {
+    setTimeout(function() {
+        fetch('/admin/articles/' + ARTICLE_ID + '/narrated-linkedin-status?ts=' + ts)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.result && d.result.startsWith('done:')) {
+                showNvLinkedinDone(ts, d.result.slice(5));
+            } else if (d.result && d.result.startsWith('error:')) {
+                showNvLinkedinError(ts, d.result.slice(6));
+            } else {
+                showNvLinkedinRunning(ts, d.status || '');
+                pollNvLinkedinStatus(ts);
+            }
+            if (d.history && d.history.length) renderNvLinkedinHistory(ts, d.history);
+        })
+        .catch(function() { pollNvLinkedinStatus(ts); });
+    }, 5000);
+}
+
+function showNvLinkedinRunning(ts, statusStr) {
+    var area    = document.getElementById(_nvLinkedinId(ts, 'status-area'));
+    var running = document.getElementById(_nvLinkedinId(ts, 'status-running'));
+    var textEl  = document.getElementById(_nvLinkedinId(ts, 'status-text'));
+    var bar     = document.getElementById(_nvLinkedinId(ts, 'progress-bar'));
+    var result  = document.getElementById(_nvLinkedinId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.remove('d-none');
+    if (result) result.classList.add('d-none');
+    var labels = {'running:0': 'Starting…', 'running:upload': 'Uploading video…',
+                  'running:create': 'Creating post…', 'running:poll': 'Processing video…',
+                  'running:publish': 'Publishing…'};
+    var pcts   = {'running:0': 10, 'running:upload': 30, 'running:create': 50,
+                  'running:poll': 55, 'running:publish': 85};
+    if (textEl) textEl.textContent = labels[statusStr] || statusStr || 'Running…';
+    if (bar) bar.style.width = (pcts[statusStr] || 10) + '%';
+}
+
+function showNvLinkedinDone(ts, permalink) {
+    _setNvLinkedinIconLive(ts);
+    var area     = document.getElementById(_nvLinkedinId(ts, 'status-area'));
+    var running  = document.getElementById(_nvLinkedinId(ts, 'status-running'));
+    var progress = document.getElementById(_nvLinkedinId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvLinkedinId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    var genLink = document.getElementById('nv-linkedin-' + ts + '-gen-link');
+    if (genLink) genLink.classList.add('d-none');
+    var postBtn = document.getElementById(_nvLinkedinId(ts, 'post-btn'));
+    _makeViewPostBtn(postBtn, permalink, 'linkedin');
+    var btnRow = document.getElementById(_nvLinkedinId(ts, 'btn-row'));
+    if (btnRow) {
+        btnRow.querySelectorAll('.nv-linkedin-done-btn').forEach(function(b) { b.remove(); });
+        var checkBtn = document.createElement('button');
+        checkBtn.type = 'button';
+        checkBtn.className = 'btn btn-outline-primary btn-sm nv-linkedin-done-btn';
+        checkBtn.textContent = 'Check if post is still live';
+        checkBtn.onclick = function() { nvLinkedinCheckPostLive(ts); };
+        btnRow.appendChild(checkBtn);
+
+        var delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn btn-outline-danger btn-sm nv-linkedin-done-btn';
+        delBtn.textContent = 'Delete from LinkedIn';
+        delBtn.onclick = function() { nvLinkedinDeletePost(ts); };
+        btnRow.appendChild(delBtn);
+    }
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div id="nv-linkedin-' + ts + '-check-live-status" class="small mb-2"></div>';
+    }
+}
+
+function showNvLinkedinError(ts, msg) {
+    var area     = document.getElementById(_nvLinkedinId(ts, 'status-area'));
+    var running  = document.getElementById(_nvLinkedinId(ts, 'status-running'));
+    var progress = document.getElementById(_nvLinkedinId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvLinkedinId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-danger alert-dismissible py-1 small mb-2">' + msg + '<button type="button" class="btn-close" style="padding:.3rem" data-bs-dismiss="alert"></button></div>';
+    }
+    var postBtn = document.getElementById(_nvLinkedinId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = false;
+}
+
+function nvLinkedinCheckPostLive(ts) {
+    if (!ARTICLE_ID) return;
+    var statusDiv = document.getElementById('nv-linkedin-' + ts + '-check-live-status');
+    if (statusDiv) statusDiv.innerHTML = 'Checking\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/check-narrated-linkedin-post?ts=' + ts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.live) {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-success">\u2713 Post is live on LinkedIn</span>';
+        } else if (d.error) {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Error: ' + d.error + '</span>';
+        } else {
+            var apiNote = d.api_error ? ' <span class="text-muted">(' + d.api_error + ')</span>' : '';
+            if (statusDiv) statusDiv.innerHTML =
+                '<span class="text-warning fw-semibold">Post not found on LinkedIn.</span>' + apiNote + ' ' +
+                '<button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="nvLinkedinArchivePost(' + ts + ')">Archive this post record</button>';
+        }
+    })
+    .catch(function() { if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Request failed</span>'; });
+}
+
+function nvLinkedinDeletePost(ts) {
+    if (!ARTICLE_ID) return;
+    if (!confirm('Delete this post from LinkedIn?')) return;
+    var statusDiv = document.getElementById('nv-linkedin-' + ts + '-check-live-status');
+    if (statusDiv) statusDiv.innerHTML = 'Deleting from LinkedIn\u2026';
+    fetch('/admin/articles/' + ARTICLE_ID + '/delete-narrated-linkedin-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) {
+            if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">' + d.error + '</span>';
+            return;
+        }
+        _clearNvLinkedinIconLive(ts);
+        var postBtn = document.getElementById(_nvLinkedinId(ts, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_nvLinkedinId(ts, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.nv-linkedin-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_nvLinkedinId(ts, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderNvLinkedinHistory(ts, d.history);
+    })
+    .catch(function(e) { if (statusDiv) statusDiv.innerHTML = '<span class="text-danger">Delete failed: ' + e + '</span>'; });
+}
+
+function nvLinkedinArchivePost(ts) {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-linkedin-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.ok) {
+            _clearNvLinkedinIconLive(ts);
+            var postBtn = document.getElementById(_nvLinkedinId(ts, 'post-btn'));
+            _restorePostBtn(postBtn);
+            var btnRow = document.getElementById(_nvLinkedinId(ts, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.nv-linkedin-done-btn').forEach(function(b) { b.remove(); });
+            var area = document.getElementById(_nvLinkedinId(ts, 'status-area'));
+            if (area) area.classList.add('d-none');
+            if (d.history && d.history.length) renderNvLinkedinHistory(ts, d.history);
+        }
+    })
+    .catch(function() {});
+}
+
+function renderNvLinkedinHistory(ts, history) {
+    var wrap = document.getElementById(_nvLinkedinId(ts, 'history'));
+    var list = document.getElementById(_nvLinkedinId(ts, 'history-list'));
+    if (!wrap || !list || !history || !history.length) return;
+    list.innerHTML = '';
+    history.forEach(function(entry) {
+        var div = document.createElement('div');
+        div.className = 'mb-1 small text-muted';
+        var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
+        div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
+        if (entry.permalink) {
+            var a = document.createElement('a');
+            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
+            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
+            div.appendChild(a);
+        }
+        list.appendChild(div);
+    });
+    wrap.classList.remove('d-none');
+    var area     = document.getElementById(_nvLinkedinId(ts, 'status-area'));
+    var running  = document.getElementById(_nvLinkedinId(ts, 'status-running'));
+    var progress = document.getElementById(_nvLinkedinId(ts, 'progress-wrap'));
+    if (area)     area.classList.remove('d-none');
+    if (running)  running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+}
+
+function restoreNvLinkedinState(ts) {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/narrated-linkedin-status?ts=' + ts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.history && d.history.length) renderNvLinkedinHistory(ts, d.history);
+        if (d.result && d.result.startsWith('done:')) {
+            showNvLinkedinDone(ts, d.result.slice(5));
+        } else if (d.status && d.status.startsWith('running')) {
+            showNvLinkedinRunning(ts, d.status);
+            pollNvLinkedinStatus(ts);
         }
     })
     .catch(function() {});
@@ -4150,6 +6251,28 @@ function buildRunItem(run, expandIt) {
                         <path d="M4 4l11.733 16H20L8.267 4z"/>
                         <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
                     </svg>
+                    <svg id="nv-threads-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Threads">
+                        <path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/>
+                        <path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/>
+                        <path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/>
+                    </svg>
+                    <svg id="nv-pinterest-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Pinterest">
+                        <path d="M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5"/>
+                        <path d="M12 2a10 10 0 1 0 4 19.17"/>
+                        <path d="M9.5 15.5L11 12"/>
+                    </svg>
+                    <svg id="nv-tiktok-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                         fill="#ccc" stroke="none" style="flex-shrink:0" title="TikTok">
+                        <path d="M16.6 5.82C15.6 5.24 14.9 4.29 14.7 3.18 14.66 2.95 14.64 2.72 14.64 2.5h-3.3v13.36c0 1.31-1.07 2.37-2.38 2.37-1.31 0-2.38-1.06-2.38-2.37s1.07-2.38 2.38-2.38c.25 0 .49.04.71.11V10.2a5.82 5.82 0 0 0-.71-.04c-3.08 0-5.58 2.5-5.58 5.58s2.5 5.58 5.58 5.58 5.58-2.5 5.58-5.58V9.14c1.18.85 2.63 1.35 4.18 1.35V7.2c-.85 0-1.65-.25-2.32-.69l-.01-.01-.03-.02c-.22-.14-.42-.3-.62-.48z"/>
+                    </svg>
+                    <svg id="nv-linkedin-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="LinkedIn">
+                        <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
+                        <rect x="2" y="9" width="4" height="12"/>
+                        <circle cx="4" cy="4" r="2"/>
+                    </svg>
                 </span>
             </button>
         </h2>
@@ -4321,6 +6444,67 @@ function buildRunItem(run, expandIt) {
                 <div id="nv-x-${run.ts}-body" class="nv-social-body d-none pt-1">
                     ${!X_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">X not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>' : ''}
                     ${X_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted as a tweet with up to 280 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToX(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-x-' + run.ts + '-caption" rows="3" maxlength="280" placeholder="Write your X caption…" oninput="document.getElementById(\'nv-x-' + run.ts + '-count\').textContent=this.value.length+\' / 280\'"></textarea><div class="text-end text-muted small mb-2" id="nv-x-' + run.ts + '-count">0 / 280</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-x-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-x-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToX(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M4 4l11.733 16H20L8.267 4z\'/><path d=\'M4 20l6.768-6.768M20 4l-6.768 6.768\'/></svg>Post to X</button></div><div id="nv-x-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-x-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-x-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-x-' + run.ts + '-progress-wrap"><div id="nv-x-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-x-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-x-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-x-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-x-' + run.ts + '-history-list"></div></div></div>' : ''}
+                </div>
+                <hr class="mt-0 mb-0">
+                <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvThreadsSection(${run.ts})">
+                    <svg id="nv-threads-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                        <path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/>
+                        <path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/>
+                        <path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/>
+                    </svg>
+                    <span class="small fw-semibold">Post to Threads</span>
+                    <svg id="nv-threads-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </div>
+                <div id="nv-threads-${run.ts}-body" class="nv-social-body d-none pt-1">
+                    ${!THREADS_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">Threads not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>' : ''}
+                    ${THREADS_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to Threads with up to 500 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToThreads(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-threads-' + run.ts + '-caption" rows="3" maxlength="500" placeholder="Write your Threads caption…" oninput="document.getElementById(\'nv-threads-' + run.ts + '-count\').textContent=this.value.length+\' / 500\'"></textarea><div class="text-end text-muted small mb-2" id="nv-threads-' + run.ts + '-count">0 / 500</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-threads-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-threads-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToThreads(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z\'/><path d=\'M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10\'/><path d=\'M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10\'/></svg>Post to Threads</button></div><div id="nv-threads-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-threads-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-threads-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-threads-' + run.ts + '-progress-wrap"><div id="nv-threads-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-threads-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-threads-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-threads-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-threads-' + run.ts + '-history-list"></div></div></div>' : ''}
+                </div>
+                <hr class="mt-0 mb-0">
+                <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvPinterestSection(${run.ts})">
+                    <svg id="nv-pinterest-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                        <path d="M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5"/>
+                        <path d="M12 2a10 10 0 1 0 4 19.17"/>
+                        <path d="M9.5 15.5L11 12"/>
+                    </svg>
+                    <span class="small fw-semibold">Post to Pinterest</span>
+                    <svg id="nv-pinterest-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </div>
+                <div id="nv-pinterest-${run.ts}-body" class="nv-social-body d-none pt-1">
+                    ${!PINTEREST_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">Pinterest not configured. Set <code>PINTEREST_ACCESS_TOKEN</code> and <code>PINTEREST_BOARD_ID</code> in your environment.</div>' : ''}
+                    ${PINTEREST_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to Pinterest with up to 800 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToPinterest(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-pinterest-' + run.ts + '-caption" rows="3" maxlength="800" placeholder="Write your Pinterest description…" oninput="document.getElementById(\'nv-pinterest-' + run.ts + '-count\').textContent=this.value.length+\' / 800\'"></textarea><div class="text-end text-muted small mb-2" id="nv-pinterest-' + run.ts + '-count">0 / 800</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-pinterest-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-pinterest-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToPinterest(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5\'/><path d=\'M12 2a10 10 0 1 0 4 19.17\'/><path d=\'M9.5 15.5L11 12\'/></svg>Post to Pinterest</button></div><div id="nv-pinterest-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-pinterest-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-pinterest-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-pinterest-' + run.ts + '-progress-wrap"><div id="nv-pinterest-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-pinterest-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-pinterest-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-pinterest-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-pinterest-' + run.ts + '-history-list"></div></div></div>' : ''}
+                </div>
+                <hr class="mt-0 mb-0">
+                <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvTiktokSection(${run.ts})">
+                    <svg id="nv-tiktok-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="flex-shrink:0">
+                        <path d="M16.6 5.82C15.6 5.24 14.9 4.29 14.7 3.18 14.66 2.95 14.64 2.72 14.64 2.5h-3.3v13.36c0 1.31-1.07 2.37-2.38 2.37-1.31 0-2.38-1.06-2.38-2.37s1.07-2.38 2.38-2.38c.25 0 .49.04.71.11V10.2a5.82 5.82 0 0 0-.71-.04c-3.08 0-5.58 2.5-5.58 5.58s2.5 5.58 5.58 5.58 5.58-2.5 5.58-5.58V9.14c1.18.85 2.63 1.35 4.18 1.35V7.2c-.85 0-1.65-.25-2.32-.69l-.01-.01-.03-.02c-.22-.14-.42-.3-.62-.48z"/>
+                    </svg>
+                    <span class="small fw-semibold">Post to TikTok</span>
+                    <svg id="nv-tiktok-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </div>
+                <div id="nv-tiktok-${run.ts}-body" class="nv-social-body d-none pt-1">
+                    ${'<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to TikTok with up to 2200 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToTiktok(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-tiktok-' + run.ts + '-caption" rows="3" maxlength="2200" placeholder="Write your TikTok caption…" oninput="document.getElementById(\'nv-tiktok-' + run.ts + '-count\').textContent=this.value.length+\' / 2200\'"></textarea><div class="text-end text-muted small mb-2" id="nv-tiktok-' + run.ts + '-count">0 / 2200</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-tiktok-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-tiktok-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToTiktok(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\' style=\'vertical-align:-2px\'><path d=\'M16.6 5.82C15.6 5.24 14.9 4.29 14.7 3.18 14.66 2.95 14.64 2.72 14.64 2.5h-3.3v13.36c0 1.31-1.07 2.37-2.38 2.37-1.31 0-2.38-1.06-2.38-2.37s1.07-2.38 2.38-2.38c.25 0 .49.04.71.11V10.2a5.82 5.82 0 0 0-.71-.04c-3.08 0-5.58 2.5-5.58 5.58s2.5 5.58 5.58 5.58 5.58-2.5 5.58-5.58V9.14c1.18.85 2.63 1.35 4.18 1.35V7.2c-.85 0-1.65-.25-2.32-.69l-.01-.01-.03-.02c-.22-.14-.42-.3-.62-.48z\'/></svg>Post to TikTok</button></div><div id="nv-tiktok-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-tiktok-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-tiktok-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-tiktok-' + run.ts + '-progress-wrap"><div id="nv-tiktok-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-tiktok-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-tiktok-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-tiktok-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-tiktok-' + run.ts + '-history-list"></div></div></div>'}
+                </div>
+                <hr class="mt-0 mb-0">
+                <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvLinkedinSection(${run.ts})">
+                    <svg id="nv-linkedin-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                        <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
+                        <rect x="2" y="9" width="4" height="12"/>
+                        <circle cx="4" cy="4" r="2"/>
+                    </svg>
+                    <span class="small fw-semibold">Post to LinkedIn</span>
+                    <svg id="nv-linkedin-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </div>
+                <div id="nv-linkedin-${run.ts}-body" class="nv-social-body d-none pt-1">
+                    ${!LINKEDIN_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">LinkedIn not configured. Set <code>LINKEDIN_ACCESS_TOKEN</code> and <code>LINKEDIN_PERSON_URN</code> in your environment.</div>' : ''}
+                    ${LINKEDIN_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to LinkedIn with up to 3000 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToLinkedin(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-linkedin-' + run.ts + '-caption" rows="3" maxlength="3000" placeholder="Write your LinkedIn post…" oninput="document.getElementById(\'nv-linkedin-' + run.ts + '-count\').textContent=this.value.length+\' / 3000\'"></textarea><div class="text-end text-muted small mb-2" id="nv-linkedin-' + run.ts + '-count">0 / 3000</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-linkedin-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-linkedin-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToLinkedin(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z\'/><rect x=\'2\' y=\'9\' width=\'4\' height=\'12\'/><circle cx=\'4\' cy=\'4\' r=\'2\'/></svg>Post to LinkedIn</button></div><div id="nv-linkedin-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-linkedin-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-linkedin-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-linkedin-' + run.ts + '-progress-wrap"><div id="nv-linkedin-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-linkedin-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-linkedin-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-linkedin-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-linkedin-' + run.ts + '-history-list"></div></div></div>' : ''}
                 </div>
         </div>`;
     /* Set caption default after DOM is built (avoids HTML-escaping issues in textarea) */
@@ -4883,6 +7067,10 @@ function loadNarratedRuns(runs, hiddenTs) {
             restoreNvIgState(run.ts);
             restoreNvFbState(run.ts);
             restoreNvXState(run.ts);
+            restoreNvThreadsState(run.ts);
+            restoreNvPinterestState(run.ts);
+            restoreNvTiktokState(run.ts);
+            restoreNvLinkedinState(run.ts);
             // Restore YouTube icon + button if a successful upload exists
             (function(ts) {
                 fetch('/admin/articles/' + ARTICLE_ID + '/youtube-status?ts=' + ts)
@@ -5206,6 +7394,16 @@ function narratedFinish(error) {
 
     // Check X status for carousel icon and restore state
     if (typeof checkXRunning === 'function') checkXRunning('car');
+
+    // Check Threads status for carousel icon and restore state
+    if (typeof checkThreadsRunning === 'function') checkThreadsRunning('car');
+
+    // Check Pinterest status for carousel icon and restore state
+    if (typeof checkPinterestRunning === 'function') checkPinterestRunning('car');
+
+    // Check LinkedIn status for carousel and cinemagraph icons
+    if (typeof checkLinkedinRunning === 'function') checkLinkedinRunning('car');
+    if (typeof checkLinkedinRunning === 'function') checkLinkedinRunning('cine');
 })();
 
 // ════════════════════════════════════════════════════════════════

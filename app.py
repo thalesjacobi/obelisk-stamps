@@ -213,6 +213,51 @@ def _x_auth():
     return OAuth1(X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET)
 
 
+# --- Threads API (optional — for posting) ---
+THREADS_USER_ID      = os.getenv("THREADS_USER_ID", "")
+THREADS_ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN", "")
+THREADS_CONFIGURED   = bool(THREADS_USER_ID and THREADS_ACCESS_TOKEN)
+_THREADS_API_URL     = "https://graph.threads.net/v1.0"
+if THREADS_CONFIGURED:
+    print("Threads: credentials configured")
+else:
+    print("Threads: THREADS_USER_ID / THREADS_ACCESS_TOKEN not set — posting disabled")
+
+
+# --- Pinterest API (optional — for pinning) ---
+PINTEREST_ACCESS_TOKEN = os.getenv("PINTEREST_ACCESS_TOKEN", "")
+PINTEREST_BOARD_ID     = os.getenv("PINTEREST_BOARD_ID", "")
+PINTEREST_CONFIGURED   = bool(PINTEREST_ACCESS_TOKEN and PINTEREST_BOARD_ID)
+_PINTEREST_API_URL     = "https://api.pinterest.com/v5"
+if PINTEREST_CONFIGURED:
+    print("Pinterest: credentials configured")
+else:
+    print("Pinterest: PINTEREST_ACCESS_TOKEN / PINTEREST_BOARD_ID not set — posting disabled")
+
+
+# --- TikTok API (optional — for posting videos) ---
+TIKTOK_CLIENT_KEY    = os.getenv("TIKTOK_CLIENT_KEY", "")
+TIKTOK_CLIENT_SECRET = os.getenv("TIKTOK_CLIENT_SECRET", "")
+TIKTOK_ACCESS_TOKEN  = os.getenv("TIKTOK_ACCESS_TOKEN", "")
+TIKTOK_CONFIGURED    = bool(TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET and TIKTOK_ACCESS_TOKEN)
+_TIKTOK_API_URL      = "https://open.tiktokapis.com/v2"
+if TIKTOK_CONFIGURED:
+    print("TikTok: credentials configured")
+else:
+    print("TikTok: credentials not set — posting disabled")
+
+
+# --- LinkedIn API (optional — for sharing posts) ---
+LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN", "")
+LINKEDIN_ORG_ID       = os.getenv("LINKEDIN_ORG_ID", "")
+LINKEDIN_CONFIGURED   = bool(LINKEDIN_ACCESS_TOKEN and LINKEDIN_ORG_ID)
+_LINKEDIN_API_URL     = "https://api.linkedin.com/rest"
+if LINKEDIN_CONFIGURED:
+    print("LinkedIn: credentials configured")
+else:
+    print("LinkedIn: credentials not set — posting disabled")
+
+
 # --- Knowledge Base (ChromaDB) ---
 KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb")
 
@@ -2507,7 +2552,16 @@ def admin_settings():
                            x_api_key_set=bool(X_API_KEY),
                            x_api_secret_set=bool(X_API_SECRET),
                            x_access_token_set=bool(X_ACCESS_TOKEN),
-                           x_access_token_secret_set=bool(X_ACCESS_TOKEN_SECRET))
+                           x_access_token_secret_set=bool(X_ACCESS_TOKEN_SECRET),
+                           threads_user_id_set=bool(THREADS_USER_ID),
+                           threads_token_set=bool(THREADS_ACCESS_TOKEN),
+                           pinterest_token_set=bool(PINTEREST_ACCESS_TOKEN),
+                           pinterest_board_id_set=bool(PINTEREST_BOARD_ID),
+                           tiktok_client_key_set=bool(TIKTOK_CLIENT_KEY),
+                           tiktok_client_secret_set=bool(TIKTOK_CLIENT_SECRET),
+                           tiktok_token_set=bool(TIKTOK_ACCESS_TOKEN),
+                           linkedin_token_set=bool(LINKEDIN_ACCESS_TOKEN),
+                           linkedin_org_id_set=bool(LINKEDIN_ORG_ID))
 
 
 @app.route("/admin/settings/save", methods=["POST"])
@@ -2582,7 +2636,11 @@ def admin_article_new():
                            ig_configured=bool(IG_USER_ID and IG_ACCESS_TOKEN),
                            fb_configured=bool(FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN),
                            yt_configured=bool(get_setting("youtube_refresh_token")),
-                           x_configured=X_CONFIGURED)
+                           x_configured=X_CONFIGURED,
+                           threads_configured=THREADS_CONFIGURED,
+                           pinterest_configured=PINTEREST_CONFIGURED,
+                           tiktok_configured=TIKTOK_CONFIGURED,
+                           linkedin_configured=LINKEDIN_CONFIGURED)
 
 
 @app.route("/admin/articles/new", methods=["POST"])
@@ -2650,6 +2708,10 @@ def admin_article_edit(article_id):
                            fb_configured=bool(FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN),
                            yt_configured=bool(get_setting("youtube_refresh_token")),
                            x_configured=X_CONFIGURED,
+                           threads_configured=THREADS_CONFIGURED,
+                           pinterest_configured=PINTEREST_CONFIGURED,
+                           tiktok_configured=TIKTOK_CONFIGURED,
+                           linkedin_configured=LINKEDIN_CONFIGURED,
                            ig_cine_caption=cine_caption,
                            ig_car_caption=car_caption)
 
@@ -7359,6 +7421,1721 @@ def admin_delete_carousel_x_post(article_id):
         execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
     _add_activity_log(article_id, f"X {component.title()} Post Deleted & Archived",
                       f"tweet_id={tweet_id}", component=component)
+    return jsonify({"ok": True, "history": history})
+
+
+# ── Threads: Workers & Routes ────────────────────────────────
+
+def _post_carousel_threads_worker(article_id, caption, component):
+    """Background thread: compose carousel images and post as Threads carousel."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"threads_{component}_status_{article_id}"
+    result_key = f"threads_{component}_result_{article_id}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        row = query_one(
+            "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+            (article_id,)
+        )
+        if not row:
+            _set_result("error:Article not found")
+            return
+
+        images     = (json.loads(row[0]) if row[0] else [])[:10]
+        punchlines = (json.loads(row[1]) if row[1] else [])[:10]
+        valid_imgs = [u for u in images if u]
+        if not valid_imgs:
+            _set_result("error:No images found")
+            return
+
+        n = len(valid_imgs)
+        carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+
+        # 1. Compose and upload images to GCS, then create Threads item containers
+        _set_status(f"running:compose:0/{n}")
+        item_ids = []
+        ts_t = int(_time_mod.time())
+
+        for idx, img_url in enumerate(valid_imgs):
+            _set_status(f"running:compose:{idx+1}/{n}")
+            try:
+                if img_url.startswith("https://"):
+                    resp_img = _req.get(img_url, timeout=20)
+                    resp_img.raise_for_status()
+                    img_bytes = resp_img.content
+                else:
+                    local = resolve_image_to_local_path(img_url)
+                    img_bytes = local.read_bytes() if local and local.exists() else b""
+            except Exception as e:
+                _set_result(f"error:Could not fetch image {idx+1}: {e}")
+                return
+
+            punchline  = punchlines[idx] if idx < len(punchlines) else ""
+            jpeg_bytes = compose_carousel_slide(img_bytes, punchline, idx, n,
+                                                band_top=carousel_band_top,
+                                                hint_text="obelisk-stamps.com")
+            gcs_obj    = f"articles/{article_id}/threads/{component}_{idx+1}_{ts_t}.jpg"
+            public_url = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+            if not public_url:
+                _set_result(f"error:Image upload failed for slide {idx+1}")
+                return
+
+            # Create Threads item container (carousel child)
+            _set_status(f"running:containers:{idx+1}/{n}")
+            resp = _req.post(f"{_THREADS_API_URL}/{THREADS_USER_ID}/threads", params={
+                "media_type":        "IMAGE",
+                "image_url":         public_url,
+                "is_carousel_item":  "true",
+                "access_token":      THREADS_ACCESS_TOKEN,
+            }, timeout=30)
+            cdata = resp.json()
+            cid   = cdata.get("id")
+            if not cid:
+                _set_result(f"error:Container creation failed at {idx+1}: {cdata}")
+                return
+            item_ids.append(cid)
+            print(f"[Threads] Item container {idx+1}/{n}: {cid}", flush=True)
+
+        # 2. Create carousel container
+        _set_status("running:carousel")
+        _time_mod.sleep(5)  # Let Threads process items
+        resp = _req.post(f"{_THREADS_API_URL}/{THREADS_USER_ID}/threads", params={
+            "media_type":    "CAROUSEL",
+            "children":      ",".join(item_ids),
+            "text":          caption[:500] if caption else "",
+            "access_token":  THREADS_ACCESS_TOKEN,
+        }, timeout=30)
+        carousel_data = resp.json()
+        carousel_id   = carousel_data.get("id")
+        if not carousel_id:
+            _set_result(f"error:Carousel container failed: {carousel_data}")
+            return
+        print(f"[Threads] Carousel container: {carousel_id}", flush=True)
+
+        # 3. Poll until ready then publish
+        _set_status("running:poll")
+        for attempt in range(30):
+            _time_mod.sleep(5)
+            resp = _req.get(f"{_THREADS_API_URL}/{carousel_id}", params={
+                "fields":       "status",
+                "access_token": THREADS_ACCESS_TOKEN,
+            }, timeout=15)
+            status_data = resp.json()
+            container_status = status_data.get("status", "")
+            print(f"[Threads] Container status: {container_status}", flush=True)
+            if container_status == "FINISHED":
+                break
+            if container_status == "ERROR":
+                _set_result(f"error:Container processing failed: {status_data}")
+                return
+        else:
+            _set_result("error:Container processing timed out")
+            return
+
+        _set_status("running:publish")
+        resp = _req.post(f"{_THREADS_API_URL}/{THREADS_USER_ID}/threads_publish", params={
+            "creation_id":   carousel_id,
+            "access_token":  THREADS_ACCESS_TOKEN,
+        }, timeout=30)
+        pub_data = resp.json()
+        post_id  = pub_data.get("id")
+        if not post_id:
+            _set_result(f"error:Publish failed: {pub_data}")
+            return
+
+        # Fetch permalink
+        resp = _req.get(f"{_THREADS_API_URL}/{post_id}", params={
+            "fields":       "id,permalink",
+            "access_token": THREADS_ACCESS_TOKEN,
+        }, timeout=15)
+        pdata     = resp.json()
+        permalink = pdata.get("permalink", f"https://www.threads.net/@/post/{post_id}")
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"threads_{component}_post_id_{article_id}", post_id, post_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, f"Threads {component.title()} Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"post_id={post_id}\nimages={n}",
+                          component=component)
+        print(f"[Threads] Carousel posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Threads] Carousel worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, f"Threads {component.title()} Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component=component)
+
+
+def _post_narrated_threads_worker(article_id, video_url, caption, run_ts):
+    """Background thread: upload narrated video to Threads."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"threads_narrated_status_{article_id}_{run_ts}"
+    result_key = f"threads_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        # 1. Create video container
+        _set_status("running:container")
+        resp = _req.post(f"{_THREADS_API_URL}/{THREADS_USER_ID}/threads", params={
+            "media_type":    "VIDEO",
+            "video_url":     video_url,
+            "text":          caption[:500] if caption else "",
+            "access_token":  THREADS_ACCESS_TOKEN,
+        }, timeout=30)
+        cdata        = resp.json()
+        container_id = cdata.get("id")
+        if not container_id:
+            _set_result(f"error:Container creation failed: {cdata}")
+            return
+        print(f"[Threads] Video container: {container_id}", flush=True)
+
+        # 2. Poll until FINISHED
+        _set_status("running:poll")
+        for attempt in range(60):
+            _time_mod.sleep(5)
+            resp = _req.get(f"{_THREADS_API_URL}/{container_id}", params={
+                "fields":       "status,error_message",
+                "access_token": THREADS_ACCESS_TOKEN,
+            }, timeout=15)
+            status_data = resp.json()
+            container_status = status_data.get("status", "")
+            print(f"[Threads] Video status: {container_status}", flush=True)
+            if container_status == "FINISHED":
+                break
+            if container_status == "ERROR":
+                err_msg = status_data.get("error_message", "Processing failed")
+                _set_result(f"error:{err_msg}")
+                return
+        else:
+            _set_result("error:Video processing timed out after 5 minutes")
+            return
+
+        # 3. Publish
+        _set_status("running:publish")
+        resp = _req.post(f"{_THREADS_API_URL}/{THREADS_USER_ID}/threads_publish", params={
+            "creation_id":   container_id,
+            "access_token":  THREADS_ACCESS_TOKEN,
+        }, timeout=30)
+        pub_data = resp.json()
+        post_id  = pub_data.get("id")
+        if not post_id:
+            _set_result(f"error:Publish failed: {pub_data}")
+            return
+
+        # Fetch permalink
+        resp = _req.get(f"{_THREADS_API_URL}/{post_id}", params={
+            "fields":       "id,permalink",
+            "access_token": THREADS_ACCESS_TOKEN,
+        }, timeout=15)
+        pdata     = resp.json()
+        permalink = pdata.get("permalink", f"https://www.threads.net/@/post/{post_id}")
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"threads_narrated_post_id_{article_id}_{run_ts}", post_id, post_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, "Threads Narrated Video Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"post_id={post_id}\nrun_ts={run_ts}",
+                          component="narrated")
+        print(f"[Threads] Narrated video posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Threads] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "Threads Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+
+
+# ── Threads: Post carousel ──────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-carousel-to-threads", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_carousel_to_threads(article_id):
+    if not THREADS_CONFIGURED:
+        return jsonify({"error": "Threads credentials not configured."}), 400
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    caption   = data.get("caption", "")
+    status_key = f"threads_{component}_status_{article_id}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_carousel_threads_worker,
+                     args=(article_id, caption, component), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-threads-status")
+@login_required
+@admin_required
+def admin_carousel_threads_status(article_id):
+    component   = request.args.get("type", "car")
+    status_key  = f"threads_{component}_status_{article_id}"
+    result_key  = f"threads_{component}_result_{article_id}"
+    history_key = f"threads_{component}_history_{article_id}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/check-carousel-threads-post")
+@login_required
+@admin_required
+def admin_check_carousel_threads_post(article_id):
+    """Check if carousel/cinemagraph Threads post is still live."""
+    import requests as _req
+    if not THREADS_CONFIGURED:
+        return jsonify({"error": "Threads credentials not configured."}), 400
+    component = request.args.get("type", "car")
+    if component not in ("car", "cine"):
+        component = "car"
+    post_key = f"threads_{component}_post_id_{article_id}"
+    post_id  = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No published post found for this article."}), 400
+    try:
+        resp = _req.get(f"{_THREADS_API_URL}/{post_id}", params={
+            "fields": "id,permalink", "access_token": THREADS_ACCESS_TOKEN,
+        }, timeout=15)
+        data = resp.json()
+        print(f"[Threads] check-{component}-post-live: post_id={post_id} resp={data}", flush=True)
+        if data.get("id"):
+            _add_activity_log(article_id, f"Check Threads Post Live ({component})",
+                              f"Post is live. post_id={post_id}", component=component)
+            return jsonify({"live": True, "permalink": data.get("permalink", "")})
+        api_err = data.get("error", {}).get("message", "Post not found")
+        _add_activity_log(article_id, f"Check Threads Post Live ({component})",
+                          f"Post not found. post_id={post_id}, API: {api_err}",
+                          component=component)
+        return jsonify({"live": False, "api_error": api_err})
+    except Exception as exc:
+        print(f"[Threads] check-{component}-post-live exception: {exc}", flush=True)
+        return jsonify({"error": f"Failed to reach Threads API: {exc}"}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/archive-carousel-threads-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_carousel_threads_post(article_id):
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"threads_{component}_post_id_{article_id}"
+    result_key  = f"threads_{component}_result_{article_id}"
+    status_key  = f"threads_{component}_status_{article_id}"
+    history_key = f"threads_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, f"Threads {component.title()} Post Archived",
+                      f"post_id={post_id}", component=component)
+    return jsonify({"ok": True, "history": history})
+
+
+# ── Threads: Post narrated video ─────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-threads", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_threads(article_id):
+    if not THREADS_CONFIGURED:
+        return jsonify({"error": "Threads credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"threads_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_threads_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-threads-status")
+@login_required
+@admin_required
+def admin_narrated_threads_status(article_id):
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"threads_narrated_status_{article_id}_{run_ts}"
+    result_key  = f"threads_narrated_result_{article_id}_{run_ts}"
+    history_key = f"threads_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/check-narrated-threads-post")
+@login_required
+@admin_required
+def admin_check_narrated_threads_post(article_id):
+    """Check if narrated-video Threads post is still live."""
+    import requests as _req
+    if not THREADS_CONFIGURED:
+        return jsonify({"error": "Threads credentials not configured."}), 400
+    run_ts   = request.args.get("ts", "0")
+    post_key = f"threads_narrated_post_id_{article_id}_{run_ts}"
+    post_id  = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No published post found for this article."}), 400
+    try:
+        resp = _req.get(f"{_THREADS_API_URL}/{post_id}", params={
+            "fields": "id,permalink", "access_token": THREADS_ACCESS_TOKEN,
+        }, timeout=15)
+        data = resp.json()
+        print(f"[Threads] check-narrated-post-live: post_id={post_id} resp={data}", flush=True)
+        if data.get("id"):
+            _add_activity_log(article_id, "Check Threads Post Live (narrated)",
+                              f"Post is live. post_id={post_id}", component="narrated")
+            return jsonify({"live": True, "permalink": data.get("permalink", "")})
+        api_err = data.get("error", {}).get("message", "Post not found")
+        _add_activity_log(article_id, "Check Threads Post Live (narrated)",
+                          f"Post not found. post_id={post_id}, API: {api_err}",
+                          component="narrated")
+        return jsonify({"live": False, "api_error": api_err})
+    except Exception as exc:
+        print(f"[Threads] check-narrated-post-live exception: {exc}", flush=True)
+        return jsonify({"error": f"Failed to reach Threads API: {exc}"}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-threads-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_threads_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"threads_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"threads_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"threads_narrated_status_{article_id}_{run_ts}"
+    history_key = f"threads_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, "Threads Narrated Video Post Archived",
+                      f"post_id={post_id} archived", component="narrated")
+    return jsonify({"ok": True, "history": history})
+
+
+# ── Pinterest: Workers & Routes ──────────────────────────────
+
+def _pinterest_headers():
+    """Return Authorization headers for Pinterest API."""
+    return {
+        "Authorization": f"Bearer {PINTEREST_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+
+def _post_carousel_pinterest_worker(article_id, caption, component):
+    """Background thread: compose carousel images and post as Pinterest pin(s)."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"pinterest_{component}_status_{article_id}"
+    result_key = f"pinterest_{component}_result_{article_id}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        row = query_one(
+            "SELECT carousel_images, carousel_punchlines, slug FROM articles WHERE id = %s",
+            (article_id,)
+        )
+        if not row:
+            _set_result("error:Article not found")
+            return
+
+        images     = (json.loads(row[0]) if row[0] else [])[:10]
+        punchlines = (json.loads(row[1]) if row[1] else [])[:10]
+        slug       = row[2] or ""
+        valid_imgs = [u for u in images if u]
+        if not valid_imgs:
+            _set_result("error:No images found")
+            return
+
+        n = len(valid_imgs)
+        carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+
+        # 1. Compose and upload images to GCS
+        _set_status(f"running:compose:0/{n}")
+        ts_t = int(_time_mod.time())
+        public_urls = []
+
+        for idx, img_url in enumerate(valid_imgs):
+            _set_status(f"running:compose:{idx+1}/{n}")
+            try:
+                if img_url.startswith("https://"):
+                    resp_img = _req.get(img_url, timeout=20)
+                    resp_img.raise_for_status()
+                    img_bytes = resp_img.content
+                else:
+                    local = resolve_image_to_local_path(img_url)
+                    img_bytes = local.read_bytes() if local and local.exists() else b""
+            except Exception as e:
+                _set_result(f"error:Could not fetch image {idx+1}: {e}")
+                return
+
+            punchline  = punchlines[idx] if idx < len(punchlines) else ""
+            jpeg_bytes = compose_carousel_slide(img_bytes, punchline, idx, n,
+                                                band_top=carousel_band_top,
+                                                hint_text="obelisk-stamps.com")
+            gcs_obj    = f"articles/{article_id}/pinterest/{component}_{idx+1}_{ts_t}.jpg"
+            public_url = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+            if not public_url:
+                _set_result(f"error:Image upload failed for slide {idx+1}")
+                return
+            public_urls.append(public_url)
+
+        # Build article link
+        article_link = f"{SITE_URL}/articles/{slug}" if SITE_URL and slug else ""
+
+        pin_title = (caption[:100] if caption else "")
+        pin_desc  = (caption[:800] if caption else "")
+
+        # 2. Create Pinterest pin(s) — max 5 images per carousel pin
+        _set_status("running:pin")
+        first_pin_id = None
+
+        # Split into chunks of 5 (Pinterest carousel supports 2-5 images)
+        url_chunks = []
+        for i in range(0, len(public_urls), 5):
+            chunk = public_urls[i:i+5]
+            url_chunks.append(chunk)
+
+        for chunk_idx, chunk_urls in enumerate(url_chunks):
+            if len(chunk_urls) >= 2:
+                # Carousel pin (multiple_image_urls) — 2-5 images
+                items = [{"title": "", "description": "", "link": article_link,
+                          "image_url": url} for url in chunk_urls]
+                payload = {
+                    "board_id": PINTEREST_BOARD_ID,
+                    "title": pin_title,
+                    "description": pin_desc,
+                    "media_source": {
+                        "source_type": "multiple_image_urls",
+                        "items": items,
+                    },
+                }
+                if article_link:
+                    payload["link"] = article_link
+            else:
+                # Single image pin
+                payload = {
+                    "board_id": PINTEREST_BOARD_ID,
+                    "title": pin_title,
+                    "description": pin_desc,
+                    "media_source": {
+                        "source_type": "image_url",
+                        "url": chunk_urls[0],
+                    },
+                }
+                if article_link:
+                    payload["link"] = article_link
+
+            resp = _req.post(f"{_PINTEREST_API_URL}/pins",
+                             headers=_pinterest_headers(),
+                             json=payload, timeout=30)
+            pin_data = resp.json()
+            pin_id   = pin_data.get("id")
+            if not pin_id:
+                _set_result(f"error:Pin creation failed (chunk {chunk_idx+1}): {pin_data}")
+                return
+            if chunk_idx == 0:
+                first_pin_id = pin_id
+            print(f"[Pinterest] Pin created {chunk_idx+1}/{len(url_chunks)}: {pin_id}", flush=True)
+
+        permalink = f"https://www.pinterest.com/pin/{first_pin_id}/"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"pinterest_{component}_pin_id_{article_id}", first_pin_id, first_pin_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, f"Pinterest {component.title()} Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"pin_id={first_pin_id}\nimages={n}",
+                          component=component)
+        print(f"[Pinterest] Carousel posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Pinterest] Carousel worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, f"Pinterest {component.title()} Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component=component)
+
+
+def _post_narrated_pinterest_worker(article_id, video_url, caption, run_ts):
+    """Background thread: upload narrated video to Pinterest as a video pin."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"pinterest_narrated_status_{article_id}_{run_ts}"
+    result_key = f"pinterest_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        # Get article slug for link
+        row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        slug = row[0] if row else ""
+        article_link = f"{SITE_URL}/articles/{slug}" if SITE_URL and slug else ""
+
+        # 1. Register media upload with Pinterest
+        _set_status("running:register")
+        resp = _req.post(f"{_PINTEREST_API_URL}/media", headers=_pinterest_headers(),
+                         json={"media_type": "video"}, timeout=30)
+        media_data = resp.json()
+        media_id       = media_data.get("media_id")
+        upload_url     = media_data.get("upload_url")
+        upload_params  = media_data.get("upload_parameters") or {}
+        if not media_id or not upload_url:
+            _set_result(f"error:Media registration failed: {media_data}")
+            return
+        print(f"[Pinterest] Media registered: {media_id}", flush=True)
+
+        # 2. Download video
+        _set_status("running:download")
+        resp_vid = _req.get(video_url, timeout=120, stream=True)
+        resp_vid.raise_for_status()
+        video_bytes = resp_vid.content
+        print(f"[Pinterest] Video downloaded: {len(video_bytes)} bytes", flush=True)
+
+        # 3. Upload video to S3 via multipart form
+        _set_status("running:upload")
+        # upload_params are form fields that must be sent along with the file
+        files_payload = {}
+        form_fields = []
+        for k, v in upload_params.items():
+            form_fields.append((k, (None, v)))
+        form_fields.append(("file", ("video.mp4", video_bytes, "video/mp4")))
+        resp_upload = _req.post(upload_url, files=form_fields, timeout=300)
+        if resp_upload.status_code not in (200, 201, 204):
+            _set_result(f"error:Video upload failed (HTTP {resp_upload.status_code}): {resp_upload.text[:300]}")
+            return
+        print(f"[Pinterest] Video uploaded to S3: {resp_upload.status_code}", flush=True)
+
+        # 4. Poll media status until succeeded
+        _set_status("running:poll")
+        for attempt in range(90):
+            _time_mod.sleep(5)
+            resp_status = _req.get(f"{_PINTEREST_API_URL}/media/{media_id}",
+                                   headers=_pinterest_headers(), timeout=15)
+            status_data = resp_status.json()
+            media_status = status_data.get("status", "")
+            print(f"[Pinterest] Media status ({attempt+1}): {media_status}", flush=True)
+            if media_status == "succeeded":
+                break
+            if media_status == "failed":
+                _set_result(f"error:Video processing failed: {status_data}")
+                return
+        else:
+            _set_result("error:Video processing timed out after ~7.5 minutes")
+            return
+
+        # 5. Create video pin
+        _set_status("running:pin")
+        pin_title = (caption[:100] if caption else "")
+        pin_desc  = (caption[:800] if caption else "")
+        payload = {
+            "board_id": PINTEREST_BOARD_ID,
+            "title": pin_title,
+            "description": pin_desc,
+            "media_source": {
+                "source_type": "video_id",
+                "media_id": media_id,
+            },
+        }
+        if article_link:
+            payload["link"] = article_link
+
+        resp_pin = _req.post(f"{_PINTEREST_API_URL}/pins",
+                             headers=_pinterest_headers(),
+                             json=payload, timeout=30)
+        pin_data = resp_pin.json()
+        pin_id   = pin_data.get("id")
+        if not pin_id:
+            _set_result(f"error:Pin creation failed: {pin_data}")
+            return
+
+        permalink = f"https://www.pinterest.com/pin/{pin_id}/"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"pinterest_narrated_pin_id_{article_id}_{run_ts}", pin_id, pin_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, "Pinterest Narrated Video Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"pin_id={pin_id}\nrun_ts={run_ts}",
+                          component="narrated")
+        print(f"[Pinterest] Narrated video posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Pinterest] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "Pinterest Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+
+
+# ── Pinterest: Post carousel ────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-carousel-to-pinterest", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_carousel_to_pinterest(article_id):
+    if not PINTEREST_CONFIGURED:
+        return jsonify({"error": "Pinterest credentials not configured."}), 400
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    caption   = data.get("caption", "")
+    status_key = f"pinterest_{component}_status_{article_id}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_carousel_pinterest_worker,
+                     args=(article_id, caption, component), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-pinterest-status")
+@login_required
+@admin_required
+def admin_carousel_pinterest_status(article_id):
+    component   = request.args.get("type", "car")
+    status_key  = f"pinterest_{component}_status_{article_id}"
+    result_key  = f"pinterest_{component}_result_{article_id}"
+    history_key = f"pinterest_{component}_history_{article_id}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/check-carousel-pinterest-post")
+@login_required
+@admin_required
+def admin_check_carousel_pinterest_post(article_id):
+    """Check if carousel/cinemagraph Pinterest pin is still live."""
+    import requests as _req
+    if not PINTEREST_CONFIGURED:
+        return jsonify({"error": "Pinterest credentials not configured."}), 400
+    component = request.args.get("type", "car")
+    if component not in ("car", "cine"):
+        component = "car"
+    pin_key = f"pinterest_{component}_pin_id_{article_id}"
+    pin_id  = get_setting(pin_key)
+    if not pin_id:
+        return jsonify({"error": "No published pin found for this article."}), 400
+    try:
+        resp = _req.get(f"{_PINTEREST_API_URL}/pins/{pin_id}",
+                        headers=_pinterest_headers(), timeout=15)
+        data = resp.json()
+        print(f"[Pinterest] check-{component}-pin-live: pin_id={pin_id} status={resp.status_code}", flush=True)
+        if data.get("id"):
+            _add_activity_log(article_id, f"Check Pinterest Pin Live ({component})",
+                              f"Pin is live. pin_id={pin_id}", component=component)
+            return jsonify({"live": True, "permalink": f"https://www.pinterest.com/pin/{pin_id}/"})
+        api_err = data.get("message", "Pin not found")
+        _add_activity_log(article_id, f"Check Pinterest Pin Live ({component})",
+                          f"Pin not found. pin_id={pin_id}, API: {api_err}",
+                          component=component)
+        return jsonify({"live": False, "api_error": api_err})
+    except Exception as exc:
+        print(f"[Pinterest] check-{component}-pin-live exception: {exc}", flush=True)
+        return jsonify({"error": f"Failed to reach Pinterest API: {exc}"}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/archive-carousel-pinterest-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_carousel_pinterest_post(article_id):
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    pin_key     = f"pinterest_{component}_pin_id_{article_id}"
+    result_key  = f"pinterest_{component}_result_{article_id}"
+    status_key  = f"pinterest_{component}_status_{article_id}"
+    history_key = f"pinterest_{component}_history_{article_id}"
+    pin_id = get_setting(pin_key)
+    if not pin_id:
+        return jsonify({"error": "No pin to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"pin_id": pin_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (pin_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, f"Pinterest {component.title()} Pin Archived",
+                      f"pin_id={pin_id}", component=component)
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-carousel-pinterest-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_carousel_pinterest_post(article_id):
+    """Delete pin from Pinterest and archive locally."""
+    import requests as _req
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    pin_key     = f"pinterest_{component}_pin_id_{article_id}"
+    result_key  = f"pinterest_{component}_result_{article_id}"
+    status_key  = f"pinterest_{component}_status_{article_id}"
+    history_key = f"pinterest_{component}_history_{article_id}"
+    pin_id = get_setting(pin_key)
+    if not pin_id:
+        return jsonify({"error": "No pin record found"}), 400
+    # Delete from Pinterest
+    try:
+        resp = _req.delete(f"{_PINTEREST_API_URL}/pins/{pin_id}",
+                           headers=_pinterest_headers(), timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete pin: {err}"}), 400
+    except Exception:
+        pass  # Archive anyway
+    # Archive locally
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"pin_id": pin_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (pin_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, f"Pinterest {component.title()} Pin Deleted & Archived",
+                      f"pin_id={pin_id}", component=component)
+    return jsonify({"ok": True, "history": history})
+
+
+# ── Pinterest: Post narrated video ──────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-pinterest", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_pinterest(article_id):
+    if not PINTEREST_CONFIGURED:
+        return jsonify({"error": "Pinterest credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"pinterest_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_pinterest_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-pinterest-status")
+@login_required
+@admin_required
+def admin_narrated_pinterest_status(article_id):
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"pinterest_narrated_status_{article_id}_{run_ts}"
+    result_key  = f"pinterest_narrated_result_{article_id}_{run_ts}"
+    history_key = f"pinterest_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/check-narrated-pinterest-post")
+@login_required
+@admin_required
+def admin_check_narrated_pinterest_post(article_id):
+    """Check if narrated-video Pinterest pin is still live."""
+    import requests as _req
+    if not PINTEREST_CONFIGURED:
+        return jsonify({"error": "Pinterest credentials not configured."}), 400
+    run_ts  = request.args.get("ts", "0")
+    pin_key = f"pinterest_narrated_pin_id_{article_id}_{run_ts}"
+    pin_id  = get_setting(pin_key)
+    if not pin_id:
+        return jsonify({"error": "No published pin found for this article."}), 400
+    try:
+        resp = _req.get(f"{_PINTEREST_API_URL}/pins/{pin_id}",
+                        headers=_pinterest_headers(), timeout=15)
+        data = resp.json()
+        print(f"[Pinterest] check-narrated-pin-live: pin_id={pin_id} status={resp.status_code}", flush=True)
+        if data.get("id"):
+            _add_activity_log(article_id, "Check Pinterest Pin Live (narrated)",
+                              f"Pin is live. pin_id={pin_id}", component="narrated")
+            return jsonify({"live": True, "permalink": f"https://www.pinterest.com/pin/{pin_id}/"})
+        api_err = data.get("message", "Pin not found")
+        _add_activity_log(article_id, "Check Pinterest Pin Live (narrated)",
+                          f"Pin not found. pin_id={pin_id}, API: {api_err}",
+                          component="narrated")
+        return jsonify({"live": False, "api_error": api_err})
+    except Exception as exc:
+        print(f"[Pinterest] check-narrated-pin-live exception: {exc}", flush=True)
+        return jsonify({"error": f"Failed to reach Pinterest API: {exc}"}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-pinterest-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_pinterest_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    pin_key     = f"pinterest_narrated_pin_id_{article_id}_{run_ts}"
+    result_key  = f"pinterest_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"pinterest_narrated_status_{article_id}_{run_ts}"
+    history_key = f"pinterest_narrated_history_{article_id}_{run_ts}"
+    pin_id = get_setting(pin_key)
+    if not pin_id:
+        return jsonify({"error": "No pin to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"pin_id": pin_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (pin_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, "Pinterest Narrated Video Pin Archived",
+                      f"pin_id={pin_id} archived", component="narrated")
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-narrated-pinterest-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_narrated_pinterest_post(article_id):
+    """Delete narrated video pin from Pinterest and archive locally."""
+    import requests as _req
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    pin_key     = f"pinterest_narrated_pin_id_{article_id}_{run_ts}"
+    result_key  = f"pinterest_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"pinterest_narrated_status_{article_id}_{run_ts}"
+    history_key = f"pinterest_narrated_history_{article_id}_{run_ts}"
+    pin_id = get_setting(pin_key)
+    if not pin_id:
+        return jsonify({"error": "No pin record found"}), 400
+    # Delete from Pinterest
+    try:
+        resp = _req.delete(f"{_PINTEREST_API_URL}/pins/{pin_id}",
+                           headers=_pinterest_headers(), timeout=15)
+        if resp.status_code not in (200, 204):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            if resp.status_code != 404:
+                return jsonify({"error": f"Could not delete pin: {err}"}), 400
+    except Exception:
+        pass  # Archive anyway
+    # Archive locally
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"pin_id": pin_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (pin_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, "Pinterest Narrated Video Pin Deleted & Archived",
+                      f"pin_id={pin_id}", component="narrated")
+    return jsonify({"ok": True, "history": history})
+
+
+# ── TikTok: Workers & Routes ─────────────────────────────────
+
+def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
+    """Background thread: upload narrated video to TikTok via Content Posting API."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"tiktok_narrated_status_{article_id}_{run_ts}"
+    result_key = f"tiktok_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {TIKTOK_ACCESS_TOKEN}",
+            "Content-Type": "application/json; charset=UTF-8",
+        }
+
+        # 1. Initialize video upload (pull from URL)
+        _set_status("running:init")
+        resp = _req.post(f"{_TIKTOK_API_URL}/post/publish/video/init/", headers=headers, json={
+            "post_info": {
+                "title": caption[:150] if caption else "",
+                "privacy_level": "PUBLIC_TO_EVERYONE",
+                "disable_duet": False,
+                "disable_comment": False,
+                "disable_stitch": False,
+            },
+            "source_info": {
+                "source": "PULL_FROM_URL",
+                "video_url": video_url,
+            },
+        }, timeout=30)
+        data = resp.json()
+        print(f"[TikTok] init response: {data}", flush=True)
+
+        if data.get("error", {}).get("code") != "ok":
+            err_msg = data.get("error", {}).get("message", "Init failed")
+            _set_result(f"error:{err_msg}")
+            return
+
+        publish_id = data.get("data", {}).get("publish_id")
+        if not publish_id:
+            _set_result(f"error:No publish_id returned: {data}")
+            return
+
+        # 2. Poll status until complete
+        _set_status("running:processing")
+        for attempt in range(60):
+            _time_mod.sleep(5)
+            resp = _req.post(f"{_TIKTOK_API_URL}/post/publish/status/fetch/", headers=headers, json={
+                "publish_id": publish_id,
+            }, timeout=15)
+            sdata = resp.json()
+            status_val = sdata.get("data", {}).get("status", "")
+            print(f"[TikTok] status: {status_val}", flush=True)
+
+            if status_val == "PUBLISH_COMPLETE":
+                break
+            if status_val in ("FAILED", "PUBLISH_CANCELLED"):
+                fail_reason = sdata.get("data", {}).get("fail_reason", "Unknown error")
+                _set_result(f"error:{fail_reason}")
+                return
+        else:
+            _set_result("error:Video processing timed out after 5 minutes")
+            return
+
+        video_id = sdata.get("data", {}).get("video_id", publish_id)
+        permalink = f"https://www.tiktok.com/@/video/{video_id}"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"tiktok_narrated_video_id_{article_id}_{run_ts}", video_id, video_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, "TikTok Narrated Video Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"video_id={video_id}\nrun_ts={run_ts}",
+                          component="narrated")
+        print(f"[TikTok] Video posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[TikTok] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "TikTok Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-tiktok", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_tiktok(article_id):
+    if not TIKTOK_CONFIGURED:
+        return jsonify({"error": "TikTok credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"tiktok_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_tiktok_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-tiktok-status")
+@login_required
+@admin_required
+def admin_narrated_tiktok_status(article_id):
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"tiktok_narrated_status_{article_id}_{run_ts}"
+    result_key  = f"tiktok_narrated_result_{article_id}_{run_ts}"
+    history_key = f"tiktok_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-tiktok-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_tiktok_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    video_key   = f"tiktok_narrated_video_id_{article_id}_{run_ts}"
+    result_key  = f"tiktok_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"tiktok_narrated_status_{article_id}_{run_ts}"
+    history_key = f"tiktok_narrated_history_{article_id}_{run_ts}"
+    video_id = get_setting(video_key)
+    if not video_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"video_id": video_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (video_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, "TikTok Narrated Video Post Archived",
+                      f"video_id={video_id} archived", component="narrated")
+    return jsonify({"ok": True, "history": history})
+
+
+# ── LinkedIn: Workers & Routes ───────────────────────────────
+
+def _post_carousel_linkedin_worker(article_id, caption, component):
+    """Background thread: compose carousel images and post to LinkedIn."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"linkedin_{component}_status_{article_id}"
+    result_key = f"linkedin_{component}_result_{article_id}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        headers = {
+            "Authorization":            f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+            "Content-Type":             "application/json",
+            "LinkedIn-Version":         "202502",
+            "X-Restli-Protocol-Version": "2.0.0",
+        }
+        author = f"urn:li:organization:{LINKEDIN_ORG_ID}"
+
+        row = query_one(
+            "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+            (article_id,)
+        )
+        if not row:
+            _set_result("error:Article not found")
+            return
+
+        images     = (json.loads(row[0]) if row[0] else [])[:10]
+        punchlines = (json.loads(row[1]) if row[1] else [])[:10]
+        valid_imgs = [u for u in images if u]
+        if not valid_imgs:
+            _set_result("error:No images found")
+            return
+
+        n = len(valid_imgs)
+        carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+
+        _set_status(f"running:compose:0/{n}")
+        image_urls = []
+        ts_l = int(_time_mod.time())
+        for idx, img_url in enumerate(valid_imgs):
+            _set_status(f"running:compose:{idx+1}/{n}")
+            try:
+                if img_url.startswith("https://"):
+                    resp_img = _req.get(img_url, timeout=20)
+                    resp_img.raise_for_status()
+                    img_bytes = resp_img.content
+                else:
+                    local = resolve_image_to_local_path(img_url)
+                    img_bytes = local.read_bytes() if local and local.exists() else b""
+            except Exception as e:
+                _set_result(f"error:Could not fetch image {idx+1}: {e}")
+                return
+
+            punchline  = punchlines[idx] if idx < len(punchlines) else ""
+            jpeg_bytes = compose_carousel_slide(img_bytes, punchline, idx, n,
+                                                band_top=carousel_band_top,
+                                                hint_text="obelisk-stamps.com")
+            gcs_obj    = f"articles/{article_id}/linkedin/{component}_{idx+1}_{ts_l}.jpg"
+            public_url = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+            if public_url:
+                image_urls.append(public_url)
+
+        if not image_urls:
+            _set_result("error:No images uploaded successfully")
+            return
+
+        # Register images with LinkedIn
+        _set_status("running:upload")
+        image_urns = []
+        for idx, public_url in enumerate(image_urls):
+            resp = _req.post(f"{_LINKEDIN_API_URL}/images?action=initializeUpload", headers=headers, json={
+                "initializeUploadRequest": {"owner": author}
+            }, timeout=30)
+            init_data = resp.json()
+            upload_url = init_data.get("value", {}).get("uploadUrl", "")
+            image_urn  = init_data.get("value", {}).get("image", "")
+            if not upload_url or not image_urn:
+                _set_result(f"error:Image init failed at {idx+1}: {init_data}")
+                return
+            img_dl = _req.get(public_url, timeout=30)
+            resp = _req.put(upload_url, headers={
+                "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+                "Content-Type": "image/jpeg",
+            }, data=img_dl.content, timeout=60)
+            if resp.status_code not in (200, 201):
+                _set_result(f"error:Image upload failed at {idx+1}")
+                return
+            image_urns.append(image_urn)
+            print(f"[LinkedIn] Uploaded image {idx+1}/{len(image_urls)}: {image_urn}", flush=True)
+
+        _set_status("running:publish")
+        post_body = {
+            "author": author,
+            "commentary": caption[:3000] if caption else "",
+            "visibility": "PUBLIC",
+            "distribution": {"feedDistribution": "MAIN_FEED", "targetEntities": [], "thirdPartyDistributionChannels": []},
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
+        }
+        if len(image_urns) == 1:
+            post_body["content"] = {"media": {"id": image_urns[0], "altText": caption[:200] if caption else ""}}
+        else:
+            post_body["content"] = {"multiImage": {"images": [{"id": urn, "altText": ""} for urn in image_urns]}}
+
+        resp = _req.post(f"{_LINKEDIN_API_URL}/posts", headers=headers, json=post_body, timeout=30)
+        if resp.status_code not in (200, 201):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:500]
+            _set_result(f"error:Post creation failed: {err}")
+            return
+
+        post_id = resp.headers.get("x-restli-id", "")
+        permalink = f"https://www.linkedin.com/feed/update/{post_id}/" if post_id else ""
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"linkedin_{component}_post_id_{article_id}", post_id, post_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, f"LinkedIn {component.title()} Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\npost_id={post_id}\nimages={n}",
+                          component=component)
+        print(f"[LinkedIn] Post created: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[LinkedIn] Carousel worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, f"LinkedIn {component.title()} Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component=component)
+
+
+def _post_narrated_linkedin_worker(article_id, video_url, caption, run_ts):
+    """Background thread: upload narrated video to LinkedIn."""
+    import requests as _req
+    import time as _time_mod
+    import tempfile as _tmp
+    import os as _os
+
+    status_key = f"linkedin_narrated_status_{article_id}_{run_ts}"
+    result_key = f"linkedin_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    tmp_path = None
+    try:
+        headers = {
+            "Authorization":            f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+            "Content-Type":             "application/json",
+            "LinkedIn-Version":         "202502",
+            "X-Restli-Protocol-Version": "2.0.0",
+        }
+        author = f"urn:li:organization:{LINKEDIN_ORG_ID}"
+
+        _set_status("running:download")
+        with _tmp.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_f:
+            tmp_path = tmp_f.name
+        with _req.get(video_url, stream=True, timeout=120) as dl:
+            dl.raise_for_status()
+            with open(tmp_path, "wb") as f:
+                for chunk in dl.iter_content(chunk_size=1024 * 1024):
+                    f.write(chunk)
+        file_size = _os.path.getsize(tmp_path)
+
+        _set_status("running:upload_init")
+        resp = _req.post(f"{_LINKEDIN_API_URL}/videos?action=initializeUpload", headers=headers, json={
+            "initializeUploadRequest": {"owner": author, "fileSizeBytes": file_size, "uploadCaptions": False, "uploadThumbnail": False}
+        }, timeout=30)
+        init_data = resp.json()
+        video_urn  = init_data.get("value", {}).get("video", "")
+        upload_instructions = init_data.get("value", {}).get("uploadInstructions", [])
+        if not video_urn or not upload_instructions:
+            _set_result(f"error:Video init failed: {init_data}")
+            return
+
+        _set_status("running:upload")
+        with open(tmp_path, "rb") as f:
+            for instr in upload_instructions:
+                upload_url = instr.get("uploadUrl", "")
+                if not upload_url:
+                    continue
+                chunk_data = f.read(file_size)
+                resp = _req.put(upload_url, headers={
+                    "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+                    "Content-Type": "application/octet-stream",
+                }, data=chunk_data, timeout=120)
+                if resp.status_code not in (200, 201):
+                    _set_result(f"error:Video upload failed: {resp.status_code}")
+                    return
+
+        _set_status("running:finalize")
+        _req.post(f"{_LINKEDIN_API_URL}/videos?action=finalizeUpload", headers=headers, json={
+            "finalizeUploadRequest": {"video": video_urn, "uploadToken": "", "uploadedPartIds": []}
+        }, timeout=30)
+
+        _set_status("running:processing")
+        for attempt in range(60):
+            _time_mod.sleep(5)
+            resp = _req.get(f"{_LINKEDIN_API_URL}/videos/{video_urn}", headers={
+                "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}", "LinkedIn-Version": "202502",
+            }, timeout=15)
+            if resp.status_code == 200:
+                v_status = resp.json().get("status", "")
+                if v_status == "AVAILABLE":
+                    break
+                if v_status in ("PROCESSING_FAILED", "UPLOAD_FAILED"):
+                    _set_result(f"error:Video processing failed: {v_status}")
+                    return
+
+        _set_status("running:publish")
+        post_body = {
+            "author": author,
+            "commentary": caption[:3000] if caption else "",
+            "visibility": "PUBLIC",
+            "distribution": {"feedDistribution": "MAIN_FEED", "targetEntities": [], "thirdPartyDistributionChannels": []},
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
+            "content": {"media": {"id": video_urn}},
+        }
+        resp = _req.post(f"{_LINKEDIN_API_URL}/posts", headers=headers, json=post_body, timeout=30)
+        if resp.status_code not in (200, 201):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:500]
+            _set_result(f"error:Post creation failed: {err}")
+            return
+
+        post_id = resp.headers.get("x-restli-id", "")
+        permalink = f"https://www.linkedin.com/feed/update/{post_id}/" if post_id else ""
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"linkedin_narrated_post_id_{article_id}_{run_ts}", post_id, post_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, "LinkedIn Narrated Video Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\npost_id={post_id}\nrun_ts={run_ts}",
+                          component="narrated")
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[LinkedIn] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "LinkedIn Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+    finally:
+        if tmp_path and _os.path.exists(tmp_path):
+            _os.unlink(tmp_path)
+
+
+# ── LinkedIn: Routes ─────────────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-carousel-to-linkedin", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_carousel_to_linkedin(article_id):
+    if not LINKEDIN_CONFIGURED:
+        return jsonify({"error": "LinkedIn credentials not configured."}), 400
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    caption   = data.get("caption", "")
+    status_key = f"linkedin_{component}_status_{article_id}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_carousel_linkedin_worker,
+                     args=(article_id, caption, component), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-linkedin-status")
+@login_required
+@admin_required
+def admin_carousel_linkedin_status(article_id):
+    component   = request.args.get("type", "car")
+    status_key  = f"linkedin_{component}_status_{article_id}"
+    result_key  = f"linkedin_{component}_result_{article_id}"
+    history_key = f"linkedin_{component}_history_{article_id}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/check-carousel-linkedin-post")
+@login_required
+@admin_required
+def admin_check_carousel_linkedin_post(article_id):
+    import requests as _req
+    if not LINKEDIN_CONFIGURED:
+        return jsonify({"error": "LinkedIn credentials not configured."}), 400
+    component = request.args.get("type", "car")
+    post_key  = f"linkedin_{component}_post_id_{article_id}"
+    post_id   = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No published post found."}), 400
+    try:
+        resp = _req.get(f"{_LINKEDIN_API_URL}/posts/{post_id}", headers={
+            "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+            "LinkedIn-Version": "202502", "X-Restli-Protocol-Version": "2.0.0",
+        }, timeout=15)
+        if resp.status_code == 200:
+            return jsonify({"live": True})
+        api_err = "Post not found"
+        try:
+            api_err = resp.json().get("message", api_err)
+        except Exception:
+            pass
+        return jsonify({"live": False, "api_error": api_err})
+    except Exception as exc:
+        return jsonify({"error": f"Failed to reach LinkedIn API: {exc}"}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/archive-carousel-linkedin-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_carousel_linkedin_post(article_id):
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"linkedin_{component}_post_id_{article_id}"
+    result_key  = f"linkedin_{component}_result_{article_id}"
+    status_key  = f"linkedin_{component}_status_{article_id}"
+    history_key = f"linkedin_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-carousel-linkedin-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_carousel_linkedin_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"linkedin_{component}_post_id_{article_id}"
+    result_key  = f"linkedin_{component}_result_{article_id}"
+    status_key  = f"linkedin_{component}_status_{article_id}"
+    history_key = f"linkedin_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        resp = _req.delete(f"{_LINKEDIN_API_URL}/posts/{post_id}", headers={
+            "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+            "LinkedIn-Version": "202502", "X-Restli-Protocol-Version": "2.0.0",
+        }, timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete post: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-linkedin", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_linkedin(article_id):
+    if not LINKEDIN_CONFIGURED:
+        return jsonify({"error": "LinkedIn credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"linkedin_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_linkedin_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-linkedin-status")
+@login_required
+@admin_required
+def admin_narrated_linkedin_status(article_id):
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"linkedin_narrated_status_{article_id}_{run_ts}"
+    result_key  = f"linkedin_narrated_result_{article_id}_{run_ts}"
+    history_key = f"linkedin_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/check-narrated-linkedin-post")
+@login_required
+@admin_required
+def admin_check_narrated_linkedin_post(article_id):
+    import requests as _req
+    if not LINKEDIN_CONFIGURED:
+        return jsonify({"error": "LinkedIn credentials not configured."}), 400
+    run_ts   = request.args.get("ts", "0")
+    post_key = f"linkedin_narrated_post_id_{article_id}_{run_ts}"
+    post_id  = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No published post found."}), 400
+    try:
+        resp = _req.get(f"{_LINKEDIN_API_URL}/posts/{post_id}", headers={
+            "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+            "LinkedIn-Version": "202502", "X-Restli-Protocol-Version": "2.0.0",
+        }, timeout=15)
+        if resp.status_code == 200:
+            return jsonify({"live": True})
+        api_err = "Post not found"
+        try:
+            api_err = resp.json().get("message", api_err)
+        except Exception:
+            pass
+        return jsonify({"live": False, "api_error": api_err})
+    except Exception as exc:
+        return jsonify({"error": f"Failed to reach LinkedIn API: {exc}"}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-linkedin-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_linkedin_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"linkedin_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"linkedin_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"linkedin_narrated_status_{article_id}_{run_ts}"
+    history_key = f"linkedin_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-narrated-linkedin-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_narrated_linkedin_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"linkedin_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"linkedin_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"linkedin_narrated_status_{article_id}_{run_ts}"
+    history_key = f"linkedin_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        resp = _req.delete(f"{_LINKEDIN_API_URL}/posts/{post_id}", headers={
+            "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+            "LinkedIn-Version": "202502", "X-Restli-Protocol-Version": "2.0.0",
+        }, timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete post: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
     return jsonify({"ok": True, "history": history})
 
 

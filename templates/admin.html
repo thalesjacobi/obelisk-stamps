@@ -671,6 +671,171 @@
                 </p>
             </div>
         </div>
+        <!-- Threads API -->
+        <div class="card mt-4">
+            <div class="card-header"><strong>Threads API</strong></div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Set up Threads API credentials to post Narrated Videos and Carousel Images to Threads directly from the article editor.
+                    Get credentials at <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">Meta for Developers</a> (add the Threads API product to your app).
+                </p>
+                <table class="table table-sm table-bordered small mb-3">
+                    <tbody>
+                        <tr>
+                            <td style="width:55%"><code>THREADS_USER_ID</code></td>
+                            <td>
+                                {% if threads_user_id_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>THREADS_ACCESS_TOKEN</code></td>
+                            <td>
+                                {% if threads_token_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="text-muted small mb-0">
+                    Add these values as GitHub Secrets (<code>THREADS_USER_ID</code>, <code>THREADS_ACCESS_TOKEN</code>)
+                    and they will be injected at deploy time.
+                </p>
+            </div>
+        </div>
+
+        <!-- Pinterest API -->
+        <div class="card mt-4">
+            <div class="card-header"><strong>Pinterest API</strong></div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Set up Pinterest API credentials to pin Carousel Images and Narrated Videos directly from the article editor.
+                    Get credentials at <a href="https://developers.pinterest.com/apps/" target="_blank" rel="noopener">Pinterest for Developers</a>.
+                </p>
+                <table class="table table-sm table-bordered small mb-3">
+                    <tbody>
+                        <tr>
+                            <td style="width:55%"><code>PINTEREST_ACCESS_TOKEN</code></td>
+                            <td>
+                                {% if pinterest_token_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>PINTEREST_BOARD_ID</code></td>
+                            <td>
+                                {% if pinterest_board_id_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="text-muted small mb-0">
+                    Add these values as GitHub Secrets (<code>PINTEREST_ACCESS_TOKEN</code>, <code>PINTEREST_BOARD_ID</code>)
+                    and they will be injected at deploy time.
+                </p>
+            </div>
+        </div>
+
+        <!-- TikTok API -->
+        <div class="card mt-4">
+            <div class="card-header"><strong>TikTok API</strong></div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Set up TikTok API credentials to post Narrated Videos to TikTok directly from the article editor.
+                    Get credentials at <a href="https://developers.tiktok.com/" target="_blank" rel="noopener">TikTok for Developers</a>.
+                </p>
+                <table class="table table-sm table-bordered small mb-3">
+                    <tbody>
+                        <tr>
+                            <td style="width:55%"><code>TIKTOK_CLIENT_KEY</code></td>
+                            <td>
+                                {% if tiktok_client_key_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>TIKTOK_CLIENT_SECRET</code></td>
+                            <td>
+                                {% if tiktok_client_secret_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>TIKTOK_ACCESS_TOKEN</code></td>
+                            <td>
+                                {% if tiktok_token_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="text-muted small mb-0">
+                    Add these values as GitHub Secrets and they will be injected at deploy time.
+                </p>
+            </div>
+        </div>
+
+        <!-- LinkedIn API -->
+        <div class="card mt-4">
+            <div class="card-header"><strong>LinkedIn API</strong></div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Set up LinkedIn API credentials to share articles and Narrated Videos on LinkedIn directly from the article editor.
+                    Get credentials at <a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noopener">LinkedIn Developers</a>.
+                </p>
+                <table class="table table-sm table-bordered small mb-3">
+                    <tbody>
+                        <tr>
+                            <td style="width:55%"><code>LINKEDIN_ACCESS_TOKEN</code></td>
+                            <td>
+                                {% if linkedin_token_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>LINKEDIN_ORG_ID</code></td>
+                            <td>
+                                {% if linkedin_org_id_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="text-muted small mb-0">
+                    Add these values as GitHub Secrets and they will be injected at deploy time.
+                    The <code>LINKEDIN_ORG_ID</code> is the numeric ID of your LinkedIn Company Page.
+                </p>
+            </div>
+        </div>
+
         {% endif %}
     </div>
 </div>
