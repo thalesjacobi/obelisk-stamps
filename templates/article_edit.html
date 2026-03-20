@@ -3,6 +3,8 @@
 {% block title %}{% if article %}Edit Article{% else %}New Article{% endif %} - Obelisk Stamps Admin{% endblock %}
 
 {% block head %}
+<!-- Font Awesome for brand icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <!-- Quill WYSIWYG -->
 <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
 <style>
@@ -24,10 +26,10 @@
     .x-icon-live { stroke: #1D9BF0 !important; }
 
     /* Threads live icon */
-    .threads-icon-live { stroke: #000 !important; }
+    .threads-icon-live { fill: #000 !important; }
 
     /* Pinterest live icon */
-    .pinterest-icon-live { stroke: #E60023 !important; }
+    .pinterest-icon-live { fill: #E60023 !important; }
 
     /* LinkedIn live icon */
     .linkedin-icon-live { stroke: #0A66C2 !important; }
@@ -40,8 +42,8 @@
     .nv-run-yt-live { stroke: #ff0000 !important; }
     .nv-run-fb-live { stroke: #1877F2 !important; }
     .nv-run-x-live  { stroke: #1D9BF0 !important; }
-    .nv-run-threads-live { stroke: #000 !important; }
-    .nv-run-pinterest-live { stroke: #E60023 !important; }
+    .nv-run-threads-live { fill: #000 !important; }
+    .nv-run-pinterest-live { fill: #E60023 !important; }
     .nv-run-linkedin-live { stroke: #0A66C2 !important; }
     .nv-run-tiktok-live { fill: #000 !important; }
 
@@ -278,9 +280,52 @@
          Social Media Content — Master Component
          ══════════════════════════════════════════════════════════ -->
     <div class="card mt-3 mb-4" id="social-content-card">
-        <div class="card-header">
-            <h5 class="mb-0">Social Media Content</h5>
-            <p class="text-muted small mb-0 mt-1">Generate and publish content across social media channels.</p>
+        <div class="card-header d-flex align-items-start justify-content-between">
+            <div>
+                <h5 class="mb-0">Social Media Content</h5>
+                <p class="text-muted small mb-0 mt-1">Generate and publish content across social media channels.</p>
+            </div>
+            <div class="dropdown ms-2 flex-shrink-0">
+                <button type="button" class="btn btn-sm btn-link text-muted p-1 lh-1"
+                        style="font-size:1.4rem;text-decoration:none;letter-spacing:.15em"
+                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+                        title="Show / hide social networks">&#8943;</button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm p-2" style="min-width:210px">
+                    <li><p class="px-1 pt-0 pb-1 mb-1 border-bottom small fw-semibold text-muted" style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em">Show / Hide Networks</p></li>
+                    <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-ig" onchange="toggleSmcNetwork('ig',this.checked)">
+                        <i class="fa-brands fa-instagram" style="font-size:14px;width:16px;text-align:center"></i> Instagram
+                    </label></li>
+                    <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-fb" onchange="toggleSmcNetwork('fb',this.checked)">
+                        <i class="fa-brands fa-facebook" style="font-size:14px;width:16px;text-align:center"></i> Facebook
+                    </label></li>
+                    <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-yt" onchange="toggleSmcNetwork('yt',this.checked)">
+                        <i class="fa-brands fa-youtube" style="font-size:14px;width:16px;text-align:center"></i> YouTube
+                    </label></li>
+                    <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-x" onchange="toggleSmcNetwork('x',this.checked)">
+                        <i class="fa-brands fa-x-twitter" style="font-size:14px;width:16px;text-align:center"></i> X
+                    </label></li>
+                    <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-threads" onchange="toggleSmcNetwork('threads',this.checked)">
+                        <i class="fa-brands fa-threads" style="font-size:14px;width:16px;text-align:center"></i> Threads
+                    </label></li>
+                    <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-pinterest" onchange="toggleSmcNetwork('pinterest',this.checked)">
+                        <i class="fa-brands fa-pinterest" style="font-size:14px;width:16px;text-align:center"></i> Pinterest
+                    </label></li>
+                    <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-tiktok" onchange="toggleSmcNetwork('tiktok',this.checked)">
+                        <i class="fa-brands fa-tiktok" style="font-size:14px;width:16px;text-align:center"></i> TikTok
+                    </label></li>
+                    <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-linkedin" onchange="toggleSmcNetwork('linkedin',this.checked)">
+                        <i class="fa-brands fa-linkedin" style="font-size:14px;width:16px;text-align:center"></i> LinkedIn
+                    </label></li>
+                </ul>
+            </div>
         </div>
         <div class="card-body p-3">
 
@@ -415,6 +460,7 @@
                 </div>
             </div>
             {% if article and article.id %}
+            <div data-smc-net="ig">
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleIgSection('car')">
@@ -482,7 +528,8 @@
             </div>
             {% endif %}
             </div><!-- /car-ig-body -->
-
+            </div><!-- /smc-ig -->
+            <div data-smc-net="fb">
             <!-- Facebook Carousel Posting -->
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
@@ -541,7 +588,8 @@
                 </div>
                 {% endif %}
             </div><!-- /car-fb-body -->
-
+            </div><!-- /smc-fb -->
+            <div data-smc-net="x">
             <!-- X Carousel Posting -->
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
@@ -605,18 +653,13 @@
                 </div>
                 {% endif %}
             </div><!-- /car-x-body -->
-
+            </div><!-- /smc-x -->
+            <div data-smc-net="threads">
             <!-- Threads Carousel Posting -->
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleThreadsSection('car')">
-                <svg id="car-threads-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/>
-                    <path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/>
-                    <path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/>
-                </svg>
+                <i id="car-threads-icon" class="fa-brands fa-threads" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Carousel Images to Threads</span>
                 <svg id="car-threads-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -645,10 +688,8 @@
                 </div>
                 <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-threads-btn-row">
                     <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToThreads('car')" id="car-threads-post-btn">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
-                            <path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/>
-                            <path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/>
-                            <path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 192 192" fill="currentColor" stroke="none" class="me-1">
+                            <path d="M141.537 88.988a66.667 66.667 0 0 0-2.518-1.143c-1.482-27.307-16.403-42.94-41.457-43.1h-.34c-14.986 0-27.449 6.396-35.12 18.036l13.779 9.452c5.73-8.695 14.724-10.548 21.341-10.548h.229c8.249.053 14.474 2.452 18.503 7.129 2.932 3.405 4.893 8.111 5.864 14.05-7.314-1.243-15.224-1.626-23.68-1.14-23.82 1.371-39.134 15.24-38.37 34.752.389 9.946 5.062 18.508 13.158 24.108 6.842 4.734 15.672 7.1 24.837 6.664 12.088-.576 21.554-5.222 28.122-13.807 4.986-6.516 8.139-14.883 9.513-25.3 5.708 3.453 9.961 8.028 12.374 13.56 4.077 9.357 4.32 24.726-5.482 34.533-8.596 8.601-18.928 12.33-34.467 12.442-17.237-.124-30.265-5.652-38.724-16.436C81.138 143.471 76.907 127.687 76.78 108c.127-19.687 4.358-35.471 12.578-46.916 8.459-10.784 21.487-16.312 38.724-16.436 17.372.127 30.552 5.699 39.174 16.564 4.207 5.3 7.393 11.974 9.52 19.86l14.547-3.876c-2.607-9.673-6.625-18.138-12.068-25.263C168.004 38.023 151.497 31.07 130.2 30.928h-.124c-21.187.14-37.553 7.093-48.674 20.675C71.773 63.663 66.867 81.248 66.72 108l.002.142c.147 26.753 5.053 44.337 14.682 56.327 11.121 13.582 27.487 20.535 48.674 20.675h.124c18.463-.132 31.63-5.08 42.64-16.1 14.168-14.176 13.724-35.636 8.2-48.33-3.965-9.108-11.384-16.353-21.505-21.226zM109.89 134.79c-10.14.577-20.675-3.986-21.108-14.835-.323-8.082 5.722-17.094 24.674-18.184 2.158-.124 4.276-.184 6.356-.184 6.28 0 12.157.611 17.478 1.795-1.99 27.07-14.942 30.878-27.4 31.408z"/>
                         </svg>Post to Threads
                     </button>
                 </div>
@@ -670,17 +711,15 @@
                 </div>
                 {% endif %}
             </div><!-- /car-threads-body -->
-
+            </div><!-- /smc-threads -->
+            <div data-smc-net="pinterest">
             <!-- Pinterest Carousel Posting -->
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="togglePinterestSection('car')">
                 <svg id="car-pinterest-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <path d="M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5"/>
-                    <path d="M12 2a10 10 0 1 0 4 19.17"/>
-                    <path d="M9.5 15.5L11 12"/>
+                     fill="currentColor" stroke="none" style="flex-shrink:0">
+                    <path d="M12 0C5.372 0 0 5.372 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.372 12-12 0-6.628-5.373-12-12-12z"/>
                 </svg>
                 <span class="small fw-semibold">Post Carousel Images to Pinterest</span>
                 <svg id="car-pinterest-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
@@ -735,18 +774,13 @@
                 </div>
                 {% endif %}
             </div><!-- /car-pinterest-body -->
-
+            </div><!-- /smc-pinterest -->
+            <div data-smc-net="linkedin">
             <!-- LinkedIn Carousel Posting -->
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleLinkedinSection('car')">
-                <svg id="car-linkedin-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
-                    <rect x="2" y="9" width="4" height="12"/>
-                    <circle cx="4" cy="4" r="2"/>
-                </svg>
+                <i id="car-linkedin-icon" class="fa-brands fa-linkedin" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Carousel Images to LinkedIn</span>
                 <svg id="car-linkedin-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -800,6 +834,7 @@
                 </div>
                 {% endif %}
             </div><!-- /car-linkedin-body -->
+            </div><!-- /smc-linkedin -->
 
             {% endif %}<!-- /article.id -->
         </div>
@@ -1000,6 +1035,7 @@
                 </div>
             </div>
             {% if article and article.id %}
+            <div data-smc-net="ig">
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleIgSection('cine')">
@@ -1067,7 +1103,8 @@
             </div>
             {% endif %}
             </div><!-- /cine-ig-body -->
-
+            </div><!-- /smc-ig -->
+            <div data-smc-net="fb">
             <!-- Facebook Cinemagraph (unsupported notice) -->
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
@@ -1092,6 +1129,8 @@
                 </div>
             </div>
 
+            </div><!-- /smc-fb -->
+            <div data-smc-net="x">
             <!-- X Cinemagraph Posting -->
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
@@ -1117,17 +1156,13 @@
                 </div>
             </div>
 
+            </div><!-- /smc-x -->
+            <div data-smc-net="threads">
             <!-- Threads Cinemagraph Posting (info notice only) -->
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleThreadsSection('cine')">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/>
-                    <path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/>
-                    <path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/>
-                </svg>
+                <i class="fa-brands fa-threads" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Cinemagraph to Threads</span>
                 <svg id="cine-threads-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -1143,16 +1178,15 @@
                 </div>
             </div>
 
+            </div><!-- /smc-threads -->
+            <div data-smc-net="pinterest">
             <!-- Pinterest Cinemagraph Posting (info notice only) -->
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="togglePinterestSection('cine')">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <path d="M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5"/>
-                    <path d="M12 2a10 10 0 1 0 4 19.17"/>
-                    <path d="M9.5 15.5L11 12"/>
+                     fill="currentColor" stroke="none" style="flex-shrink:0">
+                    <path d="M12 0C5.372 0 0 5.372 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.372 12-12 0-6.628-5.373-12-12-12z"/>
                 </svg>
                 <span class="small fw-semibold">Post Cinemagraph to Pinterest</span>
                 <svg id="cine-pinterest-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
@@ -1169,17 +1203,13 @@
                 </div>
             </div>
 
+            </div><!-- /smc-pinterest -->
+            <div data-smc-net="linkedin">
             <!-- LinkedIn Cinemagraph Posting -->
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleLinkedinSection('cine')">
-                <svg id="cine-linkedin-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
-                    <rect x="2" y="9" width="4" height="12"/>
-                    <circle cx="4" cy="4" r="2"/>
-                </svg>
+                <i id="cine-linkedin-icon" class="fa-brands fa-linkedin" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Cinemagraph to LinkedIn</span>
                 <svg id="cine-linkedin-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -1233,6 +1263,7 @@
                 </div>
                 {% endif %}
             </div><!-- /cine-linkedin-body -->
+            </div><!-- /smc-linkedin -->
 
             {% endif %}<!-- /article.id -->
         </div>
@@ -2149,15 +2180,40 @@ const _ig = {
 function _igId(mode, suffix) { return mode + '-ig-' + suffix; }
 
 var _extLinkSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-1" style="vertical-align:-1px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+// ── Social Media Content — Network Visibility Prefs ─────────────────────
+var _SMC_DEFAULTS = {ig:true, fb:true, yt:true, x:true, threads:true, pinterest:true, tiktok:false, linkedin:true};
+var _SMC_PREFS_KEY = 'smcNetworkPrefs';
+function _getSmcPrefs() { try { return JSON.parse(localStorage.getItem(_SMC_PREFS_KEY)) || {}; } catch(e) { return {}; } }
+function _smcEnabled(key) { var p=_getSmcPrefs(); return p.hasOwnProperty(key) ? p[key] : (_SMC_DEFAULTS.hasOwnProperty(key) ? _SMC_DEFAULTS[key] : true); }
+function toggleSmcNetwork(key, enabled) {
+    var p = _getSmcPrefs(); p[key] = enabled;
+    localStorage.setItem(_SMC_PREFS_KEY, JSON.stringify(p));
+    document.querySelectorAll('[data-smc-net="' + key + '"]').forEach(function(el) { el.style.display = enabled ? '' : 'none'; });
+}
+function applyAllSmcPrefs() {
+    Object.keys(_SMC_DEFAULTS).forEach(function(key) {
+        var enabled = _smcEnabled(key);
+        document.querySelectorAll('[data-smc-net="' + key + '"]').forEach(function(el) { el.style.display = enabled ? '' : 'none'; });
+    });
+}
+function initSmcNetworkMenu() {
+    Object.keys(_SMC_DEFAULTS).forEach(function(key) {
+        var cb = document.getElementById('smc-toggle-' + key);
+        if (cb) cb.checked = _smcEnabled(key);
+    });
+    applyAllSmcPrefs();
+}
+// ─────────────────────────────────────────────────────────────────────────
+
 var _platformIconSvg = {
     ig: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>',
     fb: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>',
     yt: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.54C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/></svg>',
     x:  '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M4 4l11.733 16H20L8.267 4z"/><path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/></svg>',
-    threads: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/><path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/><path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/></svg>',
-    pinterest: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5"/><path d="M12 2a10 10 0 1 0 4 19.17"/><path d="M9.5 15.5L11 12"/></svg>',
-    tiktok: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="me-1" style="vertical-align:-1px"><path d="M16.6 5.82C15.6 5.24 14.9 4.29 14.7 3.18 14.66 2.95 14.64 2.72 14.64 2.5h-3.3v13.36c0 1.31-1.07 2.37-2.38 2.37-1.31 0-2.38-1.06-2.38-2.37s1.07-2.38 2.38-2.38c.25 0 .49.04.71.11V10.2a5.82 5.82 0 0 0-.71-.04c-3.08 0-5.58 2.5-5.58 5.58s2.5 5.58 5.58 5.58 5.58-2.5 5.58-5.58V9.14c1.18.85 2.63 1.35 4.18 1.35V7.2c-.85 0-1.65-.25-2.32-.69l-.01-.01-.03-.02c-.22-.14-.42-.3-.62-.48z"/></svg>',
-    linkedin: '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>',
+    threads:  '<i class="fa-brands fa-threads me-1" style="font-size:13px;vertical-align:-1px"></i>',
+    pinterest: '<i class="fa-brands fa-pinterest me-1" style="font-size:13px;vertical-align:-1px"></i>',
+    tiktok:   '<i class="fa-brands fa-tiktok me-1" style="font-size:13px;vertical-align:-1px"></i>',
+    linkedin: '<i class="fa-brands fa-linkedin me-1" style="font-size:13px;vertical-align:-1px"></i>',
 };
 
 function _makeViewPostBtn(btn, permalink, platform) {
@@ -4115,15 +4171,15 @@ function _nvThreadsId(ts, suffix) { return 'nv-threads-' + ts + '-' + suffix; }
 
 function _setNvThreadsIconLive(ts) {
     var el = document.getElementById('nv-threads-icon-' + ts);
-    if (el) { el.classList.add('nv-run-threads-live'); el.setAttribute('stroke', '#000'); }
+    if (el) { el.classList.add('nv-run-threads-live'); el.style.color = '#000'; }
     var hdr = document.getElementById('nv-threads-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', '#000');
+    if (hdr) hdr.style.color = '#000';
 }
 function _clearNvThreadsIconLive(ts) {
     var el = document.getElementById('nv-threads-icon-' + ts);
-    if (el) { el.classList.remove('nv-run-threads-live'); el.setAttribute('stroke', '#ccc'); }
+    if (el) { el.classList.remove('nv-run-threads-live'); el.style.color = '#ccc'; }
     var hdr = document.getElementById('nv-threads-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', 'currentColor');
+    if (hdr) hdr.style.color = '';
 }
 
 function copyNvIgCaptionToThreads(ts) {
@@ -4332,15 +4388,15 @@ function _nvPinterestId(ts, suffix) { return 'nv-pinterest-' + ts + '-' + suffix
 
 function _setNvPinterestIconLive(ts) {
     var el = document.getElementById('nv-pinterest-icon-' + ts);
-    if (el) { el.classList.add('nv-run-pinterest-live'); el.setAttribute('stroke', '#E60023'); }
+    if (el) { el.classList.add('nv-run-pinterest-live'); el.style.color = '#E60023'; }
     var hdr = document.getElementById('nv-pinterest-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', '#E60023');
+    if (hdr) hdr.style.color = '#E60023';
 }
 function _clearNvPinterestIconLive(ts) {
     var el = document.getElementById('nv-pinterest-icon-' + ts);
-    if (el) { el.classList.remove('nv-run-pinterest-live'); el.setAttribute('stroke', '#ccc'); }
+    if (el) { el.classList.remove('nv-run-pinterest-live'); el.style.color = '#ccc'; }
     var hdr = document.getElementById('nv-pinterest-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', 'currentColor');
+    if (hdr) hdr.style.color = '';
 }
 
 function copyNvIgCaptionToPinterest(ts) {
@@ -4583,15 +4639,15 @@ function _nvTiktokId(ts, suffix) { return 'nv-tiktok-' + ts + '-' + suffix; }
 
 function _setNvTiktokIconLive(ts) {
     var el = document.getElementById('nv-tiktok-icon-' + ts);
-    if (el) { el.classList.add('nv-run-tiktok-live'); el.setAttribute('fill', '#000'); }
+    if (el) { el.classList.add('nv-run-tiktok-live'); el.style.color = '#000'; }
     var hdr = document.getElementById('nv-tiktok-hdr-' + ts);
-    if (hdr) { hdr.classList.add('nv-run-tiktok-live'); hdr.setAttribute('fill', '#000'); }
+    if (hdr) { hdr.classList.add('nv-run-tiktok-live'); hdr.style.color = '#000'; }
 }
 function _clearNvTiktokIconLive(ts) {
     var el = document.getElementById('nv-tiktok-icon-' + ts);
-    if (el) { el.classList.remove('nv-run-tiktok-live'); el.setAttribute('fill', '#ccc'); }
+    if (el) { el.classList.remove('nv-run-tiktok-live'); el.style.color = '#ccc'; }
     var hdr = document.getElementById('nv-tiktok-hdr-' + ts);
-    if (hdr) { hdr.classList.remove('nv-run-tiktok-live'); hdr.setAttribute('fill', 'currentColor'); }
+    if (hdr) { hdr.classList.remove('nv-run-tiktok-live'); hdr.style.color = ''; }
 }
 
 function copyNvIgCaptionToTiktok(ts) {
@@ -4794,15 +4850,15 @@ function _nvLinkedinId(ts, suffix) { return 'nv-linkedin-' + ts + '-' + suffix; 
 
 function _setNvLinkedinIconLive(ts) {
     var el = document.getElementById('nv-linkedin-icon-' + ts);
-    if (el) { el.classList.add('nv-run-linkedin-live'); el.setAttribute('stroke', '#0A66C2'); }
+    if (el) { el.classList.add('nv-run-linkedin-live'); el.style.color = '#0A66C2'; }
     var hdr = document.getElementById('nv-linkedin-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', '#0A66C2');
+    if (hdr) hdr.style.color = '#0A66C2';
 }
 function _clearNvLinkedinIconLive(ts) {
     var el = document.getElementById('nv-linkedin-icon-' + ts);
-    if (el) { el.classList.remove('nv-run-linkedin-live'); el.setAttribute('stroke', '#ccc'); }
+    if (el) { el.classList.remove('nv-run-linkedin-live'); el.style.color = '#ccc'; }
     var hdr = document.getElementById('nv-linkedin-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', 'currentColor');
+    if (hdr) hdr.style.color = '';
 }
 
 function toggleNvLinkedinSection(ts) {
@@ -5556,6 +5612,7 @@ function showIgArchiveModal(entry) {
 
 // Pre-populate captions and start status checks for both modes
 document.addEventListener('DOMContentLoaded', function() {
+    initSmcNetworkMenu();
     // Last-used captions from previous posts (empty string if never posted)
     var savedCaptions = {
         cine: {{ ig_cine_caption | tojson }},
@@ -6251,28 +6308,10 @@ function buildRunItem(run, expandIt) {
                         <path d="M4 4l11.733 16H20L8.267 4z"/>
                         <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
                     </svg>
-                    <svg id="nv-threads-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Threads">
-                        <path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/>
-                        <path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/>
-                        <path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/>
-                    </svg>
-                    <svg id="nv-pinterest-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Pinterest">
-                        <path d="M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5"/>
-                        <path d="M12 2a10 10 0 1 0 4 19.17"/>
-                        <path d="M9.5 15.5L11 12"/>
-                    </svg>
-                    <svg id="nv-tiktok-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                         fill="#ccc" stroke="none" style="flex-shrink:0" title="TikTok">
-                        <path d="M16.6 5.82C15.6 5.24 14.9 4.29 14.7 3.18 14.66 2.95 14.64 2.72 14.64 2.5h-3.3v13.36c0 1.31-1.07 2.37-2.38 2.37-1.31 0-2.38-1.06-2.38-2.37s1.07-2.38 2.38-2.38c.25 0 .49.04.71.11V10.2a5.82 5.82 0 0 0-.71-.04c-3.08 0-5.58 2.5-5.58 5.58s2.5 5.58 5.58 5.58 5.58-2.5 5.58-5.58V9.14c1.18.85 2.63 1.35 4.18 1.35V7.2c-.85 0-1.65-.25-2.32-.69l-.01-.01-.03-.02c-.22-.14-.42-.3-.62-.48z"/>
-                    </svg>
-                    <svg id="nv-linkedin-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="LinkedIn">
-                        <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
-                        <rect x="2" y="9" width="4" height="12"/>
-                        <circle cx="4" cy="4" r="2"/>
-                    </svg>
+                    <i id="nv-threads-icon-${run.ts}" class="fa-brands fa-threads" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Threads"></i>
+                    <i id="nv-pinterest-icon-${run.ts}" class="fa-brands fa-pinterest" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Pinterest"></i>
+                    <i id="nv-tiktok-icon-${run.ts}" class="fa-brands fa-tiktok" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="TikTok"></i>
+                    <i id="nv-linkedin-icon-${run.ts}" class="fa-brands fa-linkedin" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="LinkedIn"></i>
                 </span>
             </button>
         </h2>
@@ -6315,6 +6354,7 @@ function buildRunItem(run, expandIt) {
                         <ol class="small mt-1">${scriptRows}</ol>
                     </div>
                 </div>
+                <div data-smc-net="ig">
                 <hr class="mt-3 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvIgSection(${run.ts})">
                     <svg id="nv-ig-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
@@ -6372,6 +6412,8 @@ function buildRunItem(run, expandIt) {
                         </div>
                     </div>
                 </div>
+                </div><!-- /smc-ig -->
+                <div data-smc-net="fb">
                 <hr class="mt-0 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvFbSection(${run.ts})">
                     <svg id="nv-fb-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
@@ -6386,6 +6428,8 @@ function buildRunItem(run, expandIt) {
                     ${FB_CONFIGURED ? '' : '<div class="alert alert-warning py-1 small mb-2">Facebook not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>'}
                     ${FB_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from your Facebook Page. It will be saved below in Past Posts for your records.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToFb(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-fb-' + run.ts + '-caption" rows="3" maxlength="2200" placeholder="Write your Facebook caption…" oninput="document.getElementById(\'nv-fb-' + run.ts + '-count\').textContent=this.value.length+\' / 2200\'"></textarea><div class="text-end text-muted small mb-2" id="nv-fb-' + run.ts + '-count">0 / 2200</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-fb-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-primary" id="nv-fb-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToFb(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z\'/></svg>Post to Facebook</button></div><div id="nv-fb-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-fb-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-primary"></div><span id="nv-fb-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-fb-' + run.ts + '-progress-wrap"><div id="nv-fb-' + run.ts + '-progress-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-fb-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-fb-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-fb-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-fb-' + run.ts + '-history-list"></div></div></div>' : ''}
                 </div>
+                </div><!-- /smc-fb -->
+                <div data-smc-net="yt">
                 <hr class="mt-0 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvYtSection(${run.ts})">
                     <svg id="nv-yt-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
@@ -6430,6 +6474,8 @@ function buildRunItem(run, expandIt) {
                     </div>
                     <div id="nv-yt-${run.ts}-result" class="d-none mt-2"></div>
                 </div>
+                </div><!-- /smc-yt -->
+                <div data-smc-net="x">
                 <hr class="mt-0 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvXSection(${run.ts})">
                     <svg id="nv-x-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
@@ -6445,13 +6491,11 @@ function buildRunItem(run, expandIt) {
                     ${!X_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">X not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>' : ''}
                     ${X_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted as a tweet with up to 280 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToX(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-x-' + run.ts + '-caption" rows="3" maxlength="280" placeholder="Write your X caption…" oninput="document.getElementById(\'nv-x-' + run.ts + '-count\').textContent=this.value.length+\' / 280\'"></textarea><div class="text-end text-muted small mb-2" id="nv-x-' + run.ts + '-count">0 / 280</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-x-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-x-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToX(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M4 4l11.733 16H20L8.267 4z\'/><path d=\'M4 20l6.768-6.768M20 4l-6.768 6.768\'/></svg>Post to X</button></div><div id="nv-x-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-x-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-x-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-x-' + run.ts + '-progress-wrap"><div id="nv-x-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-x-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-x-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-x-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-x-' + run.ts + '-history-list"></div></div></div>' : ''}
                 </div>
+                </div><!-- /smc-x -->
+                <div data-smc-net="threads">
                 <hr class="mt-0 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvThreadsSection(${run.ts})">
-                    <svg id="nv-threads-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
-                        <path d="M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z"/>
-                        <path d="M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10"/>
-                        <path d="M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10"/>
-                    </svg>
+                    <i id="nv-threads-hdr-${run.ts}" class="fa-brands fa-threads" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                     <span class="small fw-semibold">Post to Threads</span>
                     <svg id="nv-threads-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
                         <polyline points="6 9 12 15 18 9"/>
@@ -6459,15 +6503,13 @@ function buildRunItem(run, expandIt) {
                 </div>
                 <div id="nv-threads-${run.ts}-body" class="nv-social-body d-none pt-1">
                     ${!THREADS_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">Threads not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>' : ''}
-                    ${THREADS_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to Threads with up to 500 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToThreads(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-threads-' + run.ts + '-caption" rows="3" maxlength="500" placeholder="Write your Threads caption…" oninput="document.getElementById(\'nv-threads-' + run.ts + '-count\').textContent=this.value.length+\' / 500\'"></textarea><div class="text-end text-muted small mb-2" id="nv-threads-' + run.ts + '-count">0 / 500</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-threads-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-threads-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToThreads(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M12 2a10 10 0 0 1 7.38 16.75l.12.25A8.18 8.18 0 0 1 12 22a8.18 8.18 0 0 1-7.5-3l.12-.25A10 10 0 0 1 12 2z\'/><path d=\'M12 2c2.5 2.5 3.5 5 3.5 10s-1 7.5-3.5 10\'/><path d=\'M12 2c-2.5 2.5-3.5 5-3.5 10s1 7.5 3.5 10\'/></svg>Post to Threads</button></div><div id="nv-threads-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-threads-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-threads-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-threads-' + run.ts + '-progress-wrap"><div id="nv-threads-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-threads-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-threads-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-threads-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-threads-' + run.ts + '-history-list"></div></div></div>' : ''}
+                    ${THREADS_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to Threads with up to 500 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToThreads(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-threads-' + run.ts + '-caption" rows="3" maxlength="500" placeholder="Write your Threads caption…" oninput="document.getElementById(\'nv-threads-' + run.ts + '-count\').textContent=this.value.length+\' / 500\'"></textarea><div class="text-end text-muted small mb-2" id="nv-threads-' + run.ts + '-count">0 / 500</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-threads-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-threads-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToThreads(' + run.ts + ', this.dataset.videoUrl)"><i class=\'fa-brands fa-threads me-1\' style=\'vertical-align:-2px\'></i>Post to Threads</button></div><div id="nv-threads-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-threads-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-threads-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-threads-' + run.ts + '-progress-wrap"><div id="nv-threads-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-threads-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-threads-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-threads-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-threads-' + run.ts + '-history-list"></div></div></div>' : ''}
                 </div>
+                </div><!-- /smc-threads -->
+                <div data-smc-net="pinterest">
                 <hr class="mt-0 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvPinterestSection(${run.ts})">
-                    <svg id="nv-pinterest-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
-                        <path d="M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5"/>
-                        <path d="M12 2a10 10 0 1 0 4 19.17"/>
-                        <path d="M9.5 15.5L11 12"/>
-                    </svg>
+                    <i id="nv-pinterest-hdr-${run.ts}" class="fa-brands fa-pinterest" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                     <span class="small fw-semibold">Post to Pinterest</span>
                     <svg id="nv-pinterest-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
                         <polyline points="6 9 12 15 18 9"/>
@@ -6475,28 +6517,26 @@ function buildRunItem(run, expandIt) {
                 </div>
                 <div id="nv-pinterest-${run.ts}-body" class="nv-social-body d-none pt-1">
                     ${!PINTEREST_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">Pinterest not configured. Set <code>PINTEREST_ACCESS_TOKEN</code> and <code>PINTEREST_BOARD_ID</code> in your environment.</div>' : ''}
-                    ${PINTEREST_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to Pinterest with up to 800 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToPinterest(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-pinterest-' + run.ts + '-caption" rows="3" maxlength="800" placeholder="Write your Pinterest description…" oninput="document.getElementById(\'nv-pinterest-' + run.ts + '-count\').textContent=this.value.length+\' / 800\'"></textarea><div class="text-end text-muted small mb-2" id="nv-pinterest-' + run.ts + '-count">0 / 800</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-pinterest-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-pinterest-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToPinterest(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M8 12a4 4 0 0 1 8 0c0 2.5-1.5 4-3 5.5l-1 3.5\'/><path d=\'M12 2a10 10 0 1 0 4 19.17\'/><path d=\'M9.5 15.5L11 12\'/></svg>Post to Pinterest</button></div><div id="nv-pinterest-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-pinterest-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-pinterest-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-pinterest-' + run.ts + '-progress-wrap"><div id="nv-pinterest-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-pinterest-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-pinterest-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-pinterest-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-pinterest-' + run.ts + '-history-list"></div></div></div>' : ''}
+                    ${PINTEREST_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to Pinterest with up to 800 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToPinterest(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-pinterest-' + run.ts + '-caption" rows="3" maxlength="800" placeholder="Write your Pinterest description…" oninput="document.getElementById(\'nv-pinterest-' + run.ts + '-count\').textContent=this.value.length+\' / 800\'"></textarea><div class="text-end text-muted small mb-2" id="nv-pinterest-' + run.ts + '-count">0 / 800</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-pinterest-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-pinterest-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToPinterest(' + run.ts + ', this.dataset.videoUrl)"><i class=\'fa-brands fa-pinterest me-1\' style=\'vertical-align:-2px\'></i>Post to Pinterest</button></div><div id="nv-pinterest-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-pinterest-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-pinterest-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-pinterest-' + run.ts + '-progress-wrap"><div id="nv-pinterest-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-pinterest-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-pinterest-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-pinterest-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-pinterest-' + run.ts + '-history-list"></div></div></div>' : ''}
                 </div>
+                </div><!-- /smc-pinterest -->
+                <div data-smc-net="tiktok">
                 <hr class="mt-0 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvTiktokSection(${run.ts})">
-                    <svg id="nv-tiktok-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="flex-shrink:0">
-                        <path d="M16.6 5.82C15.6 5.24 14.9 4.29 14.7 3.18 14.66 2.95 14.64 2.72 14.64 2.5h-3.3v13.36c0 1.31-1.07 2.37-2.38 2.37-1.31 0-2.38-1.06-2.38-2.37s1.07-2.38 2.38-2.38c.25 0 .49.04.71.11V10.2a5.82 5.82 0 0 0-.71-.04c-3.08 0-5.58 2.5-5.58 5.58s2.5 5.58 5.58 5.58 5.58-2.5 5.58-5.58V9.14c1.18.85 2.63 1.35 4.18 1.35V7.2c-.85 0-1.65-.25-2.32-.69l-.01-.01-.03-.02c-.22-.14-.42-.3-.62-.48z"/>
-                    </svg>
+                    <i id="nv-tiktok-hdr-${run.ts}" class="fa-brands fa-tiktok" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                     <span class="small fw-semibold">Post to TikTok</span>
                     <svg id="nv-tiktok-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
                         <polyline points="6 9 12 15 18 9"/>
                     </svg>
                 </div>
                 <div id="nv-tiktok-${run.ts}-body" class="nv-social-body d-none pt-1">
-                    ${'<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to TikTok with up to 2200 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToTiktok(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-tiktok-' + run.ts + '-caption" rows="3" maxlength="2200" placeholder="Write your TikTok caption…" oninput="document.getElementById(\'nv-tiktok-' + run.ts + '-count\').textContent=this.value.length+\' / 2200\'"></textarea><div class="text-end text-muted small mb-2" id="nv-tiktok-' + run.ts + '-count">0 / 2200</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-tiktok-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-tiktok-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToTiktok(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\' style=\'vertical-align:-2px\'><path d=\'M16.6 5.82C15.6 5.24 14.9 4.29 14.7 3.18 14.66 2.95 14.64 2.72 14.64 2.5h-3.3v13.36c0 1.31-1.07 2.37-2.38 2.37-1.31 0-2.38-1.06-2.38-2.37s1.07-2.38 2.38-2.38c.25 0 .49.04.71.11V10.2a5.82 5.82 0 0 0-.71-.04c-3.08 0-5.58 2.5-5.58 5.58s2.5 5.58 5.58 5.58 5.58-2.5 5.58-5.58V9.14c1.18.85 2.63 1.35 4.18 1.35V7.2c-.85 0-1.65-.25-2.32-.69l-.01-.01-.03-.02c-.22-.14-.42-.3-.62-.48z\'/></svg>Post to TikTok</button></div><div id="nv-tiktok-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-tiktok-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-tiktok-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-tiktok-' + run.ts + '-progress-wrap"><div id="nv-tiktok-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-tiktok-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-tiktok-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-tiktok-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-tiktok-' + run.ts + '-history-list"></div></div></div>'}
+                    ${'<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to TikTok with up to 2200 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToTiktok(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-tiktok-' + run.ts + '-caption" rows="3" maxlength="2200" placeholder="Write your TikTok caption…" oninput="document.getElementById(\'nv-tiktok-' + run.ts + '-count\').textContent=this.value.length+\' / 2200\'"></textarea><div class="text-end text-muted small mb-2" id="nv-tiktok-' + run.ts + '-count">0 / 2200</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-tiktok-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-tiktok-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToTiktok(' + run.ts + ', this.dataset.videoUrl)"><i class=\'fa-brands fa-tiktok me-1\' style=\'vertical-align:-2px\'></i>Post to TikTok</button></div><div id="nv-tiktok-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-tiktok-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-tiktok-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-tiktok-' + run.ts + '-progress-wrap"><div id="nv-tiktok-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-tiktok-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-tiktok-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-tiktok-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-tiktok-' + run.ts + '-history-list"></div></div></div>'}
                 </div>
+                </div><!-- /smc-tiktok -->
+                <div data-smc-net="linkedin">
                 <hr class="mt-0 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvLinkedinSection(${run.ts})">
-                    <svg id="nv-linkedin-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
-                        <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
-                        <rect x="2" y="9" width="4" height="12"/>
-                        <circle cx="4" cy="4" r="2"/>
-                    </svg>
+                    <i id="nv-linkedin-hdr-${run.ts}" class="fa-brands fa-linkedin" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                     <span class="small fw-semibold">Post to LinkedIn</span>
                     <svg id="nv-linkedin-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
                         <polyline points="6 9 12 15 18 9"/>
@@ -6504,8 +6544,9 @@ function buildRunItem(run, expandIt) {
                 </div>
                 <div id="nv-linkedin-${run.ts}-body" class="nv-social-body d-none pt-1">
                     ${!LINKEDIN_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">LinkedIn not configured. Set <code>LINKEDIN_ACCESS_TOKEN</code> and <code>LINKEDIN_PERSON_URN</code> in your environment.</div>' : ''}
-                    ${LINKEDIN_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to LinkedIn with up to 3000 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToLinkedin(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-linkedin-' + run.ts + '-caption" rows="3" maxlength="3000" placeholder="Write your LinkedIn post…" oninput="document.getElementById(\'nv-linkedin-' + run.ts + '-count\').textContent=this.value.length+\' / 3000\'"></textarea><div class="text-end text-muted small mb-2" id="nv-linkedin-' + run.ts + '-count">0 / 3000</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-linkedin-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-linkedin-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToLinkedin(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z\'/><rect x=\'2\' y=\'9\' width=\'4\' height=\'12\'/><circle cx=\'4\' cy=\'4\' r=\'2\'/></svg>Post to LinkedIn</button></div><div id="nv-linkedin-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-linkedin-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-linkedin-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-linkedin-' + run.ts + '-progress-wrap"><div id="nv-linkedin-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-linkedin-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-linkedin-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-linkedin-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-linkedin-' + run.ts + '-history-list"></div></div></div>' : ''}
+                    ${LINKEDIN_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Your video will be posted to LinkedIn with up to 3000 characters.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToLinkedin(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-linkedin-' + run.ts + '-caption" rows="3" maxlength="3000" placeholder="Write your LinkedIn post…" oninput="document.getElementById(\'nv-linkedin-' + run.ts + '-count\').textContent=this.value.length+\' / 3000\'"></textarea><div class="text-end text-muted small mb-2" id="nv-linkedin-' + run.ts + '-count">0 / 3000</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-linkedin-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-linkedin-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToLinkedin(' + run.ts + ', this.dataset.videoUrl)"><i class=\'fa-brands fa-linkedin me-1\' style=\'vertical-align:-2px\'></i>Post to LinkedIn</button></div><div id="nv-linkedin-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-linkedin-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-linkedin-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-linkedin-' + run.ts + '-progress-wrap"><div id="nv-linkedin-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-linkedin-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-linkedin-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-linkedin-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-linkedin-' + run.ts + '-history-list"></div></div></div>' : ''}
                 </div>
+                </div><!-- /smc-linkedin -->
         </div>`;
     /* Set caption default after DOM is built (avoids HTML-escaping issues in textarea) */
     var defaultCaption = [ARTICLE_TITLE, ARTICLE_URL ? '\n' + ARTICLE_URL : ''].filter(Boolean).join('\n');
@@ -7099,6 +7140,7 @@ function loadNarratedRuns(runs, hiddenTs) {
     if (pastCount > 0) {
         document.getElementById('narrated-past-wrap').classList.remove('d-none');
     }
+    applyAllSmcPrefs();
 }
 
 /* ── Prepend a new run after generation completes ────────────── */
@@ -7110,6 +7152,7 @@ function addNarratedRun(run) {
         el.previousElementSibling?.querySelector('.accordion-button')?.classList.add('collapsed');
     });
     accordion.insertBefore(buildRunItem(run, true), accordion.firstChild);
+    applyAllSmcPrefs();
     document.getElementById('narrated-runs-wrap').classList.remove('d-none');
     document.getElementById('narrated-empty').classList.add('d-none');
 }
