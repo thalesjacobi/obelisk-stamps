@@ -43,589 +43,631 @@
 </head>
 <body>
 <div id="wrapper">
-
-  <!-- ─── Sidebar TOC ─── -->
   <nav id="sidebar">
     <div id="toc-title">Contents</div>
     <div id="toc">
       <a href="#overview">1. Overview</a>
       <a href="#database-schema">2. Database Schema</a>
-      <a href="#db-articles" class="toc-sub">articles table</a>
-      <a href="#db-site-settings" class="toc-sub">site_settings keys</a>
+      <a href="#db-articles" class="toc-sub">Articles Table</a>
+      <a href="#db-site-settings" class="toc-sub">Site Settings Keys</a>
       <a href="#luma-integration">3. Luma AI Integration</a>
-      <a href="#luma-client" class="toc-sub">Client &amp; Model</a>
-      <a href="#luma-functions" class="toc-sub">Helper Functions</a>
-      <a href="#video-overlay">4. Video Overlay Functions</a>
-      <a href="#overlay-png" class="toc-sub">Overlay PNG Creation</a>
-      <a href="#overlay-ffmpeg" class="toc-sub">FFmpeg Compositing</a>
-      <a href="#generation-pipeline">5. Generation Pipeline</a>
-      <a href="#gen-route" class="toc-sub">Route</a>
-      <a href="#gen-worker" class="toc-sub">Worker Thread</a>
-      <a href="#single-slide">6. Single Slide Operations</a>
-      <a href="#slide-regenerate" class="toc-sub">Regenerate</a>
-      <a href="#slide-archive" class="toc-sub">Archive Slide</a>
-      <a href="#slide-restore" class="toc-sub">Restore</a>
-      <a href="#slide-archive-all" class="toc-sub">Archive All</a>
-      <a href="#slide-cancel" class="toc-sub">Cancel</a>
-      <a href="#slide-clear-result" class="toc-sub">Clear Result</a>
-      <a href="#social-instagram">7. Social Media — Instagram</a>
-      <a href="#social-linkedin">8. Social Media — LinkedIn</a>
-      <a href="#social-unsupported">9. Unsupported Platforms</a>
+      <a href="#luma-create" class="toc-sub">_luma_create_task()</a>
+      <a href="#luma-poll" class="toc-sub">_luma_poll_task()</a>
+      <a href="#luma-billing" class="toc-sub">Billing Error Detection</a>
+      <a href="#prompt-resolution">4. Prompt Resolution</a>
+      <a href="#video-storage">5. Video Storage</a>
+      <a href="#storage-paths" class="toc-sub">File Paths</a>
+      <a href="#storage-fallback" class="toc-sub">GCS Fallback</a>
+      <a href="#api-routes">6. API Routes</a>
+      <a href="#routes-generation" class="toc-sub">Generation Routes</a>
+      <a href="#routes-archive" class="toc-sub">Archive &amp; Restore</a>
+      <a href="#routes-data" class="toc-sub">Data &amp; Log Routes</a>
+      <a href="#routes-instagram" class="toc-sub">Instagram Routes</a>
+      <a href="#routes-linkedin" class="toc-sub">LinkedIn Routes</a>
+      <a href="#background-workers">7. Background Workers</a>
+      <a href="#worker-batch" class="toc-sub">Batch Worker</a>
+      <a href="#worker-single" class="toc-sub">Single Slide Worker</a>
+      <a href="#worker-cancel" class="toc-sub">Cancel Support</a>
+      <a href="#social-media">8. Social Media Posting</a>
+      <a href="#social-instagram" class="toc-sub">Instagram</a>
+      <a href="#social-linkedin" class="toc-sub">LinkedIn</a>
+      <a href="#social-unsupported" class="toc-sub">Unsupported Platforms</a>
+      <a href="#archive-delete">9. Archive &amp; Delete Flow</a>
       <a href="#frontend">10. Frontend Architecture</a>
-      <a href="#fe-html" class="toc-sub">HTML Structure</a>
-      <a href="#fe-js" class="toc-sub">Key JS Functions</a>
-      <a href="#fe-visibility" class="toc-sub">Visibility Handler</a>
-      <a href="#fe-page-load" class="toc-sub">Page Load Init</a>
-      <a href="#gcs-storage">11. GCS Storage Structure</a>
-      <a href="#prompt-resolution">12. Prompt Resolution Order</a>
-      <a href="#narrated-integration">13. Narrated Video Integration</a>
-      <a href="#api-dependencies">14. API Dependencies</a>
+      <a href="#fe-template" class="toc-sub">Template Structure</a>
+      <a href="#fe-polling" class="toc-sub">Status Polling</a>
+      <a href="#fe-unsupported" class="toc-sub">Unsupported Notices</a>
+      <a href="#environment-variables">11. Environment Variables</a>
     </div>
   </nav>
 
-  <!-- ─── Main Content ─── -->
   <main id="main">
-    <h1>Cinemagraph Generator</h1>
+    <h1>Cinemagraph Generator &mdash; Technical Documentation</h1>
     <div class="meta-bar">
-      <span>File: <code>app.py</code></span>
-      <span>Template: <code>article_detail.html</code></span>
-      <span>Last updated: 2026-03-21</span>
+      <span><strong>Source:</strong> app.py, templates/article_edit.html</span>
+      <span><strong>Last updated:</strong> 2026-03-22</span>
     </div>
 
-    <!-- ────────────────────────────────────── 1. Overview ── -->
+    <!-- ================================================================ -->
     <h2 id="overview">1. Overview</h2>
-    <p>
-      The Cinemagraph Generator converts static carousel images into 5-second looping video clips
-      using the <strong>Luma AI Ray-2</strong> model. Each clip adds subtle atmospheric motion to a
-      still image, producing a cinemagraph effect suitable for social media posts.
-    </p>
 
-    <div class="callout callout-key">
-      <strong>Key characteristics:</strong>
-      <ul class="mb-0">
-        <li>Requires at least 1 existing carousel image to unlock</li>
-        <li>Produces up to 10 clips (one per carousel slide)</li>
-        <li>Output: MP4, 1:1 aspect ratio, 5 seconds, autoplay / loop / muted</li>
-        <li>Cost: approximately $0.25 per clip (Luma AI pricing)</li>
-        <li>Supports per-slide custom prompts for fine-grained control</li>
-      </ul>
+    <p>The cinemagraph generator creates animated <strong>5-second looping video clips</strong> from static carousel images using <strong>Luma AI</strong> (ray-2 model). Each carousel slide can have a corresponding cinemagraph clip with subtle, atmospheric motion &mdash; producing a cinematic still-life effect suitable for social media.</p>
+
+    <table>
+      <tr><th>Attribute</th><th>Value</th></tr>
+      <tr><td>Max slides</td><td>10 (one cinemagraph per carousel slot)</td></tr>
+      <tr><td>Video duration</td><td>5 seconds, looping</td></tr>
+      <tr><td>Aspect ratio</td><td>1:1 (square)</td></tr>
+      <tr><td>AI model</td><td>Luma AI ray-2</td></tr>
+      <tr><td>Output format</td><td>MP4</td></tr>
+      <tr><td>Generation time</td><td>~30&ndash;90 seconds per slide (varies with Luma queue)</td></tr>
+    </table>
+
+    <h3>Social Media Support</h3>
+    <table>
+      <tr><th>Platform</th><th>Status</th><th>Notes</th></tr>
+      <tr><td>Instagram</td><td>Supported</td><td>Posted as animated carousel (VIDEO media type per slide)</td></tr>
+      <tr><td>LinkedIn</td><td>Supported</td><td>Posted as static image carousel (LinkedIn API does not support video in carousels)</td></tr>
+      <tr><td>Facebook</td><td>Unsupported</td><td>API does not support cinemagraph-style looping video carousels</td></tr>
+      <tr><td>X (Twitter)</td><td>Unsupported</td><td>API does not support cinemagraph-style looping video carousels</td></tr>
+      <tr><td>Threads</td><td>Unsupported</td><td>API does not support cinemagraph-style looping video carousels</td></tr>
+      <tr><td>Pinterest</td><td>Unsupported</td><td>API does not support cinemagraph-style looping video carousels</td></tr>
+    </table>
+
+    <div class="callout callout-info">
+      Unsupported platforms display an informational notice in the UI rather than posting controls. The notice explains that the platform does not support cinemagraph-style looping videos via its API.
     </div>
 
-    <!-- ────────────────────────────────────── 2. Database Schema ── -->
+    <!-- ================================================================ -->
     <h2 id="database-schema">2. Database Schema</h2>
 
-    <h3 id="db-articles"><code>articles</code> table columns</h3>
+    <h3 id="db-articles">Articles Table</h3>
+    <p>All cinemagraph data is stored on the <code>articles</code> table alongside the parent article.</p>
+
     <table>
-      <thead>
-        <tr><th>Column</th><th>Type</th><th>Description</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>carousel_cinemagraphs</code></td>
-          <td>TEXT</td>
-          <td>JSON array of up to 10 MP4 URLs. Null entries represent empty slots.</td>
-        </tr>
-        <tr>
-          <td><code>carousel_cinemagraph_log</code></td>
-          <td>TEXT</td>
-          <td>Plaintext run log from the most recent generation. Truncated to 64 KB.</td>
-        </tr>
-        <tr>
-          <td><code>carousel_cinemagraph_prompts</code></td>
-          <td>TEXT</td>
-          <td>JSON array of per-slide Luma prompts (10 slots). Null entries use fallback prompt resolution.</td>
-        </tr>
-        <tr>
-          <td><code>carousel_cinemagraph_archived</code></td>
-          <td>TEXT</td>
-          <td>JSON array of archived clip objects (contains URL, slide index, timestamps, prompt).</td>
-        </tr>
-        <tr>
-          <td><code>carousel_cinemagraph_created_at</code></td>
-          <td>TEXT</td>
-          <td>JSON array of ISO timestamps, one per slot, recording when each clip was generated.</td>
-        </tr>
-      </tbody>
+      <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+      <tr>
+        <td><code>carousel_cinemagraphs</code></td>
+        <td>JSON</td>
+        <td>Array of 10 slots. Each slot is either an MP4 URL string (GCS or local <code>/static/...</code> path) or <code>null</code> if no cinemagraph has been generated for that slide.</td>
+      </tr>
+      <tr>
+        <td><code>carousel_cinemagraph_prompts</code></td>
+        <td>JSON</td>
+        <td>Array of 10 per-slide prompt strings. Each slot can be <code>null</code> (falls back to article-level or global prompt) or a custom prompt for that specific slide.</td>
+      </tr>
+      <tr>
+        <td><code>carousel_cinemagraph_created_at</code></td>
+        <td>JSON</td>
+        <td>Array of 10 ISO 8601 timestamp strings. Records when each cinemagraph clip was generated. <code>null</code> for empty slots.</td>
+      </tr>
+      <tr>
+        <td><code>carousel_cinemagraph_log</code></td>
+        <td>TEXT</td>
+        <td>Full-text generation log for the most recent batch run. Truncated to <strong>65 KB</strong> maximum to stay within MySQL TEXT column limits.</td>
+      </tr>
+      <tr>
+        <td><code>carousel_cinemagraph_archived</code></td>
+        <td>JSON</td>
+        <td>Array of archived clip objects. Each object contains: <code>url</code> (MP4 URL), <code>prompt</code> (prompt used), <code>created_at</code> (original creation timestamp), <code>archived_at</code> (when archived), <code>slot_source</code> (original slot index 0&ndash;9).</td>
+      </tr>
     </table>
 
-    <h3 id="db-site-settings"><code>site_settings</code> keys</h3>
+    <h4>Archived Clip Object Shape</h4>
+    <pre><code>{
+  "url": "https://storage.googleapis.com/.../slide_3_1711234567.mp4",
+  "prompt": "Subtle gentle atmospheric motion...",
+  "created_at": "2026-03-20T14:30:00Z",
+  "archived_at": "2026-03-21T09:15:00Z",
+  "slot_source": 3
+}</code></pre>
+
+    <h3 id="db-site-settings">Site Settings Keys</h3>
+    <p>The <code>site_settings</code> table stores runtime state and configuration using key-value patterns.</p>
+
     <table>
-      <thead>
-        <tr><th>Key Pattern</th><th>Description</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>cinemagraph_prompt</code></td>
-          <td>Global default Luma prompt used when no per-article or per-slide prompt is set.</td>
-        </tr>
-        <tr>
-          <td><code>cinemagraph_prompt_{article_id}</code></td>
-          <td>Per-article override prompt. Takes precedence over the global prompt.</td>
-        </tr>
-        <tr>
-          <td><code>cinemagraph_status_{article_id}</code></td>
-          <td>Worker progress. Values: <code>running:3/10:dreaming</code>, <code>slide_running:2</code>.</td>
-        </tr>
-        <tr>
-          <td><code>cinemagraph_result_{article_id}</code></td>
-          <td>Worker outcome. Values: <code>done:5</code> or <code>error:...</code>.</td>
-        </tr>
-        <tr>
-          <td><code>cinemagraph_cancel_{article_id}</code></td>
-          <td>Cancel flag. Set to <code>"1"</code> to request worker abort.</td>
-        </tr>
-        <tr>
-          <td><code>ig_post_status_{article_id}</code></td>
-          <td>Instagram cine post status (when <code>type=cine</code>).</td>
-        </tr>
-        <tr>
-          <td><code>ig_post_result_{article_id}</code></td>
-          <td>Instagram cine post result.</td>
-        </tr>
-        <tr>
-          <td><code>ig_post_media_id_{article_id}</code></td>
-          <td>Instagram cine published media ID.</td>
-        </tr>
-        <tr>
-          <td><code>ig_post_history_{article_id}</code></td>
-          <td>Instagram cine archived post history (JSON array).</td>
-        </tr>
-        <tr>
-          <td><code>linkedin_cine_status_{article_id}</code></td>
-          <td>LinkedIn cine post status.</td>
-        </tr>
-        <tr>
-          <td><code>linkedin_cine_result_{article_id}</code></td>
-          <td>LinkedIn cine post result.</td>
-        </tr>
-        <tr>
-          <td><code>linkedin_cine_post_id_{article_id}</code></td>
-          <td>LinkedIn cine post ID.</td>
-        </tr>
-        <tr>
-          <td><code>linkedin_cine_history_{article_id}</code></td>
-          <td>LinkedIn cine archived post history (JSON array).</td>
-        </tr>
-      </tbody>
+      <tr><th>Key Pattern</th><th>Example Value</th><th>Description</th></tr>
+      <tr>
+        <td><code>cinemagraph_prompt</code></td>
+        <td><em>(prompt text)</em></td>
+        <td>Global default prompt used for all cinemagraph generation when no per-article or per-slide prompt is set.</td>
+      </tr>
+      <tr>
+        <td><code>cinemagraph_prompt_{article_id}</code></td>
+        <td><em>(prompt text)</em></td>
+        <td>Per-article prompt override. Takes precedence over the global prompt but is overridden by per-slide prompts.</td>
+      </tr>
+      <tr>
+        <td><code>cinemagraph_status_{article_id}</code></td>
+        <td><code>running:2/5</code></td>
+        <td>Worker progress indicator. Format: <code>running:{completed}/{total}</code>. Polled by the frontend to show progress.</td>
+      </tr>
+      <tr>
+        <td><code>cinemagraph_result_{article_id}</code></td>
+        <td><code>done:3</code> or <code>error:Billing limit</code></td>
+        <td>Final outcome of the last generation run. <code>done:{count}</code> for success, <code>error:{message}</code> for failure.</td>
+      </tr>
+      <tr>
+        <td><code>cinemagraph_cancel_{article_id}</code></td>
+        <td><code>1</code></td>
+        <td>Cancel signal. Set to <code>"1"</code> to request cancellation of an in-progress generation. Checked by the worker before each slide and during polling.</td>
+      </tr>
+      <tr>
+        <td><code>ig_post_*</code></td>
+        <td><em>(various)</em></td>
+        <td>Instagram post state keys (shared pattern with carousel posting).</td>
+      </tr>
+      <tr>
+        <td><code>linkedin_*</code></td>
+        <td><em>(various)</em></td>
+        <td>LinkedIn post state keys (shared pattern with carousel posting).</td>
+      </tr>
     </table>
 
-    <div class="callout callout-info">
-      Stale <code>cinemagraph_status_%</code> keys are purged on server startup to prevent
-      orphaned "running" states from blocking new generation jobs.
-    </div>
-
-    <!-- ────────────────────────────────────── 3. Luma AI Integration ── -->
+    <!-- ================================================================ -->
     <h2 id="luma-integration">3. Luma AI Integration</h2>
 
-    <h3 id="luma-client">Client &amp; Model</h3>
+    <p>Cinemagraph generation uses the <strong>Luma AI Python SDK</strong> (<code>lumaai</code> package) to create short video clips from static images.</p>
+
+    <pre><code>from lumaai import LumaAI
+client = LumaAI(auth_token=os.environ["LUMAAI_API_KEY"])</code></pre>
+
+    <h3 id="luma-create">_luma_create_task(image_url, prompt_text)</h3>
+    <p>Creates a new Luma generation task from a source image and motion prompt.</p>
+
     <table>
-      <thead>
-        <tr><th>Parameter</th><th>Value</th></tr>
-      </thead>
-      <tbody>
-        <tr><td>Client</td><td><code>lumaai.LumaAI</code> initialized with <code>LUMAAI_API_KEY</code></td></tr>
-        <tr><td>Model</td><td><code>ray-2</code></td></tr>
-        <tr><td>Aspect ratio</td><td><code>1:1</code></td></tr>
-        <tr><td>Duration</td><td><code>5s</code></td></tr>
-        <tr><td>Input</td><td><code>frame0</code> keyframe from carousel image URL</td></tr>
-      </tbody>
+      <tr><th>Parameter</th><th>Value</th></tr>
+      <tr><td><code>model</code></td><td><code>"ray-2"</code></td></tr>
+      <tr><td><code>keyframes</code></td><td><code>{"frame0": {"type": "image", "url": image_url}}</code></td></tr>
+      <tr><td><code>aspect_ratio</code></td><td><code>"1:1"</code></td></tr>
+      <tr><td><code>duration</code></td><td><code>"5s"</code></td></tr>
     </table>
 
-    <h4>Default prompt</h4>
-    <pre><code>Subtle gentle atmospheric motion, cinematic still life, minimal movement, soft breathing effect, loop-friendly</code></pre>
+    <pre><code>gen = client.generations.create(
+    model="ray-2",
+    prompt=prompt_text,
+    keyframes={
+        "frame0": {"type": "image", "url": image_url}
+    },
+    aspect_ratio="1:1",
+    duration="5s"
+)
+return gen.id</code></pre>
 
-    <h3 id="luma-functions">Helper Functions</h3>
+    <div class="callout callout-key">
+      The <code>frame0</code> keyframe anchors the video to the source carousel image, ensuring the cinemagraph closely resembles the original still.
+    </div>
+
+    <h3 id="luma-poll">_luma_poll_task(gen_id)</h3>
+    <p>Polls a Luma generation task for completion. Returns a tuple of <code>(state, mp4_url, failure_reason)</code>.</p>
+
     <table>
-      <thead>
-        <tr><th>Function</th><th>Signature</th><th>Returns</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>_luma_create_task</code></td>
-          <td><code>(image_url, prompt_text)</code></td>
-          <td>Generation ID (string)</td>
-        </tr>
-        <tr>
-          <td><code>_luma_poll_task</code></td>
-          <td><code>(gen_id)</code></td>
-          <td><code>(state, mp4_url, failure_reason)</code> tuple. States: <code>queued</code>, <code>dreaming</code>, <code>completed</code>, <code>failed</code></td>
-        </tr>
-        <tr>
-          <td><code>_is_luma_billing_error</code></td>
-          <td><code>(exc)</code></td>
-          <td>Boolean. Checks for non-transient billing errors to abort early.</td>
-        </tr>
-      </tbody>
+      <tr><th>State</th><th>Meaning</th></tr>
+      <tr><td><code>queued</code></td><td>Task is waiting in Luma's queue</td></tr>
+      <tr><td><code>dreaming</code></td><td>Video is being generated</td></tr>
+      <tr><td><code>completed</code></td><td>Video is ready; <code>mp4_url</code> is populated</td></tr>
+      <tr><td><code>failed</code></td><td>Generation failed; <code>failure_reason</code> is populated</td></tr>
     </table>
 
-    <!-- ────────────────────────────────────── 4. Video Overlay Functions ── -->
-    <h2 id="video-overlay">4. Video Overlay Functions</h2>
-
-    <h3 id="overlay-png">Overlay PNG Creation</h3>
-    <h4><code>_make_cinemagraph_overlay_png</code></h4>
-    <pre><code>_make_cinemagraph_overlay_png(
-    punchline,
-    slide_index,
-    total_slides,
-    width=960,
-    height=960,
-    band_top=None
-)</code></pre>
-    <p>
-      Creates a transparent PNG overlay with a dark text band and punchline text, using the same
-      visual style as carousel image compositing. The band is positioned consistently across all
-      slides via <code>band_top</code>.
-    </p>
-
-    <h4><code>_compute_max_overlay_band_top</code></h4>
-    <pre><code>_compute_max_overlay_band_top(punchlines, ...)</code></pre>
-    <p>
-      Calculates a consistent band position across all slides so that the overlay band appears
-      at the same vertical position in every clip of the carousel.
-    </p>
-
-    <h3 id="overlay-ffmpeg">FFmpeg Compositing</h3>
-    <h4><code>_apply_overlay_to_video</code></h4>
-    <pre><code>_apply_overlay_to_video(video_url_or_path, overlay_png_bytes, output_path)</code></pre>
-    <p>FFmpeg pipeline:</p>
-    <ol class="flow">
-      <li>Scale video to 960x960</li>
-      <li>Overlay the transparent PNG</li>
-      <li>Encode with <code>libx264</code>, CRF 20</li>
-      <li>No audio stream</li>
-      <li>Pixel format: <code>yuv420p</code></li>
-      <li>Timeout: 120 seconds</li>
-    </ol>
-
-    <!-- ────────────────────────────────────── 5. Generation Pipeline ── -->
-    <h2 id="generation-pipeline">5. Generation Pipeline</h2>
-
-    <h3 id="gen-route">Route</h3>
-    <p>
-      <span class="method-badge post">POST</span>
-      <code>/admin/articles/&lt;id&gt;/generate-cinemagraphs</code>
-    </p>
-    <p>Validation checks:</p>
-    <ol class="flow">
-      <li><code>_luma_enabled</code> must be true (API key configured)</li>
-      <li>No generation already running for this article</li>
-      <li>Article must have at least one carousel image</li>
-    </ol>
-    <p>Startup sequence:</p>
-    <ol class="flow">
-      <li>Loads carousel images (up to 10), existing prompts, existing clips</li>
-      <li>Identifies empty slots (have source image but no clip); skips occupied slots</li>
-      <li>Saves prompts to DB, clears stale result key</li>
-      <li>Sets status to <code>running:0/{n_empty}</code></li>
-      <li>Spawns <code>_cinemagraph_worker</code> as a daemon thread</li>
-      <li>Returns <code>{"started": true, "n_slides": n_empty}</code></li>
-    </ol>
-
-    <h3 id="gen-worker">Worker: <code>_cinemagraph_worker</code></h3>
-    <pre><code>_cinemagraph_worker(article_id, images, prompts, slot_indices, existing_urls)</code></pre>
-    <p>For each empty slot the worker performs:</p>
-    <ol class="flow">
-      <li>Check cancel flag in <code>site_settings</code></li>
-      <li>Set status to <code>running:{i}/{n}</code></li>
-      <li>Resolve image URL &mdash; GCS URL used directly; local images are temp-uploaded to GCS</li>
-      <li>Resolve prompt via the <a href="#prompt-resolution">prompt resolution order</a></li>
-      <li>Call <code>_luma_create_task()</code> to get a generation ID</li>
-      <li>Poll <code>_luma_poll_task()</code> every 6 seconds, updating status sub-state (<code>queued</code> / <code>dreaming</code>)</li>
-      <li>On completion: download MP4, save locally, upload to GCS, clean local copy if GCS succeeds</li>
-      <li>Update <code>carousel_cinemagraphs</code> and <code>carousel_cinemagraph_created_at</code> in DB immediately</li>
-    </ol>
-
-    <h4>Abort conditions</h4>
-    <ul>
-      <li>Cancel flag detected (<code>cinemagraph_cancel_{article_id}</code> = <code>"1"</code>)</li>
-      <li>Billing error detected via <code>_is_luma_billing_error()</code></li>
-      <li>3 consecutive failures</li>
-    </ul>
-
-    <h4>Cleanup</h4>
-    <ul>
-      <li>Sets result: <code>done:{count}</code> or <code>error:...</code></li>
-      <li>Clears status and cancel keys from <code>site_settings</code></li>
-      <li>Persists run log to DB (truncated to 64 KB max) and to GCS</li>
-    </ul>
-
-    <!-- ────────────────────────────────────── 6. Single Slide Operations ── -->
-    <h2 id="single-slide">6. Single Slide Operations</h2>
-
-    <h3 id="slide-regenerate">Regenerate Slide</h3>
-    <p>
-      <span class="method-badge post">POST</span>
-      <code>/admin/articles/&lt;id&gt;/regenerate-cinemagraph-slide</code>
-    </p>
-    <table>
-      <thead><tr><th>Body field</th><th>Type</th><th>Description</th></tr></thead>
-      <tbody>
-        <tr><td><code>slide_idx</code></td><td>int</td><td>Zero-based slide index to regenerate</td></tr>
-        <tr><td><code>prompt</code></td><td>string</td><td>Luma prompt for this slide</td></tr>
-      </tbody>
-    </table>
-    <p>
-      Auto-archives the existing clip in that slot before starting. Sets status to
-      <code>slide_running:{slide_idx}</code> and spawns <code>_cinemagraph_slide_worker</code>
-      as a daemon thread.
-    </p>
-
-    <h3 id="slide-archive">Archive Slide</h3>
-    <p>
-      <span class="method-badge post">POST</span>
-      <code>/admin/articles/&lt;id&gt;/archive-cinemagraph-slide</code>
-    </p>
-    <table>
-      <thead><tr><th>Body field</th><th>Type</th><th>Description</th></tr></thead>
-      <tbody>
-        <tr><td><code>slide_idx</code></td><td>int</td><td>Zero-based slide index to archive</td></tr>
-      </tbody>
-    </table>
-    <p>Appends clip metadata to the archived array and nullifies the slot.</p>
-
-    <h3 id="slide-restore">Restore Archived Clip</h3>
-    <p>
-      <span class="method-badge post">POST</span>
-      <code>/admin/articles/&lt;id&gt;/restore-cinemagraph-clip</code>
-    </p>
-    <table>
-      <thead><tr><th>Body field</th><th>Type</th><th>Description</th></tr></thead>
-      <tbody>
-        <tr><td><code>archived_idx</code></td><td>int</td><td>Index within the archived array</td></tr>
-        <tr><td><code>target_slot</code></td><td>int</td><td>Destination slot in the active array</td></tr>
-      </tbody>
-    </table>
-    <p>
-      Supports both legacy string entries and new dict entries in the archive. If the target slot
-      is occupied, the displaced clip is auto-archived before restoration.
-    </p>
-
-    <h3 id="slide-archive-all">Archive All</h3>
-    <p>
-      <span class="method-badge post">POST</span>
-      <code>/admin/articles/&lt;id&gt;/archive-all-cinemagraphs</code>
-    </p>
-    <p>Moves all non-null clips to the archived array and clears all active slots.</p>
-
-    <h3 id="slide-cancel">Cancel Generation</h3>
-    <p>
-      <span class="method-badge post">POST</span>
-      <code>/admin/articles/&lt;id&gt;/cancel-cinemagraphs</code>
-    </p>
-    <p>Sets the cancel flag (<code>cinemagraph_cancel_{article_id}</code> = <code>"1"</code>).</p>
-
-    <h3 id="slide-clear-result">Clear Result</h3>
-    <p>
-      <span class="method-badge delete">DELETE</span>
-      <code>/admin/articles/&lt;id&gt;/cinemagraph-result</code>
-    </p>
-    <p>Deletes the result key to prevent an error message from reappearing on page reload.</p>
-
-    <!-- ────────────────────────────────────── 7. Social Media — Instagram ── -->
-    <h2 id="social-instagram">7. Social Media Posting — Instagram</h2>
-    <p>
-      <span class="method-badge post">POST</span>
-      <code>/admin/articles/&lt;id&gt;/post-to-instagram</code>
-    </p>
-    <table>
-      <thead><tr><th>Body field</th><th>Type</th><th>Description</th></tr></thead>
-      <tbody>
-        <tr><td><code>caption</code></td><td>string</td><td>Post caption text</td></tr>
-        <tr><td><code>type</code></td><td>string</td><td>Must be <code>"cine"</code></td></tr>
-      </tbody>
-    </table>
-
-    <h4>Worker flow</h4>
-    <ol class="flow">
-      <li>Creates a mixed carousel: cinemagraph clips as <code>VIDEO</code> containers, static images as <code>IMAGE</code> fallback for slots without clips</li>
-      <li>Each cinemagraph gets a punchline overlay via <code>_apply_overlay_to_video()</code></li>
-      <li>Uploads composited MP4s to GCS (as <code>ig_composed_{N}_{timestamp}.mp4</code>)</li>
-      <li>Creates IG child containers for each media item</li>
-      <li>Polls each container until <code>FINISHED</code></li>
-      <li>Creates the carousel container and publishes</li>
-    </ol>
+    <pre><code>gen = client.generations.get(gen_id)
+state = gen.state
+mp4_url = gen.assets.video if state == "completed" else None
+failure_reason = gen.failure_reason if state == "failed" else None
+return (state, mp4_url, failure_reason)</code></pre>
 
     <div class="callout callout-info">
-      Status check, edit, and archive operations follow the same pattern as carousel posting
-      but use the <code>type=cine</code> parameter to distinguish cinemagraph posts from
-      static image posts.
+      Poll interval is <strong>6 seconds</strong> between checks in the worker loop.
     </div>
 
-    <!-- ────────────────────────────────────── 8. Social Media — LinkedIn ── -->
-    <h2 id="social-linkedin">8. Social Media Posting — LinkedIn</h2>
-    <p>
-      <span class="method-badge post">POST</span>
-      <code>/admin/articles/&lt;id&gt;/post-carousel-to-linkedin</code>
-    </p>
-    <table>
-      <thead><tr><th>Body field</th><th>Type</th><th>Description</th></tr></thead>
-      <tbody>
-        <tr><td><code>caption</code></td><td>string</td><td>Post caption text</td></tr>
-        <tr><td><code>type</code></td><td>string</td><td>Must be <code>"cine"</code></td></tr>
-      </tbody>
-    </table>
+    <h3 id="luma-billing">Billing Error Detection</h3>
+    <p><code>_is_luma_billing_error(exc)</code> inspects exceptions to detect non-transient billing/credit errors. When detected, the worker <strong>aborts immediately</strong> rather than retrying, since billing errors will not resolve on their own.</p>
 
-    <div class="callout callout-warn">
-      <strong>Important:</strong> LinkedIn receives <em>static images</em> with punchline overlays even
-      when the type is <code>"cine"</code>. Cinemagraph video clips are not used for LinkedIn &mdash;
-      the worker composes static carousel images with punchline overlays instead.
-    </div>
-
-    <p>Upload flow follows the standard LinkedIn carousel pipeline:</p>
-    <ol class="flow">
-      <li><code>initializeUpload</code> &mdash; request upload URL from LinkedIn API</li>
-      <li><code>PUT</code> image bytes to the upload URL</li>
-      <li>Create the post with the uploaded asset references</li>
-    </ol>
-
-    <!-- ────────────────────────────────────── 9. Unsupported Platforms ── -->
-    <h2 id="social-unsupported">9. Unsupported Platforms</h2>
-    <p>
-      The following platforms display informational notices in the admin UI explaining that
-      cinemagraph-style looping videos are not supported via their APIs:
-    </p>
+    <p>Detected patterns include:</p>
     <ul>
-      <li><strong>Facebook</strong></li>
-      <li><strong>X (Twitter)</strong></li>
-      <li><strong>Threads</strong></li>
-      <li><strong>Pinterest</strong></li>
+      <li>Insufficient credits</li>
+      <li>Billing-related error messages</li>
+      <li>HTTP 403 Forbidden responses</li>
     </ul>
-    <p>Users are directed to use Carousel Images or Narrated Videos instead for these platforms.</p>
 
-    <!-- ────────────────────────────────────── 10. Frontend Architecture ── -->
-    <h2 id="frontend">10. Frontend Architecture</h2>
+    <!-- ================================================================ -->
+    <h2 id="prompt-resolution">4. Prompt Resolution</h2>
 
-    <h3 id="fe-html">HTML Structure</h3>
-    <table>
-      <thead><tr><th>Element / ID</th><th>Purpose</th></tr></thead>
-      <tbody>
-        <tr><td><code>#cinemagraph-card</code></td><td>Main card inside the Social Media Content panel</td></tr>
-        <tr><td><code>#cinemagraph-locked-btn</code></td><td>Shown until carousel images exist; locks the generator</td></tr>
-        <tr><td><code>#cinemagraph-btn</code></td><td>Generate button; shown when unlocked, not all slots filled, not generating</td></tr>
-        <tr><td>Kebab dropdown</td><td>Contains: Generate, Archive All, View Cinemagraph Prompt, Edit Caption Prompt, View Logs</td></tr>
-        <tr><td><code>#cinemagraph-status</code></td><td>Status area with spinner, progress bar, and cancel button</td></tr>
-        <tr><td>Tabs</td><td>Current (with count badge) / Archived (hidden when empty)</td></tr>
-        <tr><td><code>#cinemagraph-grid</code></td><td>Grid of current clips (autoplay/loop/muted videos)</td></tr>
-        <tr><td><code>#cinemagraph-removed-grid</code></td><td>Grid of archived clips</td></tr>
-        <tr><td>Social sections</td><td>Instagram (full UI), LinkedIn (full UI), Facebook / X / Threads / Pinterest (unsupported notices)</td></tr>
-      </tbody>
-    </table>
+    <p>When generating a cinemagraph for slide <code>i</code>, the prompt is resolved in priority order:</p>
 
-    <h3 id="fe-js">Key JavaScript Functions</h3>
-    <table>
-      <thead><tr><th>Function</th><th>Description</th></tr></thead>
-      <tbody>
-        <tr><td><code>cinemagraphUnlock()</code></td><td>Shows generate button when carousel images exist</td></tr>
-        <tr><td><code>cinemagraphGenerate()</code></td><td>POSTs to generate endpoint, shows running UI</td></tr>
-        <tr><td><code>cancelCinemagraphGeneration()</code></td><td>Sends cancel request to the server</td></tr>
-        <tr><td><code>_cinemagraphShowRunning(nSlides)</code></td><td>Displays progress UI (spinner, bar, cancel), starts polling</td></tr>
-        <tr><td><code>_cinemagraphPoll()</code></td><td>Polls <code>/video-data</code> every 20 seconds, updates progress</td></tr>
-        <tr><td><code>_cinemagraphApplyStatus(status, nSlides)</code></td><td>Maps status to progress bar width: <code>dreaming</code> = 60%, <code>queued</code> = 20%</td></tr>
-        <tr><td><code>_cinemagraphInitClipGrid(n)</code></td><td>Creates <em>n</em> placeholder <code>div</code> elements in the grid</td></tr>
-        <tr><td><code>_cinemagraphMakeVideo(url, slideIdx, prompt)</code></td><td>Creates autoplay / loop / muted <code>&lt;video&gt;</code> element</td></tr>
-        <tr><td><code>_cinemagraphUpdateGrid(urls, prompts)</code></td><td>Replaces placeholders with video elements as clips complete</td></tr>
-        <tr><td><code>_cinemagraphShowPreviews(urls, prompts)</code></td><td>Full render of the clip grid (used on page load)</td></tr>
-        <tr><td><code>openCinemagraphEditModal(slideIdx, url, prompt)</code></td><td>Opens modal to edit, re-run, or archive a single clip</td></tr>
-        <tr><td><code>cinemagraphArchiveSlide()</code></td><td>Archives the single clip selected in the edit modal</td></tr>
-        <tr><td><code>cinemagraphRerunSlide()</code></td><td>Regenerates the single clip with an updated prompt</td></tr>
-        <tr><td><code>archiveAllCinemagraphs()</code></td><td>Archives all current clips</td></tr>
-        <tr><td><code>updateCinemagraphTabCounts()</code></td><td>Updates badge counts, button visibility; hides generate button if all 10 slots filled</td></tr>
-        <tr><td><code>showCinemagraphTab(tab)</code></td><td>Switches between current and archived views</td></tr>
-        <tr><td><code>openCinemagraphPromptModal()</code></td><td>Opens modal to edit the per-article default prompt</td></tr>
-        <tr><td><code>saveCinemagraphPrompt()</code></td><td>Saves the per-article prompt to <code>site_settings</code></td></tr>
-        <tr><td><code>openArchivedInfoModal('cinemagraph', ...)</code></td><td>Shared modal for archived items; shows video preview, dates, and restore button</td></tr>
-      </tbody>
-    </table>
-
-    <h3 id="fe-visibility">Visibility Change Handler</h3>
-    <p>
-      When the browser tab regains focus during an active generation job, the handler immediately
-      re-syncs the status from the server. This prevents the progress bar from appearing frozen
-      when the user switches away and back.
-    </p>
-
-    <h3 id="fe-page-load">Page Load Initialization</h3>
     <ol class="flow">
-      <li>Fetches <code>/video-data</code> endpoint</li>
-      <li>Populates <code>_cinePrompts</code> and <code>_cineCreatedAt</code> arrays from response</li>
-      <li>If <code>cinemagraph_status</code> starts with <code>running:</code> &rarr; resumes generation UI with polling</li>
-      <li>If <code>slide_running:</code> &rarr; resumes single-slide re-run UI</li>
-      <li>If clips exist but no active job &rarr; shows the preview grid</li>
-      <li>Loads archived clips into the removed grid</li>
-      <li>Colors Instagram icon if cine post result starts with <code>done:</code></li>
-    </ol>
-
-    <!-- ────────────────────────────────────── 11. GCS Storage Structure ── -->
-    <h2 id="gcs-storage">11. GCS Storage Structure</h2>
-    <pre><code>articles/{article_id}/cinemagraph/
-  slide_{N}_{timestamp}.mp4           # raw Luma output
-  ig_composed_{N}_{timestamp}.mp4     # with punchline overlay for Instagram
-  run_{timestamp}.log                 # generation run log
-
-articles/{article_id}/temp/
-  slide_{N}_{timestamp}.jpg           # temp upload for local images needing GCS URL</code></pre>
-
-    <!-- ────────────────────────────────────── 12. Prompt Resolution Order ── -->
-    <h2 id="prompt-resolution">12. Prompt Resolution Order</h2>
-    <p>When resolving the Luma prompt for a given slide, the system checks the following sources in order, using the first non-empty value:</p>
-    <ol class="flow">
-      <li><strong>Per-slide prompt</strong> &mdash; <code>carousel_cinemagraph_prompts[i]</code> from the <code>articles</code> table</li>
-      <li><strong>Per-article override</strong> &mdash; <code>cinemagraph_prompt_{article_id}</code> in <code>site_settings</code></li>
-      <li><strong>Global setting</strong> &mdash; <code>cinemagraph_prompt</code> in <code>site_settings</code></li>
+      <li><strong>Per-slide prompt</strong> &mdash; <code>carousel_cinemagraph_prompts[i]</code> (from the article&rsquo;s JSON array)</li>
+      <li><strong>Per-article prompt</strong> &mdash; <code>site_settings</code> key <code>cinemagraph_prompt_{article_id}</code></li>
+      <li><strong>Global prompt</strong> &mdash; <code>site_settings</code> key <code>cinemagraph_prompt</code></li>
       <li><strong>Hardcoded default</strong> &mdash; <code>_CINE_DEFAULT_PROMPT</code></li>
     </ol>
 
+    <h4>Default Prompt</h4>
+    <pre><code>_CINE_DEFAULT_PROMPT = "Subtle gentle atmospheric motion, cinematic still life, minimal movement, soft breathing effect, loop-friendly"</code></pre>
+
     <div class="callout callout-key">
-      The hardcoded default is: <em>"Subtle gentle atmospheric motion, cinematic still life,
-      minimal movement, soft breathing effect, loop-friendly"</em>
+      The resolution chain short-circuits at the first non-empty value. A per-slide prompt of <code>null</code> or empty string falls through to the next level.
     </div>
 
-    <!-- ────────────────────────────────────── 13. Narrated Video Integration ── -->
-    <h2 id="narrated-integration">13. Integration with Narrated Video</h2>
-    <p>
-      When the narrated video worker builds per-slide segments, it checks whether
-      <code>cinemagraphs[i]</code> exists for the current slide. If a cinemagraph MP4 is available,
-      it is used as the video base <em>instead of</em> the static Ken Burns animation.
-    </p>
-    <p>The cinemagraph clip is integrated as follows:</p>
+    <!-- ================================================================ -->
+    <h2 id="video-storage">5. Video Storage</h2>
+
+    <h3 id="storage-paths">File Paths</h3>
+    <p>Generated MP4 files follow a consistent naming convention using the slide index and a Unix timestamp.</p>
+
+    <table>
+      <tr><th>Context</th><th>Path Pattern</th></tr>
+      <tr>
+        <td>Local file</td>
+        <td><code>static/articles/{article_id}/cinemagraph/slide_{N}_{timestamp}.mp4</code></td>
+      </tr>
+      <tr>
+        <td>GCS object</td>
+        <td><code>articles/{article_id}/cinemagraph/slide_{N}_{timestamp}.mp4</code></td>
+      </tr>
+      <tr>
+        <td>Run log (GCS)</td>
+        <td><code>articles/{article_id}/cinemagraph/run_{timestamp}.log</code></td>
+      </tr>
+    </table>
+
+    <h3 id="storage-fallback">GCS Fallback Logic</h3>
+    <p>The storage flow for each generated clip:</p>
+
+    <ol class="flow">
+      <li>Download MP4 from Luma&rsquo;s temporary URL (timeout: <strong>120 seconds</strong>)</li>
+      <li>Save to local filesystem at <code>static/articles/{article_id}/cinemagraph/</code></li>
+      <li>Attempt upload to GCS via <code>upload_bytes_to_gcs()</code></li>
+      <li><strong>If GCS succeeds:</strong> delete the local file, store the GCS URL in the database</li>
+      <li><strong>If GCS fails:</strong> keep the local file, store the <code>/static/...</code> path in the database</li>
+    </ol>
+
+    <div class="callout callout-warn">
+      The database is updated <strong>after each individual slide</strong>, not batched at the end of the run. This ensures partial progress is preserved if the worker is interrupted.
+    </div>
+
+    <p>Run logs are also uploaded to GCS after the batch completes, stored at the <code>run_{timestamp}.log</code> path.</p>
+
+    <!-- ================================================================ -->
+    <h2 id="api-routes">6. API Routes</h2>
+
+    <h3 id="routes-generation">Generation Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Route</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/generate-cinemagraphs</code></td>
+        <td>Starts batch generation for all empty (null) slots. Launches <code>_cinemagraph_worker</code> in a background thread. Returns immediately with status.</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/cancel-cinemagraphs</code></td>
+        <td>Sets the cancel signal (<code>cinemagraph_cancel_{id}</code> = <code>"1"</code>) to request graceful cancellation of an in-progress generation.</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/regenerate-cinemagraph-slide</code></td>
+        <td>Body: <code>{"slide_idx": N}</code>. Archives the existing clip in the target slot (if any), then regenerates a new cinemagraph for that single slide. Launches <code>_cinemagraph_slide_worker</code>.</td>
+      </tr>
+    </table>
+
+    <h3 id="routes-archive">Archive &amp; Restore Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Route</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/archive-cinemagraph-slide</code></td>
+        <td>Body: <code>{"slide_idx": N}</code>. Moves the clip at the given slot to the archived array with metadata, then nulls the slot.</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/restore-cinemagraph-clip</code></td>
+        <td>Body: <code>{"archived_idx": N, "target_slot": M}</code>. Restores an archived clip to the target slot. If the target slot already has a clip, that clip is auto-archived first.</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/archive-all-cinemagraphs</code></td>
+        <td>Archives all non-null slots (iterates all 10 slots). Useful for clearing the board before a fresh generation run.</td>
+      </tr>
+    </table>
+
+    <h3 id="routes-data">Data &amp; Log Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Route</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge delete">DELETE</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/cinemagraph-result</code></td>
+        <td>Clears the result status key (<code>cinemagraph_result_{id}</code>) from site_settings. Used by the frontend to dismiss result notifications.</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/video-data</code></td>
+        <td>Returns cinemagraph data (clips, prompts, timestamps, archived clips) alongside narrated video data in a single JSON response.</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/component-log/cinemagraph</code></td>
+        <td>Returns the generation log text from <code>carousel_cinemagraph_log</code>.</td>
+      </tr>
+    </table>
+
+    <h3 id="routes-instagram">Instagram Routes</h3>
+    <p>Cinemagraph Instagram posting reuses the same route pattern as carousel posting, distinguished by the <code>type</code> parameter.</p>
+    <table>
+      <tr><th>Method</th><th>Route</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/post-to-instagram</code></td>
+        <td>Body includes <code>type: "cine"</code> to indicate cinemagraph posting. Launches <code>_post_to_instagram_worker</code> with <code>post_type="cine"</code>.</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/ig-post-status</code></td>
+        <td>Returns current Instagram posting status (shared with carousel). Polled by the frontend.</td>
+      </tr>
+    </table>
+
+    <h3 id="routes-linkedin">LinkedIn Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Route</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/post-carousel-to-linkedin</code></td>
+        <td>Posts cinemagraph slides as a static image carousel to LinkedIn (component parameter distinguishes cine from carousel).</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/carousel-linkedin-status</code></td>
+        <td>Returns LinkedIn posting status. Polled by the frontend.</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/check-carousel-linkedin-post</code></td>
+        <td>Checks whether a LinkedIn post exists for this article&rsquo;s cinemagraph carousel.</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/archive-carousel-linkedin-post</code></td>
+        <td>Archives the LinkedIn post record (moves to history array).</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/delete-carousel-linkedin-post</code></td>
+        <td>Calls the LinkedIn DELETE API to remove the post, then archives the record locally.</td>
+      </tr>
+    </table>
+
+    <!-- ================================================================ -->
+    <h2 id="background-workers">7. Background Workers</h2>
+
+    <h3 id="worker-batch">Batch Worker: _cinemagraph_worker()</h3>
+    <p>Signature: <code>_cinemagraph_worker(article_id, images, prompts, slot_indices, existing_urls)</code></p>
+
+    <p>Generates cinemagraphs for all empty slots in a single batch run. Launched in a background thread by the generate route.</p>
+
+    <h4>Batch Worker Flow</h4>
+    <ol class="flow">
+      <li>Set status to <code>running:0/{total}</code></li>
+      <li>For each empty slot index in <code>slot_indices</code>:
+        <ol type="a">
+          <li>Check cancel signal &mdash; abort if <code>_is_cancelled()</code> returns true</li>
+          <li>Resolve prompt for this slide (see <a href="#prompt-resolution">Prompt Resolution</a>)</li>
+          <li>Call <code>_luma_create_task(image_url, prompt)</code> to start generation</li>
+          <li>Poll with <code>_luma_poll_task(gen_id)</code> every 6 seconds until completed or failed</li>
+          <li>On completion: download MP4, upload to GCS, update DB</li>
+          <li>Update status to <code>running:{completed}/{total}</code></li>
+        </ol>
+      </li>
+      <li>After all slides: set result to <code>done:{count}</code></li>
+      <li>Upload run log to GCS</li>
+    </ol>
+
+    <div class="callout callout-warn">
+      The worker aborts after <strong>3 consecutive failures</strong>. This prevents runaway costs if Luma is experiencing persistent issues. The result is set to an error message indicating the abort reason.
+    </div>
+
+    <h3 id="worker-single">Single Slide Worker: _cinemagraph_slide_worker()</h3>
+    <p>Signature: <code>_cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt)</code></p>
+
+    <p>Regenerates a single slide. Follows the same create &rarr; poll &rarr; download &rarr; upload &rarr; DB update flow as the batch worker, but only for one slot. Used by the regenerate-slide route.</p>
+
+    <h3 id="worker-cancel">Cancel Support</h3>
+    <p>Cancellation is cooperative, not preemptive. The cancel signal is stored in <code>site_settings</code> as <code>cinemagraph_cancel_{article_id}</code> = <code>"1"</code>.</p>
+
+    <p>The worker checks <code>_is_cancelled()</code> at two points:</p>
     <ul>
-      <li>Looped with <code>stream_loop -1</code> to ensure sufficient duration</li>
-      <li>Trimmed to match the audio segment duration for that slide</li>
+      <li><strong>Before each slide</strong> &mdash; skips remaining slides if cancelled</li>
+      <li><strong>During polling</strong> &mdash; abandons the current Luma task if cancelled mid-generation</li>
     </ul>
 
-    <!-- ────────────────────────────────────── 14. API Dependencies ── -->
-    <h2 id="api-dependencies">14. API Dependencies</h2>
+    <div class="callout callout-info">
+      Cancellation does not revoke in-progress Luma tasks on their servers. It only stops the local worker from polling and processing further. Already-completed slides are preserved.
+    </div>
+
+    <!-- ================================================================ -->
+    <h2 id="social-media">8. Social Media Posting</h2>
+
+    <h3 id="social-instagram">Instagram (Animated Carousel)</h3>
+
+    <p>Cinemagraph clips are posted to Instagram as an <strong>animated carousel</strong> where each slide is a video container.</p>
+
+    <h4>Worker</h4>
+    <p><code>_post_to_instagram_worker(article_id, caption, post_type="cine")</code></p>
+
+    <h4>Instagram Posting Flow</h4>
+    <ol class="flow">
+      <li>For each slide that has a cinemagraph clip:
+        <ol type="a">
+          <li>Generate overlay PNG via <code>_make_cinemagraph_overlay_png()</code></li>
+          <li>Composite overlay onto video via FFmpeg: <code>_apply_overlay_to_video()</code></li>
+          <li>Upload composed video to GCS</li>
+          <li>Create IG child container with <code>media_type=VIDEO</code>, <code>is_carousel_item=true</code></li>
+        </ol>
+      </li>
+      <li>For slides <strong>without</strong> a cinemagraph &rarr; fall back to static image container</li>
+      <li>Poll all child containers until ready</li>
+      <li>Create carousel container referencing all children</li>
+      <li>Publish the carousel</li>
+      <li>Fetch and store the permalink</li>
+    </ol>
+
+    <h4>Overlay Generation</h4>
+    <pre><code>_make_cinemagraph_overlay_png(
+    punchline,          # text to display on the overlay
+    slide_index,        # 0-based slide index
+    total_slides,       # total number of slides
+    width=960,          # output width in pixels
+    height=960,         # output height in pixels
+    band_top=None       # optional top position for text band
+)</code></pre>
+    <p>Generates a transparent PNG with the punchline text and a swipe-hint indicator. This PNG is then composited onto the video.</p>
+
+    <h4>FFmpeg Compositing</h4>
+    <pre><code>_apply_overlay_to_video(video_url, overlay_png, tmp_mp4)</code></pre>
+    <p>Overlays the generated PNG onto the MP4 video using FFmpeg&rsquo;s overlay filter. The output is written to <code>tmp_mp4</code> as a new MP4 file ready for Instagram upload.</p>
+
+    <h3 id="social-linkedin">LinkedIn (Static Image Carousel)</h3>
+
+    <h4>Worker</h4>
+    <p><code>_post_carousel_linkedin_worker(article_id, caption, component="cine")</code></p>
+
+    <div class="callout callout-warn">
+      LinkedIn&rsquo;s carousel API does <strong>not</strong> support video. Cinemagraph slides are posted as <strong>static composed images</strong> using <code>compose_carousel_slide()</code>, the same compositing function used for regular carousel posting.
+    </div>
+
+    <h4>LinkedIn Posting Flow</h4>
+    <ol class="flow">
+      <li>For each slide: compose a static image via <code>compose_carousel_slide()</code></li>
+      <li>Initialize multipart upload with LinkedIn API</li>
+      <li>PUT image bytes for each slide</li>
+      <li>Create post with <code>multiImage.images</code> payload</li>
+    </ol>
+
+    <h3 id="social-unsupported">Unsupported Platforms</h3>
+    <p>The following platforms show an informational notice in the cinemagraph social posting UI:</p>
+    <ul>
+      <li><strong>Facebook</strong> &mdash; does not support cinemagraph-style looping video carousels via API</li>
+      <li><strong>X (Twitter)</strong> &mdash; does not support cinemagraph-style looping video carousels via API</li>
+      <li><strong>Threads</strong> &mdash; does not support cinemagraph-style looping video carousels via API</li>
+      <li><strong>Pinterest</strong> &mdash; does not support cinemagraph-style looping video carousels via API</li>
+    </ul>
+    <p>These sections render a Bootstrap <code>alert-info</code> notice instead of posting controls.</p>
+
+    <!-- ================================================================ -->
+    <h2 id="archive-delete">9. Archive &amp; Delete Flow</h2>
+
+    <h3>Archive Single Slide</h3>
+    <ol class="flow">
+      <li>Read the clip URL, prompt, and created_at from the current slot</li>
+      <li>Append an archived clip object (with <code>url</code>, <code>prompt</code>, <code>created_at</code>, <code>archived_at</code>, <code>slot_source</code>) to <code>carousel_cinemagraph_archived</code></li>
+      <li>Set the slot to <code>null</code> in <code>carousel_cinemagraphs</code></li>
+      <li>Update the database</li>
+    </ol>
+
+    <h3>Archive All</h3>
+    <p>Iterates all 10 slots and archives every non-null clip using the same single-slide archive logic.</p>
+
+    <h3>Restore Archived Clip</h3>
+    <ol class="flow">
+      <li>Read the archived clip at <code>archived_idx</code></li>
+      <li>If <code>target_slot</code> already has a clip, auto-archive it first (preventing data loss)</li>
+      <li>Place the restored clip&rsquo;s URL into <code>target_slot</code></li>
+      <li>Remove the clip from the archived array</li>
+      <li>Update the database</li>
+    </ol>
+
+    <h3>Social Post Archive &amp; Delete</h3>
+    <ul>
+      <li><strong>Instagram archive:</strong> Same pattern as carousel &mdash; moves post record to a history array in site_settings</li>
+      <li><strong>LinkedIn archive:</strong> Moves the post record to a history array</li>
+      <li><strong>LinkedIn delete:</strong> Calls the LinkedIn DELETE API to remove the post from the platform, then archives the record locally</li>
+    </ul>
+
+    <!-- ================================================================ -->
+    <h2 id="frontend">10. Frontend Architecture</h2>
+
+    <h3 id="fe-template">Template Structure</h3>
+    <p>All cinemagraph UI lives in <code>templates/article_edit.html</code>, within the cinemagraph tab/panel section.</p>
+
+    <h4>Social Media Network Wrappers</h4>
+    <p>Each social platform section is wrapped in a <code>data-smc-net</code> attribute for JavaScript targeting:</p>
+
     <table>
-      <thead>
-        <tr><th>API</th><th>Used For</th><th>Authentication</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Luma AI Ray-2</td>
-          <td>Cinemagraph video generation</td>
-          <td><code>LUMAAI_API_KEY</code></td>
-        </tr>
-        <tr>
-          <td>Meta Graph API (Instagram)</td>
-          <td>Instagram carousel posting</td>
-          <td><code>IG_USER_ID</code>, <code>IG_ACCESS_TOKEN</code></td>
-        </tr>
-        <tr>
-          <td>LinkedIn API</td>
-          <td>LinkedIn carousel posting</td>
-          <td><code>LINKEDIN_ACCESS_TOKEN</code>, <code>LINKEDIN_ORG_ID</code></td>
-        </tr>
-        <tr>
-          <td>FFmpeg</td>
-          <td>Video overlay compositing</td>
-          <td><code>imageio_ffmpeg</code> Python package (no API key)</td>
-        </tr>
-      </tbody>
+      <tr><th><code>data-smc-net</code> value</th><th>Content</th></tr>
+      <tr><td><code>ig</code></td><td>Full posting UI: caption textarea, post button, status area, post history</td></tr>
+      <tr><td><code>linkedin</code></td><td>Full posting UI: caption textarea, post button, status area, post history</td></tr>
+      <tr><td><code>fb</code></td><td>Unsupported notice (<code>alert-info</code>)</td></tr>
+      <tr><td><code>x</code></td><td>Unsupported notice (<code>alert-info</code>)</td></tr>
+      <tr><td><code>threads</code></td><td>Unsupported notice (<code>alert-info</code>)</td></tr>
+      <tr><td><code>pinterest</code></td><td>Unsupported notice (<code>alert-info</code>)</td></tr>
     </table>
+
+    <h3 id="fe-polling">Status Polling</h3>
+    <p>The frontend uses <code>setInterval</code> to poll generation and posting status:</p>
+
+    <ul>
+      <li><strong>Generation status:</strong> polls <code>/admin/articles/&lt;id&gt;/video-data</code> to check <code>cinemagraph_status_{id}</code> and <code>cinemagraph_result_{id}</code></li>
+      <li><strong>Instagram posting status:</strong> polls <code>/admin/articles/&lt;id&gt;/ig-post-status</code></li>
+      <li><strong>LinkedIn posting status:</strong> polls <code>/admin/articles/&lt;id&gt;/carousel-linkedin-status</code></li>
+    </ul>
+
+    <h4>Post-Success Behavior</h4>
+    <p><code>_makeViewPostBtn()</code> transforms the post button into a &ldquo;View Post&rdquo; link after a successful social media post, linking to the published content on the platform.</p>
+
+    <h3 id="fe-unsupported">Unsupported Platform Notices</h3>
+    <p>Unsupported platforms (Facebook, X, Threads, Pinterest) render a Bootstrap <code>alert-info</code> div explaining that the platform does not support cinemagraph-style looping video carousels via its API. No posting controls are displayed for these platforms.</p>
+
+    <!-- ================================================================ -->
+    <h2 id="environment-variables">11. Environment Variables</h2>
+
+    <table>
+      <tr><th>Variable</th><th>Required</th><th>Description</th></tr>
+      <tr>
+        <td><code>LUMAAI_API_KEY</code></td>
+        <td>Yes</td>
+        <td>Authentication token for the Luma AI API. Required for all cinemagraph generation.</td>
+      </tr>
+      <tr>
+        <td><code>OPENAI_API_KEY</code></td>
+        <td>Yes</td>
+        <td>OpenAI API key, used for caption generation (shared with other features).</td>
+      </tr>
+      <tr>
+        <td><code>IG_USER_ID</code></td>
+        <td>For IG posting</td>
+        <td>Instagram Business account user ID.</td>
+      </tr>
+      <tr>
+        <td><code>IG_ACCESS_TOKEN</code></td>
+        <td>For IG posting</td>
+        <td>Instagram Graph API access token (Page Access Token, non-expiring).</td>
+      </tr>
+      <tr>
+        <td><code>LINKEDIN_ACCESS_TOKEN</code></td>
+        <td>For LinkedIn posting</td>
+        <td>LinkedIn OAuth2 access token for the organization.</td>
+      </tr>
+      <tr>
+        <td><code>LINKEDIN_ORG_ID</code></td>
+        <td>For LinkedIn posting</td>
+        <td>LinkedIn organization (company page) ID.</td>
+      </tr>
+      <tr>
+        <td><code>GCS_BUCKET_NAME</code></td>
+        <td>Recommended</td>
+        <td>Google Cloud Storage bucket name for persistent video storage. Falls back to local filesystem if not set.</td>
+      </tr>
+      <tr>
+        <td><code>GCS_PATH_PREFIX</code></td>
+        <td>No</td>
+        <td>Optional path prefix prepended to all GCS object keys.</td>
+      </tr>
+    </table>
+
+    <div class="callout callout-warn">
+      Without <code>GCS_BUCKET_NAME</code>, all MP4 files are stored on the local filesystem. This works for development but is <strong>not suitable for Cloud Run</strong> deployments where the filesystem is ephemeral.
+    </div>
 
   </main>
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

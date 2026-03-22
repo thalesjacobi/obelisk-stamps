@@ -49,34 +49,46 @@
       <a href="#overview">1. Overview</a>
       <a href="#database-schema">2. Database Schema</a>
       <a href="#db-articles" class="toc-sub">Articles Table</a>
+      <a href="#db-run-object" class="toc-sub">Run History Object</a>
       <a href="#db-site-settings" class="toc-sub">Site Settings Keys</a>
-      <a href="#db-hidden-runs" class="toc-sub">Hidden Runs</a>
       <a href="#db-stale-cleanup" class="toc-sub">Stale Status Cleanup</a>
-      <a href="#generation-pipeline">3. Generation Pipeline</a>
-      <a href="#gen-route" class="toc-sub">Generate Route</a>
-      <a href="#gen-worker" class="toc-sub">Worker Thread</a>
+      <a href="#generation-pipeline">3. Video Generation Pipeline</a>
       <a href="#gen-config" class="toc-sub">Configuration Parameters</a>
-      <a href="#gen-steps" class="toc-sub">Pipeline Steps</a>
-      <a href="#gen-stop" class="toc-sub">Stop Route</a>
-      <a href="#run-visibility">4. Run Visibility</a>
-      <a href="#social-instagram">5. Social: Instagram Reels</a>
-      <a href="#social-youtube">6. Social: YouTube Shorts</a>
-      <a href="#social-facebook">7. Social: Facebook</a>
-      <a href="#social-x">8. Social: X (Twitter)</a>
-      <a href="#social-threads">9. Social: Threads</a>
-      <a href="#social-pinterest">10. Social: Pinterest</a>
-      <a href="#social-tiktok">11. Social: TikTok</a>
-      <a href="#social-linkedin">12. Social: LinkedIn</a>
-      <a href="#frontend">13. Frontend Architecture</a>
+      <a href="#gen-step1" class="toc-sub">Step 1: GPT Script</a>
+      <a href="#gen-step2" class="toc-sub">Step 2: TTS Audio</a>
+      <a href="#gen-step3" class="toc-sub">Step 3: FFmpeg Binary</a>
+      <a href="#gen-step4" class="toc-sub">Step 4: Per-Clip Video</a>
+      <a href="#gen-step5" class="toc-sub">Step 5: Concatenation</a>
+      <a href="#gen-step5b" class="toc-sub">Step 5b: Speed Adjust</a>
+      <a href="#gen-step6" class="toc-sub">Step 6: Upload to GCS</a>
+      <a href="#api-routes">4. API Routes</a>
+      <a href="#routes-core" class="toc-sub">Core Routes</a>
+      <a href="#routes-instagram" class="toc-sub">Instagram Routes</a>
+      <a href="#routes-facebook" class="toc-sub">Facebook Routes</a>
+      <a href="#routes-youtube" class="toc-sub">YouTube Routes</a>
+      <a href="#routes-x" class="toc-sub">X Routes</a>
+      <a href="#routes-threads" class="toc-sub">Threads Routes</a>
+      <a href="#routes-pinterest" class="toc-sub">Pinterest Routes</a>
+      <a href="#routes-tiktok" class="toc-sub">TikTok Routes</a>
+      <a href="#routes-linkedin" class="toc-sub">LinkedIn Routes</a>
+      <a href="#social-posting">5. Social Media Posting</a>
+      <a href="#social-instagram" class="toc-sub">Instagram Reels</a>
+      <a href="#social-facebook" class="toc-sub">Facebook</a>
+      <a href="#social-youtube" class="toc-sub">YouTube Shorts</a>
+      <a href="#social-x" class="toc-sub">X (Twitter)</a>
+      <a href="#social-threads" class="toc-sub">Threads</a>
+      <a href="#social-pinterest" class="toc-sub">Pinterest</a>
+      <a href="#social-tiktok" class="toc-sub">TikTok</a>
+      <a href="#social-linkedin" class="toc-sub">LinkedIn</a>
+      <a href="#run-visibility">6. Run Visibility Toggle</a>
+      <a href="#frontend">7. Frontend Architecture</a>
       <a href="#fe-html" class="toc-sub">HTML Structure</a>
       <a href="#fe-js" class="toc-sub">Key JS Functions</a>
       <a href="#fe-polling" class="toc-sub">Polling &amp; Status</a>
       <a href="#fe-posting-pattern" class="toc-sub">Per-Platform Pattern</a>
       <a href="#fe-caption" class="toc-sub">Captions &amp; Limits</a>
-      <a href="#gcs-storage">14. GCS Storage Structure</a>
-      <a href="#api-dependencies">15. API Dependencies</a>
-      <a href="#icon-system">16. Icon System</a>
-      <a href="#network-visibility">17. Network Visibility Toggle</a>
+      <a href="#fe-network-vis" class="toc-sub">Network Visibility</a>
+      <a href="#env-vars">8. Environment Variables</a>
     </div>
   </nav>
 
@@ -84,13 +96,15 @@
     <h1>Narrated Video &mdash; Technical Documentation</h1>
     <div class="meta-bar">
       <span><strong>Source:</strong> app.py, templates/article_edit.html</span>
-      <span><strong>Last updated:</strong> 2026-03-21</span>
+      <span><strong>Last updated:</strong> 2026-03-22</span>
     </div>
 
     <!-- ================================================================ -->
     <h2 id="overview">1. Overview</h2>
 
-    <p>The narrated video system generates slideshow videos from article carousel images with AI-narrated audio. It uses <strong>GPT-4.1-mini</strong> for narration script generation, <strong>OpenAI TTS</strong> for audio synthesis, and <strong>FFmpeg</strong> for video rendering with Ken Burns effects or cinemagraph animation.</p>
+    <p>The narrated video system generates slideshow videos from article carousel images with AI-narrated audio. The pipeline runs as follows: <strong>GPT script generation</strong> (GPT-4.1-mini produces per-slide narration segments) &rarr; <strong>OpenAI TTS</strong> (each segment is synthesised to MP3 audio) &rarr; <strong>FFmpeg video assembly</strong> with a Ken Burns zoom/pan effect for still images, or a cinemagraph loop if a cinemagraph video is available for the slide.</p>
+
+    <p>Completed videos can be posted to <strong>8 social platforms</strong>: Instagram (Reels), Facebook, YouTube Shorts, X (Twitter), Threads, Pinterest, TikTok, and LinkedIn.</p>
 
     <table>
       <tr><th>Attribute</th><th>Value</th></tr>
@@ -116,9 +130,9 @@
 
     <table>
       <tr><th>Column</th><th>Type</th><th>Description</th></tr>
-      <tr><td><code>video_narrated_url</code></td><td>TEXT</td><td>URL of the most recent narrated video. Legacy field, still updated for backward compatibility.</td></tr>
+      <tr><td><code>video_narrated_url</code></td><td>TEXT</td><td>URL of the most recent narrated video (current video URL). Legacy field, still updated for backward compatibility.</td></tr>
       <tr><td><code>video_narrated_script</code></td><td>TEXT</td><td>JSON array of narration segments for the most recent run.</td></tr>
-      <tr><td><code>video_narrated_runs</code></td><td>TEXT</td><td>JSON array of all run objects (newest first). Each object contains: <code>ts</code>, <code>ts_label</code>, <code>url</code>, <code>params</code>, <code>segments</code>, <code>cinemagraph_slides</code>.</td></tr>
+      <tr><td><code>video_narrated_runs</code></td><td>TEXT</td><td>JSON array of all run history objects (newest first). Each object contains: <code>ts</code>, <code>ts_label</code>, <code>url</code>, <code>params</code>, <code>segments</code>, <code>cinemagraph_slides</code>.</td></tr>
       <tr><td><code>video_narrated_status</code></td><td>TEXT</td><td>Current generation status. See status values below.</td></tr>
       <tr><td><code>video_narrated_log</code></td><td>TEXT</td><td>Full text log of the generation process (capped at 65,000 characters).</td></tr>
     </table>
@@ -134,23 +148,23 @@
       <tr><td><code>error:&lt;msg&gt;</code></td><td>Generation failed with the given error message</td></tr>
     </table>
 
-    <h4>Run Object Structure</h4>
+    <h3 id="db-run-object">Run History Object Structure</h3>
     <pre>{
-  "ts":                1711000000,        // Unix timestamp (unique key)
-  "ts_label":          "21 Mar 2026 14:30", // Human-readable label
-  "url":               "https://storage.googleapis.com/.../narrated_1711000000.mp4",
+  "ts":                1711108500,          // Unix timestamp (unique key for this run)
+  "ts_label":          "22 Mar 2026, 14:05", // Human-readable label
+  "url":               "https://storage.googleapis.com/.../narrated_1711108500.mp4",
   "params": {
-    "format":          "vertical",
-    "voice":           "alloy",
-    "tts_model":       "tts-1",
-    "script_len":      "medium",
-    "kb_speed":        "medium",
-    "speed":           1.35,
-    "crf":             23,
-    "fps":             30
+    "format":          "vertical",          // "vertical" or "square"
+    "voice":           "onyx",              // OpenAI TTS voice name
+    "tts_model":       "tts-1",             // "tts-1" or "tts-1-hd"
+    "script_len":      "medium",            // "short", "medium", "long"
+    "kb_speed":        "medium",            // "slow", "medium", "fast"
+    "speed":           1.35,                // Playback speed factor
+    "crf":             23,                  // H.264 quality (18/23/28)
+    "fps":             25                   // Target frames per second
   },
   "segments":          ["First slide narration...", "Second slide..."],
-  "cinemagraph_slides": [2, 5]           // 0-indexed slide positions with cinemagraphs
+  "cinemagraph_slides": [1, 3]              // 0-indexed slide positions with cinemagraphs
 }</pre>
 
     <h3 id="db-site-settings">Site Settings Keys</h3>
@@ -169,211 +183,145 @@
     </table>
 
     <div class="callout callout-info">
-      All keys above are suffixed with <code>{article_id}_{run_ts}</code>. For example, the Instagram status for article 42, run 1711000000 would be stored under key <code>narrated_ig_status_42_1711000000</code>.
+      All keys above are suffixed with <code>{article_id}_{run_ts}</code>. For example, the Instagram status for article 42, run 1711108500 would be stored under key <code>narrated_ig_status_42_1711108500</code>.
     </div>
 
-    <h3 id="db-hidden-runs">Hidden Runs</h3>
+    <h4>Hidden Runs</h4>
     <p>Hidden run timestamps are stored in <code>site_settings</code> under the key <code>narrated_hidden_runs_{article_id}</code> as a JSON array of integer timestamps.</p>
 
     <h3 id="db-stale-cleanup">Stale Status Cleanup</h3>
-    <p>On application startup, any <code>video_narrated_status</code> values that begin with <code>running</code> are reset to <code>NULL</code>. This prevents stale &ldquo;in progress&rdquo; states from persisting after a server restart.</p>
+    <p>On application startup, any <code>video_narrated_status</code> values matching the pattern <code>running%</code> are reset to <code>NULL</code>. This prevents stale &ldquo;in progress&rdquo; states from persisting after a server crash or restart.</p>
 
     <!-- ================================================================ -->
-    <h2 id="generation-pipeline">3. Generation Pipeline</h2>
+    <h2 id="generation-pipeline">3. Video Generation Pipeline</h2>
 
-    <h3 id="gen-route">Generate Route</h3>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/generate-narrated-video</code></p>
-    <p>Accepts a JSON body with generation configuration parameters.</p>
-    <pre>{
-  "format":     "vertical",   // or "square"
-  "voice":      "alloy",      // alloy|echo|fable|onyx|nova|shimmer
-  "tts_model":  "tts-1",      // tts-1|tts-1-hd
-  "script_len": "medium",     // short|medium|long
-  "kb_speed":   "medium",     // slow|medium|fast
-  "speed":      1.35,         // 0.5 - 3.0
-  "crf":        23,           // 18|23|28
-  "fps":        30            // 25|30
-}</pre>
+    <p>The generation is triggered by a POST to the generate endpoint. The route validates prerequisites (OpenAI client configured, no generation already running, carousel images present), sets status to <code>running:script</code>, and spawns <code>_narrated_video_worker(article_id, cfg)</code> as a daemon thread. All exceptions within the worker are caught, logged, and written to <code>video_narrated_status</code> as <code>error:&lt;msg&gt;</code>.</p>
 
-    <p><strong>Validation:</strong></p>
-    <ul>
-      <li>OpenAI client must be configured (returns 500 if missing)</li>
-      <li>Article must not already have a generation in progress (returns 409)</li>
-      <li>Article must have carousel images (returns 400 if empty)</li>
-    </ul>
-    <p>On success, sets status to <code>running:script</code> and spawns the <code>_narrated_video_worker</code> as a daemon thread.</p>
-
-    <h3 id="gen-worker">Worker Thread</h3>
-    <p>Function: <code>_narrated_video_worker(article_id, cfg)</code></p>
-    <p>Runs as a daemon thread. All exceptions are caught, logged, and written to <code>video_narrated_status</code> as <code>error:&lt;msg&gt;</code>.</p>
-
-    <h3 id="gen-config">Configuration Parameters</h3>
+    <h3 id="gen-config">Configuration Parameters (from POST body)</h3>
     <table>
       <tr><th>Parameter</th><th>Options</th><th>Default</th><th>Details</th></tr>
       <tr><td><code>format</code></td><td><code>vertical</code>, <code>square</code></td><td><code>vertical</code></td><td>Vertical = 720&times;1280, Square = 720&times;720</td></tr>
-      <tr><td><code>voice</code></td><td><code>alloy</code>, <code>echo</code>, <code>fable</code>, <code>onyx</code>, <code>nova</code>, <code>shimmer</code></td><td><code>alloy</code></td><td>OpenAI TTS voice selection</td></tr>
+      <tr><td><code>voice</code></td><td><code>alloy</code>, <code>echo</code>, <code>fable</code>, <code>onyx</code>, <code>nova</code>, <code>shimmer</code></td><td><code>onyx</code></td><td>OpenAI TTS voice selection</td></tr>
       <tr><td><code>tts_model</code></td><td><code>tts-1</code>, <code>tts-1-hd</code></td><td><code>tts-1</code></td><td>Standard or high-definition TTS</td></tr>
       <tr><td><code>script_len</code></td><td><code>short</code>, <code>medium</code>, <code>long</code></td><td><code>medium</code></td><td>Short = 20&ndash;40 words, Medium = 40&ndash;70 words, Long = 70&ndash;100 words per segment</td></tr>
-      <tr><td><code>kb_speed</code></td><td><code>slow</code>, <code>medium</code>, <code>fast</code></td><td><code>medium</code></td><td>Slow = 0.0010, Medium = 0.0015, Fast = 0.0025 (Ken Burns pan/zoom factor per frame)</td></tr>
-      <tr><td><code>crf</code></td><td><code>18</code>, <code>23</code>, <code>28</code></td><td><code>23</code></td><td>FFmpeg CRF: 18 = high quality, 23 = medium, 28 = low</td></tr>
-      <tr><td><code>fps</code></td><td><code>25</code>, <code>30</code></td><td><code>30</code></td><td>Output FPS. Note: <code>render_fps</code> is fixed at 12 internally</td></tr>
-      <tr><td><code>speed</code></td><td><code>0.5</code> &ndash; <code>3.0</code></td><td><code>1.35</code></td><td>Playback speed factor applied after rendering</td></tr>
+      <tr><td><code>kb_speed</code></td><td><code>slow</code>, <code>medium</code>, <code>fast</code></td><td><code>medium</code></td><td>Ken Burns zoom factor per frame: Slow = 0.0010, Medium = 0.0015, Fast = 0.0025</td></tr>
+      <tr><td><code>crf</code></td><td><code>18</code>, <code>23</code>, <code>28</code></td><td><code>23</code></td><td>H.264 CRF quality: 18 = high quality, 23 = balanced, 28 = smaller file</td></tr>
+      <tr><td><code>fps</code></td><td><code>25</code>, <code>30</code></td><td><code>25</code></td><td>Target output frames per second</td></tr>
+      <tr><td><code>speed</code></td><td><code>0.5</code> &ndash; <code>3.0</code></td><td><code>1.35</code></td><td>Playback speed factor applied after rendering. Clamped to 0.5&ndash;3.0 range</td></tr>
     </table>
 
-    <h3 id="gen-steps">Pipeline Steps</h3>
+    <h3 id="gen-step1">Step 1: GPT Narration Script</h3>
+    <ul>
+      <li><strong>Model:</strong> <code>gpt-4.1-mini</code></li>
+      <li><strong>Response format:</strong> <code>response_format: json_object</code></li>
+      <li>Sends slide descriptions (composed from <code>carousel_prompts</code> + <code>carousel_punchlines</code>) to GPT, requesting a JSON response: <code>{"segments": [...]}</code></li>
+      <li>If GPT returns fewer segments than slides, missing segments are padded with the corresponding punchline text as fallback</li>
+      <li>Any segment containing fewer than 3 words is replaced with fallback text derived from the punchline</li>
+    </ul>
 
-    <h4>Step 1: Fetch Article Data</h4>
-    <p>Loads <code>carousel_images</code>, <code>carousel_prompts</code>, <code>carousel_punchlines</code>, <code>title</code>, and <code>carousel_cinemagraphs</code> from the database. Maximum 10 slides are used. Status remains <code>running:script</code>.</p>
+    <h3 id="gen-step2">Step 2: TTS Audio Per Segment</h3>
+    <ul>
+      <li><strong>API:</strong> OpenAI Audio Speech &mdash; <code>_openai_client.audio.speech.create()</code></li>
+      <li><strong>Model:</strong> configurable (default <code>tts-1</code>)</li>
+      <li><strong>Voice:</strong> configurable (default <code>onyx</code>)</li>
+      <li><strong>Response format:</strong> <code>mp3</code></li>
+      <li><strong>Output path:</strong> <code>static/articles/{id}/video/audio/segment_{i}.mp3</code></li>
+      <li>Status updates to <code>running:audio:{i}/{n}</code> after each segment</li>
+    </ul>
 
-    <h4>Step 2: GPT Narration Script</h4>
-    <p>Calls <strong>GPT-4.1-mini</strong> with a system prompt that describes the slides (including prompts and punchlines). Expects a JSON response: <code>{"segments": [...]}</code>. Each segment is validated to contain at least 3 words. If GPT returns unusable data, the system falls back to using the carousel punchlines as narration text. Status: <code>running:script</code>.</p>
+    <h3 id="gen-step3">Step 3: FFmpeg Binary Resolution</h3>
+    <ol class="flow">
+      <li>First tries <code>shutil.which("ffmpeg")</code> to find a system-installed FFmpeg</li>
+      <li>Falls back to <code>imageio_ffmpeg.get_ffmpeg_exe()</code> for the bundled binary</li>
+    </ol>
 
-    <h4>Step 3: TTS Audio Generation</h4>
-    <p>For each narration segment, calls <code>_openai_client.audio.speech.create()</code> with the configured model and voice. Audio files are saved as MP3 to <code>static/articles/{id}/video/audio/segment_{i}.mp3</code>. Status updates: <code>running:audio:{i}/{n}</code>.</p>
+    <h3 id="gen-step4">Step 4: Per-Clip Video Generation</h3>
+    <p>Status updates to <code>running:clip:{i}/{n}</code>. Two rendering modes exist per slide:</p>
 
-    <h4>Step 4: Per-Clip Video Rendering</h4>
-    <p>Status updates: <code>running:clip:{i}/{n}</code>. Two rendering paths exist:</p>
+    <h4>Cinemagraph Mode</h4>
+    <p>Used when a cinemagraph URL exists for the slide. The cinemagraph video is looped (<code>stream_loop -1</code>), scaled and cropped to the target dimensions, and muxed with the audio track. Uses <code>libx264 ultrafast</code> preset. Render FPS is fixed at 12.</p>
 
-    <p><strong>Cinemagraph path:</strong> If a cinemagraph video exists for the slide, loops it with <code>stream_loop -1</code>, scales and crops to the target dimensions, and overlays the audio track. Uses <code>libx264 ultrafast</code> preset.</p>
+    <h4>Ken Burns Mode (Still Image)</h4>
+    <p>Applies an animated zoom-and-pan effect to a still image. The zoom factor is calculated as <code>min(1.0 + zoom_step * 200, 1.3)</code>, where <code>zoom_step</code> is derived from the <code>kb_speed</code> parameter. The image is scaled to <code>zoom_factor</code> times the target dimensions, then cropped with time-varying X/Y offsets creating a smooth pan from bottom-right to top-left. Uses <code>libx264 ultrafast</code> preset with <code>-tune stillimage</code>.</p>
 
-    <p><strong>Ken Burns path:</strong> For still images, applies an animated zoom-and-pan effect. The image is scaled to <code>zoom_factor</code> times the target dimensions, then cropped with time-varying X/Y offsets to create smooth pan motion. Uses <code>libx264 ultrafast</code> preset with <code>tune=stillimage</code>.</p>
+    <h4>Audio Duration Probing</h4>
+    <p>Audio duration is probed via <code>ffprobe</code> (with an <code>ffmpeg -i</code> fallback). The video clip duration is set to the audio duration plus 0.3 seconds of padding.</p>
 
-    <div class="callout callout-info">
-      The <code>render_fps</code> is fixed at 12 internally regardless of the output <code>fps</code> setting. The output FPS is achieved during the final encoding stage.
-    </div>
-
-    <h4>Step 5: Concatenation</h4>
-    <p>Writes a <code>concat.txt</code> file listing all per-slide clips, then runs:</p>
+    <h3 id="gen-step5">Step 5: Concatenation</h3>
+    <p>Writes a <code>concat.txt</code> file listing all per-slide clips, then runs the FFmpeg concat demuxer:</p>
     <pre>ffmpeg -f concat -safe 0 -i concat.txt -c copy output.mp4</pre>
     <p>Status: <code>running:final</code>.</p>
 
-    <h4>Step 6: Speed Adjustment</h4>
-    <p>If <code>speed_factor != 1.0</code>, applies FFmpeg filters:</p>
+    <h3 id="gen-step5b">Step 5b: Speed Adjustment</h3>
+    <p>If <code>speed_factor != 1.0</code>, the concatenated video is re-encoded with FFmpeg filters:</p>
     <ul>
-      <li>Video: <code>setpts=PTS/{factor}</code></li>
-      <li>Audio: <code>atempo={factor}</code></li>
+      <li>Video filter: <code>setpts=PTS/{speed_factor}</code></li>
+      <li>Audio filter: <code>atempo={speed_factor}</code></li>
     </ul>
 
-    <h4>Step 7: GCS Upload</h4>
-    <p>Uploads the final video to GCS at path <code>articles/{id}/video/narrated_{ts}.mp4</code>. Falls back to a local static file path if GCS is not configured.</p>
-
-    <h4>Step 8: Save Run History</h4>
-    <p>Builds a run object with <code>ts</code>, <code>ts_label</code>, <code>url</code>, <code>params</code>, <code>segments</code>, and <code>cinemagraph_slides</code>. Prepends it to the runs array. Also updates the legacy fields <code>video_narrated_url</code> and <code>video_narrated_script</code>. Sets status to <code>NULL</code>.</p>
-
-    <h4>Step 9: Cleanup</h4>
-    <p>Persists the generation log to the database (capped at 65 KB) and uploads it to GCS. Writes an activity log entry. Deletes all temporary files (audio segments, video clips, concat file).</p>
-
-    <h3 id="gen-stop">Stop Route</h3>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/stop-narrated-video</code></p>
-    <p>Sets <code>video_narrated_status</code> to <code>NULL</code>. The worker thread continues running in the background but the frontend stops polling and ignores any further updates.</p>
+    <h3 id="gen-step6">Step 6: Upload to GCS</h3>
+    <ul>
+      <li><strong>GCS path:</strong> <code>articles/{article_id}/video/narrated_{ts}.mp4</code></li>
+      <li>Falls back to a local static file URL if GCS is not configured</li>
+      <li>The generation log is also uploaded to GCS</li>
+      <li>A run history object is built (with <code>ts</code>, <code>ts_label</code>, <code>url</code>, <code>params</code>, <code>segments</code>, <code>cinemagraph_slides</code>) and prepended to the <code>video_narrated_runs</code> array</li>
+      <li>Legacy fields <code>video_narrated_url</code> and <code>video_narrated_script</code> are also updated</li>
+      <li>Status is set to <code>NULL</code> (idle) upon completion</li>
+      <li>Temporary files (audio segments, video clips, concat file) are deleted</li>
+    </ul>
 
     <!-- ================================================================ -->
-    <h2 id="run-visibility">4. Run Visibility</h2>
+    <h2 id="api-routes">4. API Routes</h2>
 
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/toggle-narrated-run-visibility</code></p>
-    <p>Body: <code>{"ts": &lt;int&gt;, "hidden": &lt;bool&gt;}</code></p>
-    <p>Adds or removes the given timestamp from the <code>narrated_hidden_runs_{article_id}</code> JSON array in <code>site_settings</code>. Hidden runs are moved from the main accordion to the &ldquo;Past Videos&rdquo; section in the frontend.</p>
+    <h3 id="routes-core">Core Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Route</th><th>Purpose</th></tr>
+      <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/video-data</code></td><td>Fetch current video generation state (status, runs, log URL)</td></tr>
+      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/generate-narrated-video</code></td><td>Start video generation with config in JSON body</td></tr>
+      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/stop-narrated-video</code></td><td>Stop generation (sets status to NULL)</td></tr>
+      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/toggle-narrated-run-visibility</code></td><td>Hide or show a specific run by timestamp</td></tr>
+      <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/component-log/narrated</code></td><td>Retrieve the full generation log text</td></tr>
+    </table>
 
-    <!-- ================================================================ -->
-    <h2 id="social-instagram">5. Social: Instagram Reels</h2>
-
-    <h3>Worker: <code>_post_narrated_reel_worker</code></h3>
-    <ol class="flow">
-      <li>Create Reel container via IG Graph API with <code>media_type=REELS</code></li>
-      <li>Poll container status until <code>FINISHED</code> (5-minute deadline, 5&ndash;30 second intervals)</li>
-      <li>Publish via <code>media_publish</code> endpoint</li>
-      <li>If an error occurs during publish, verify by checking recent posts</li>
-      <li>Fetch permalink and store <code>media_id</code></li>
-    </ol>
-
-    <h3>Routes</h3>
+    <h3 id="routes-instagram">Instagram Reel Routes</h3>
     <table>
       <tr><th>Method</th><th>Route</th><th>Body / Query</th><th>Purpose</th></tr>
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/post-narrated-to-instagram</code></td><td><code>{video_url, caption, run_ts}</code></td><td>Start posting Reel</td></tr>
       <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/narrated-ig-status</code></td><td><code>?ts=</code></td><td>Poll status: <code>{status, result, history}</code></td></tr>
       <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/check-narrated-ig-post</code></td><td><code>?ts=</code></td><td>Check if post is still live via Graph API</td></tr>
-      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/edit-narrated-ig-caption</code></td><td><code>{caption, run_ts}</code></td><td>Edit caption on live post</td></tr>
+      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/edit-narrated-ig-caption</code></td><td><code>{caption, run_ts}</code></td><td>Edit caption on live post via IG Graph API</td></tr>
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/archive-narrated-ig-post</code></td><td><code>{run_ts}</code></td><td>Archive post record locally</td></tr>
     </table>
 
-    <!-- ================================================================ -->
-    <h2 id="social-youtube">6. Social: YouTube Shorts</h2>
-
-    <h3>Worker: <code>_upload_to_youtube_worker</code></h3>
-    <ol class="flow">
-      <li>Download video to a temporary file</li>
-      <li>Refresh OAuth access token using <code>YOUTUBE_REFRESH_TOKEN</code></li>
-      <li>Perform resumable upload to YouTube Data API v3</li>
-      <li>Metadata: <code>tags=["stamps","philately","shorts"]</code>, <code>categoryId="26"</code>, <code>privacyStatus="public"</code></li>
-    </ol>
-
-    <h3>Routes</h3>
-    <table>
-      <tr><th>Method</th><th>Route</th><th>Body / Query</th><th>Purpose</th></tr>
-      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/post-to-youtube</code></td><td><code>{video_url, title, description, run_ts}</code></td><td>Start YouTube upload</td></tr>
-      <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/youtube-status</code></td><td><code>?ts=</code></td><td>Poll upload status</td></tr>
-    </table>
-
-    <!-- ================================================================ -->
-    <h2 id="social-facebook">7. Social: Facebook</h2>
-
-    <h3>Worker: <code>_post_narrated_fb_worker</code></h3>
-    <p>Posts the video using the <code>file_url</code> parameter, which allows Facebook to fetch the video directly from GCS.</p>
-
-    <h3>Routes</h3>
+    <h3 id="routes-facebook">Facebook Routes</h3>
     <table>
       <tr><th>Method</th><th>Route</th><th>Body / Query</th><th>Purpose</th></tr>
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/post-narrated-to-facebook</code></td><td><code>{video_url, caption, run_ts}</code></td><td>Start posting video</td></tr>
       <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/narrated-fb-status</code></td><td><code>?ts=</code></td><td>Poll status</td></tr>
       <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/check-narrated-fb-post</code></td><td><code>?ts=</code></td><td>Check if post still live</td></tr>
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/archive-narrated-fb-post</code></td><td><code>{run_ts}</code></td><td>Archive post record locally</td></tr>
-      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/delete-narrated-fb-post</code></td><td><code>{run_ts}</code></td><td>Delete from Facebook, then archive locally</td></tr>
+      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/delete-narrated-fb-post</code></td><td><code>{run_ts}</code></td><td>Delete from Facebook via <code>DELETE /{media_id}</code>, then archive locally</td></tr>
     </table>
 
-    <!-- ================================================================ -->
-    <h2 id="social-x">8. Social: X (Twitter)</h2>
-
-    <h3>Worker: <code>_post_narrated_x_worker</code></h3>
-    <ol class="flow">
-      <li>Download video to a temporary file</li>
-      <li><strong>INIT</strong> &mdash; Start chunked upload session</li>
-      <li><strong>APPEND</strong> &mdash; Upload chunks (5 MB each)</li>
-      <li><strong>FINALIZE</strong> &mdash; Complete the upload</li>
-      <li><strong>STATUS</strong> &mdash; Poll until <code>"succeeded"</code> (5-minute timeout)</li>
-      <li>Create tweet with <code>media_ids</code></li>
-    </ol>
-    <p>Uses OAuth 1.0a authentication via <code>_x_auth()</code>.</p>
-
-    <div class="callout callout-warn">
-      <strong>X video duration limit:</strong> X imposes a 120-second video duration limit. The frontend checks duration and shows a warning instead of the post button if exceeded.
-    </div>
-
-    <h3>Routes</h3>
+    <h3 id="routes-youtube">YouTube Routes</h3>
     <table>
       <tr><th>Method</th><th>Route</th><th>Body / Query</th><th>Purpose</th></tr>
-      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/post-narrated-to-x</code></td><td><code>{video_url, caption, run_ts}</code></td><td>Start posting tweet</td></tr>
+      <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/youtube-connect</code></td><td>&mdash;</td><td>Starts OAuth flow (redirects to Google consent screen)</td></tr>
+      <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/youtube-oauth-callback</code></td><td>&mdash;</td><td>OAuth callback, stores refresh token in site_settings</td></tr>
+      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/post-to-youtube</code></td><td><code>{video_url, title, description, run_ts}</code></td><td>Start YouTube upload</td></tr>
+    </table>
+
+    <h3 id="routes-x">X (Twitter) Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Route</th><th>Body / Query</th><th>Purpose</th></tr>
+      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/post-narrated-to-x</code></td><td><code>{video_url, caption, run_ts}</code></td><td>Start posting tweet with video</td></tr>
       <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/narrated-x-status</code></td><td><code>?ts=</code></td><td>Poll status</td></tr>
       <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/check-narrated-x-post</code></td><td><code>?ts=</code></td><td>Check if tweet still live</td></tr>
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/archive-narrated-x-post</code></td><td><code>{run_ts}</code></td><td>Archive post record locally</td></tr>
-      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/delete-narrated-x-post</code></td><td><code>{run_ts}</code></td><td>Delete tweet, then archive locally</td></tr>
+      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/delete-narrated-x-post</code></td><td><code>{run_ts}</code></td><td>Delete tweet via <code>DELETE /2/tweets/{tweet_id}</code>, then archive locally</td></tr>
     </table>
 
-    <!-- ================================================================ -->
-    <h2 id="social-threads">9. Social: Threads</h2>
-
-    <h3>Worker: <code>_post_narrated_threads_worker</code></h3>
-    <ol class="flow">
-      <li>Create video container with <code>media_type=VIDEO</code></li>
-      <li>Poll container status until <code>FINISHED</code> (5-minute deadline, 5-second intervals)</li>
-      <li>Publish via <code>threads_publish</code> endpoint</li>
-      <li>Fetch permalink</li>
-    </ol>
-
-    <div class="callout callout-info">
-      Threads caption limit is <strong>500 characters</strong>.
-    </div>
-
-    <h3>Routes</h3>
+    <h3 id="routes-threads">Threads Routes</h3>
     <table>
       <tr><th>Method</th><th>Route</th><th>Body / Query</th><th>Purpose</th></tr>
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/post-narrated-to-threads</code></td><td><code>{video_url, caption, run_ts}</code></td><td>Start posting video</td></tr>
@@ -382,43 +330,17 @@
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/archive-narrated-threads-post</code></td><td><code>{run_ts}</code></td><td>Archive post record locally</td></tr>
     </table>
 
-    <!-- ================================================================ -->
-    <h2 id="social-pinterest">10. Social: Pinterest</h2>
-
-    <h3>Worker: <code>_post_narrated_pinterest_worker</code></h3>
-    <ol class="flow">
-      <li>Register media upload with <code>media_type=video</code></li>
-      <li>Download video to temporary file</li>
-      <li>Upload to S3 via multipart form (using <code>upload_params</code> from registration)</li>
-      <li>Poll media status until <code>"succeeded"</code> (~7.5 minute timeout)</li>
-      <li>Create video pin with <code>source_type=video_id</code></li>
-    </ol>
-
-    <h3>Routes</h3>
+    <h3 id="routes-pinterest">Pinterest Routes</h3>
     <table>
       <tr><th>Method</th><th>Route</th><th>Body / Query</th><th>Purpose</th></tr>
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/post-narrated-to-pinterest</code></td><td><code>{video_url, caption, run_ts}</code></td><td>Start posting pin</td></tr>
       <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/narrated-pinterest-status</code></td><td><code>?ts=</code></td><td>Poll status</td></tr>
       <tr><td><span class="method-badge get">GET</span></td><td><code>/admin/articles/&lt;id&gt;/check-narrated-pinterest-post</code></td><td><code>?ts=</code></td><td>Check if pin still live</td></tr>
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/archive-narrated-pinterest-post</code></td><td><code>{run_ts}</code></td><td>Archive post record locally</td></tr>
-      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/delete-narrated-pinterest-post</code></td><td><code>{run_ts}</code></td><td>Delete pin from Pinterest, then archive locally</td></tr>
+      <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/delete-narrated-pinterest-post</code></td><td><code>{run_ts}</code></td><td>Delete pin via <code>DELETE /pins/{pin_id}</code>, then archive locally</td></tr>
     </table>
 
-    <!-- ================================================================ -->
-    <h2 id="social-tiktok">11. Social: TikTok</h2>
-
-    <h3>Worker: <code>_post_narrated_tiktok_worker</code></h3>
-    <ol class="flow">
-      <li>Initialize upload via Content Posting API with <code>PULL_FROM_URL</code> source</li>
-      <li>Poll <code>publish/status/fetch</code> until <code>PUBLISH_COMPLETE</code> (5-minute timeout)</li>
-    </ol>
-    <p>Privacy level: <code>PUBLIC_TO_EVERYONE</code>.</p>
-
-    <div class="callout callout-warn">
-      <strong>TikTok caption limit:</strong> 150 characters. Deletion must be done directly on TikTok (no API delete endpoint), then archived locally.
-    </div>
-
-    <h3>Routes</h3>
+    <h3 id="routes-tiktok">TikTok Routes</h3>
     <table>
       <tr><th>Method</th><th>Route</th><th>Body / Query</th><th>Purpose</th></tr>
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/post-narrated-to-tiktok</code></td><td><code>{video_url, caption, run_ts}</code></td><td>Start posting video</td></tr>
@@ -426,21 +348,7 @@
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/archive-narrated-tiktok-post</code></td><td><code>{run_ts}</code></td><td>Archive post record locally</td></tr>
     </table>
 
-    <!-- ================================================================ -->
-    <h2 id="social-linkedin">12. Social: LinkedIn</h2>
-
-    <h3>Worker: <code>_post_narrated_linkedin_worker</code></h3>
-    <ol class="flow">
-      <li>Download video to temporary file</li>
-      <li>Initialize upload via <code>videos?action=initializeUpload</code></li>
-      <li>Upload video binary via PUT request</li>
-      <li>Finalize upload</li>
-      <li>Poll video status until <code>AVAILABLE</code> (5-minute timeout)</li>
-      <li>Create post with <code>content.media.id</code> set to the video URN</li>
-    </ol>
-    <p>API version: <code>LinkedIn-Version: 202502</code>. Author: <code>urn:li:organization:{org_id}</code>.</p>
-
-    <h3>Routes</h3>
+    <h3 id="routes-linkedin">LinkedIn Routes</h3>
     <table>
       <tr><th>Method</th><th>Route</th><th>Body / Query</th><th>Purpose</th></tr>
       <tr><td><span class="method-badge post">POST</span></td><td><code>/admin/articles/&lt;id&gt;/post-narrated-to-linkedin</code></td><td><code>{video_url, caption, run_ts}</code></td><td>Start posting video</td></tr>
@@ -451,7 +359,120 @@
     </table>
 
     <!-- ================================================================ -->
-    <h2 id="frontend">13. Frontend Architecture</h2>
+    <h2 id="social-posting">5. Social Media Posting &mdash; Platform Details</h2>
+
+    <h3 id="social-instagram">Instagram (Reel)</h3>
+    <p><strong>Worker:</strong> <code>_post_narrated_reel_worker</code></p>
+    <ol class="flow">
+      <li>Create Reel container via IG Graph API with <code>media_type=REELS</code>, passing <code>video_url</code> and <code>caption</code></li>
+      <li>Poll container status until <code>FINISHED</code> (5-minute deadline, 5&ndash;30 second polling intervals)</li>
+      <li>Publish the container via the <code>media_publish</code> endpoint</li>
+      <li>If publish returns an error, check recent posts to verify whether the Reel actually went through (fallback verification)</li>
+      <li>Fetch permalink and store <code>media_id</code> in site_settings</li>
+    </ol>
+    <p><strong>Caption limit:</strong> 2,200 characters. Supports caption editing on live posts via the IG Graph API.</p>
+
+    <h3 id="social-facebook">Facebook</h3>
+    <p><strong>Worker:</strong> <code>_post_narrated_fb_worker</code></p>
+    <ul>
+      <li>Posts via <code>POST /{FB_PAGE_ID}/videos</code> with the <code>file_url</code> parameter (Facebook fetches the video directly from GCS)</li>
+      <li>Single API call &mdash; no container/poll pattern needed</li>
+      <li>Supports delete via <code>DELETE /{media_id}</code></li>
+    </ul>
+
+    <h3 id="social-youtube">YouTube Shorts</h3>
+    <p><strong>Worker:</strong> <code>_upload_to_youtube_worker</code></p>
+    <p>Requires an OAuth refresh token stored in <code>site_settings</code> as <code>youtube_refresh_token</code>.</p>
+
+    <h4>OAuth Flow</h4>
+    <ol class="flow">
+      <li><code>GET /admin/youtube-connect</code> &rarr; redirects to Google consent screen</li>
+      <li>User authorises &rarr; callback to <code>GET /admin/youtube-oauth-callback</code></li>
+      <li>Refresh token stored in <code>site_settings</code></li>
+    </ol>
+
+    <h4>Upload Steps</h4>
+    <ol class="flow">
+      <li>Refresh the access token using the stored refresh token</li>
+      <li>Download the video to a temporary file</li>
+      <li>Perform a resumable upload to YouTube Data API v3</li>
+      <li>Metadata: <code>tags=["stamps", "philately", "shorts"]</code>, <code>categoryId="26"</code> (Howto &amp; Style), <code>privacyStatus="public"</code>, not made for kids</li>
+    </ol>
+    <p><strong>Result URL format:</strong> <code>https://www.youtube.com/shorts/{video_id}</code></p>
+
+    <h3 id="social-x">X (Twitter)</h3>
+    <p><strong>Worker:</strong> <code>_post_narrated_x_worker</code></p>
+    <p><strong>Auth:</strong> OAuth 1.0a via <code>_x_auth()</code></p>
+    <ol class="flow">
+      <li>Download video to a temporary file</li>
+      <li><strong>INIT</strong> &mdash; Start chunked upload session</li>
+      <li><strong>APPEND</strong> &mdash; Upload chunks (5 MB each)</li>
+      <li><strong>FINALIZE</strong> &mdash; Complete the upload</li>
+      <li><strong>STATUS</strong> &mdash; Poll until <code>"succeeded"</code> (5-minute timeout)</li>
+      <li>Create tweet with <code>media_ids</code></li>
+    </ol>
+    <p><strong>Caption limit:</strong> 280 characters. Supports delete via <code>DELETE /2/tweets/{tweet_id}</code>.</p>
+
+    <div class="callout callout-warn">
+      <strong>X video duration limit:</strong> X imposes a 120-second video duration limit. The frontend checks duration and shows a warning instead of the post button if exceeded.
+    </div>
+
+    <h3 id="social-threads">Threads</h3>
+    <p><strong>Worker:</strong> <code>_post_narrated_threads_worker</code></p>
+    <ol class="flow">
+      <li>Create video container with <code>media_type=VIDEO</code>, passing <code>video_url</code> and <code>text</code> (truncated to 500 chars)</li>
+      <li>Poll container status until <code>FINISHED</code> (5-minute deadline, 5-second intervals)</li>
+      <li>Publish via <code>threads_publish</code> endpoint</li>
+      <li>Fetch permalink</li>
+    </ol>
+    <p><strong>Caption limit:</strong> 500 characters.</p>
+
+    <h3 id="social-pinterest">Pinterest</h3>
+    <p><strong>Worker:</strong> <code>_post_narrated_pinterest_worker</code></p>
+    <ol class="flow">
+      <li>Register media upload via <code>POST /media</code> with <code>media_type=video</code></li>
+      <li>Download video to a temporary file</li>
+      <li>Upload to Pinterest&rsquo;s S3 endpoint via multipart form (using <code>upload_params</code> from the registration response)</li>
+      <li>Poll media status until <code>"succeeded"</code> (~7.5 minute timeout)</li>
+      <li>Create video pin via <code>POST /pins</code> with <code>board_id</code>, <code>title</code>, <code>description</code>, <code>media_source=video_id</code>, and article link</li>
+    </ol>
+    <p>Supports delete via <code>DELETE /pins/{pin_id}</code>.</p>
+
+    <h3 id="social-tiktok">TikTok</h3>
+    <p><strong>Worker:</strong> <code>_post_narrated_tiktok_worker</code></p>
+    <ul>
+      <li>Uses the Content Posting API with <code>PULL_FROM_URL</code> source</li>
+      <li>Initialises via <code>POST /post/publish/video/init/</code> with <code>post_info</code> containing: title (150 char limit), privacy level <code>PUBLIC_TO_EVERYONE</code>, duet/comment/stitch enabled</li>
+      <li>Polls <code>POST /post/publish/status/fetch/</code> until <code>PUBLISH_COMPLETE</code> (5-minute timeout)</li>
+    </ul>
+
+    <div class="callout callout-warn">
+      <strong>TikTok caption limit:</strong> 150 characters. There is no API delete endpoint &mdash; deletion must be done directly on TikTok, then the post record can be archived locally.
+    </div>
+
+    <h3 id="social-linkedin">LinkedIn</h3>
+    <p><strong>Worker:</strong> <code>_post_narrated_linkedin_worker</code></p>
+    <p><strong>Author:</strong> <code>urn:li:organization:{LINKEDIN_ORG_ID}</code></p>
+    <ol class="flow">
+      <li>Download video to a temporary file</li>
+      <li>Initialize upload via <code>POST /videos?action=initializeUpload</code></li>
+      <li>Upload binary via PUT request to the upload URL</li>
+      <li>Poll video status until <code>AVAILABLE</code> (5-minute timeout)</li>
+      <li>Create post via <code>POST /posts</code> with the video URN</li>
+    </ol>
+    <p><strong>Caption limit:</strong> 3,000 characters. Visibility: <code>PUBLIC</code>, distribution: <code>MAIN_FEED</code>. Supports delete.</p>
+
+    <!-- ================================================================ -->
+    <h2 id="run-visibility">6. Run Visibility Toggle</h2>
+
+    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/toggle-narrated-run-visibility</code></p>
+    <p>Body: <code>{"ts": &lt;int&gt;, "hidden": &lt;bool&gt;}</code></p>
+    <p>Adds or removes the given timestamp from the <code>narrated_hidden_runs_{article_id}</code> JSON array in <code>site_settings</code>. Hidden runs are moved from the main accordion to the &ldquo;Past Videos&rdquo; section in the frontend. The run data itself is not deleted.</p>
+
+    <!-- ================================================================ -->
+    <h2 id="frontend">7. Frontend Architecture</h2>
+
+    <p><strong>Template:</strong> <code>templates/article_edit.html</code></p>
 
     <h3 id="fe-html">HTML Structure</h3>
     <p>All narrated video UI lives within the Social Media Content panel on the article edit page.</p>
@@ -461,7 +482,6 @@
       <tr><td>Card container</td><td><code>#narrated-video-card</code></td><td>Main card inside Social Media Content panel</td></tr>
       <tr><td>Locked button</td><td><code>#narrated-locked-btn</code></td><td>Shown until carousel images exist</td></tr>
       <tr><td>Generate button</td><td><code>#narrated-btn</code></td><td>Shown after unlock (carousel images present)</td></tr>
-      <tr><td>Kebab dropdown</td><td>&mdash;</td><td>Menu with Generate, Settings, View Logs options</td></tr>
       <tr><td>Status area</td><td><code>#narrated-status</code></td><td>Spinner, progress bar, cancel button during generation</td></tr>
       <tr><td>Runs accordion</td><td><code>#narrated-runs-accordion</code></td><td>Main list of visible runs</td></tr>
       <tr><td>Past Videos wrapper</td><td><code>#narrated-past-wrap</code></td><td>Container for hidden runs section</td></tr>
@@ -473,15 +493,14 @@
     <h3 id="fe-js">Key JS Functions</h3>
 
     <h4><code>buildRunItem(run, expandIt)</code></h4>
-    <p>The largest frontend function. Builds a complete accordion item for a single run, including:</p>
+    <p>The core frontend function. NV runs are built dynamically via JS template literals. Builds a complete accordion item for a single run, including:</p>
     <ul>
-      <li><strong>Header:</strong> Badges (format, voice, speed, cinemagraph count), timestamp, social media status icons (8 platforms), eye icon for hide/show toggle</li>
+      <li><strong>Header:</strong> Badges (format, voice, speed, cinemagraph count), timestamp, social media status icons (all 8 platforms), eye icon for hide/show toggle</li>
       <li><strong>Icons:</strong> IG, YT, FB, X use inline SVGs; Threads, Pinterest, TikTok, LinkedIn use Font Awesome brand icons</li>
-      <li><strong>Eye icon:</strong> Uses an eye-off SVG, triggers hide/show toggle</li>
       <li><strong>Body:</strong> Video Details collapse (params table), <code>&lt;video&gt;</code> element, Narration Script collapse (ordered list of segments), per-platform posting sections</li>
       <li><strong>Platform sections:</strong> Each wrapped in <code>&lt;div data-smc-net="..."&gt;</code> for network visibility toggling</li>
       <li><strong>Per-platform UI:</strong> Caption textarea + character counter + &ldquo;Copy from Instagram&rdquo; link + post button + status area + result area + Past Posts collapse</li>
-      <li><strong>X section special:</strong> Duration check; if video exceeds 120 seconds, shows a warning instead of the post button</li>
+      <li><strong>X section special:</strong> Duration check &mdash; if video exceeds 120 seconds, shows a warning instead of the post button</li>
     </ul>
 
     <h4><code>narratedGenerate()</code></h4>
@@ -491,15 +510,15 @@
     <p>POSTs to the stop endpoint, then calls <code>narratedFinish()</code> to reset the UI.</p>
 
     <h4><code>loadNarratedRuns(runs, hiddenTs)</code></h4>
-    <p>Called on page load. Builds all accordion items, restores posting state for each platform on each run, fetches YouTube status, and applies SMC (Social Media Content) visibility preferences.</p>
+    <p>Called on page load. Builds all accordion items, restores posting state for each platform on each run, fetches YouTube status, and applies SMC visibility preferences.</p>
 
     <h4><code>addNarratedRun(run)</code></h4>
-    <p>Called after a successful generation. Collapses all existing accordion items, inserts the new run at the top (expanded), and applies SMC preferences.</p>
+    <p>Called after a successful generation. Collapses all existing accordion items, inserts the new run at the top (expanded), and applies SMC preferences. Caption auto-population occurs after run insertion.</p>
 
     <h4><code>hideNarratedRun(ts)</code> / <code>restoreNarratedRun(ts)</code></h4>
     <p>Moves the DOM accordion item between the main accordion and the Past Videos accordion. POSTs the visibility toggle to the server.</p>
 
-    <h3 id="fe-polling">Polling &amp; Status Mapping</h3>
+    <h3 id="fe-polling">Polling &amp; Status</h3>
 
     <h4><code>_narratedApplyStatus(status, nSlides)</code></h4>
     <p>Maps the <code>video_narrated_status</code> string to a progress percentage:</p>
@@ -512,17 +531,17 @@
     </table>
 
     <h4><code>_narratedPoll()</code></h4>
-    <p>Polls the <code>/video-data</code> endpoint every <strong>20 seconds</strong> while generation is in progress. On completion, calls <code>addNarratedRun()</code> to insert the new run.</p>
+    <p>Polls the <code>/video-data</code> endpoint every <strong>20 seconds</strong> while generation is in progress. On completion (status is <code>NULL</code> and runs array has a new entry), calls <code>addNarratedRun()</code> to insert the new run.</p>
 
     <h3 id="fe-posting-pattern">Per-Platform Posting Pattern</h3>
-    <p>All 8 platforms follow the same JavaScript function pattern:</p>
+    <p>All 8 platforms follow the same JavaScript function pattern. Status polling per-platform runs via <code>setInterval</code>:</p>
 
     <table>
       <tr><th>Function</th><th>Purpose</th></tr>
       <tr><td><code>postNarratedTo{Platform}(ts, videoUrl)</code></td><td>Read caption from textarea, disable post button, show spinner, POST to server, start polling</td></tr>
       <tr><td><code>pollNv{Platform}Status(ts)</code></td><td>Poll every 5 seconds. On <code>done:</code> prefix &rarr; show done UI. On <code>error:</code> prefix &rarr; show error</td></tr>
       <tr><td><code>showNv{Platform}Running(ts, statusStr)</code></td><td>Display spinner + progress indicator + status text</td></tr>
-      <tr><td><code>showNv{Platform}Done(ts, permalink)</code></td><td>Set platform icon to live color, transform button to &ldquo;View on {Platform}&rdquo;, add Check/Archive buttons</td></tr>
+      <tr><td><code>showNv{Platform}Done(ts, permalink)</code></td><td>Set platform icon to live colour, transform button to &ldquo;View on {Platform}&rdquo;, add Check/Archive buttons</td></tr>
       <tr><td><code>showNv{Platform}Error(ts, msg)</code></td><td>Display <code>alert-danger</code> with error message</td></tr>
       <tr><td><code>restoreNv{Platform}State(ts)</code></td><td>On page load: fetch status from server, restore UI to appropriate state</td></tr>
     </table>
@@ -530,10 +549,10 @@
     <h3 id="fe-caption">Captions &amp; Limits</h3>
 
     <h4>Caption Auto-Fill</h4>
-    <p>On page load, empty caption fields for Threads, Pinterest, LinkedIn, and X are automatically filled with a <code>defaultCaption</code> consisting of the article title + article URL.</p>
+    <p>On <code>DOMContentLoaded</code> and after new run insertion, empty caption fields for Threads, Pinterest, LinkedIn, and X are automatically populated with a <code>defaultCaption</code> consisting of the article title + article URL.</p>
 
     <h4>Copy from Instagram</h4>
-    <p>Each platform section includes a &ldquo;Copy from Instagram&rdquo; link that copies the Instagram caption textarea content into the target platform&rsquo;s textarea, truncated to the platform&rsquo;s character limit.</p>
+    <p>Each platform section includes a &ldquo;Copy from Instagram&rdquo; link that copies the Instagram caption textarea content into the target platform&rsquo;s textarea, truncated to that platform&rsquo;s character limit.</p>
 
     <h4>Character Limits by Platform</h4>
     <table>
@@ -549,77 +568,15 @@
       <tr><td>LinkedIn</td><td>Caption</td><td>3,000</td></tr>
     </table>
 
-    <!-- ================================================================ -->
-    <h2 id="gcs-storage">14. GCS Storage Structure</h2>
-
-    <pre>articles/{article_id}/video/
-  narrated_{timestamp}.mp4            — Final output video
-  audio/segment_{N}.mp3               — TTS audio per slide (cleaned up after generation)
-  clips/clip_{N}.mp4                  — Per-slide video clips (cleaned up after generation)
-  concat.txt                          — FFmpeg concat list (cleaned up after generation)
-  narrated_run_{timestamp}.log        — Generation log file</pre>
-
-    <div class="callout callout-info">
-      Temporary files (audio segments, video clips, concat file) are deleted after successful generation. Only the final <code>.mp4</code> and <code>.log</code> files persist in GCS.
-    </div>
-
-    <!-- ================================================================ -->
-    <h2 id="api-dependencies">15. API Dependencies</h2>
-
-    <table>
-      <tr><th>API</th><th>Used For</th><th>Auth Env Vars</th></tr>
-      <tr><td>OpenAI GPT-4.1-mini</td><td>Narration script generation</td><td><code>OPENAI_API_KEY</code></td></tr>
-      <tr><td>OpenAI TTS</td><td>Audio generation (speech synthesis)</td><td><code>OPENAI_API_KEY</code></td></tr>
-      <tr><td>FFmpeg</td><td>Video rendering, concatenation, speed adjustment</td><td><code>imageio_ffmpeg</code> or system install</td></tr>
-      <tr><td>Meta Graph API (IG)</td><td>Instagram Reels posting</td><td><code>IG_USER_ID</code>, <code>IG_ACCESS_TOKEN</code></td></tr>
-      <tr><td>YouTube Data API v3</td><td>YouTube Shorts upload</td><td><code>YOUTUBE_CLIENT_ID</code>, <code>YOUTUBE_CLIENT_SECRET</code>, <code>YOUTUBE_REFRESH_TOKEN</code></td></tr>
-      <tr><td>Meta Graph API (FB)</td><td>Facebook video posting</td><td><code>FB_PAGE_ID</code>, <code>FB_PAGE_TOKEN</code></td></tr>
-      <tr><td>X API v2</td><td>Tweet creation + chunked video upload</td><td><code>X_API_KEY</code>, <code>X_API_SECRET</code>, <code>X_ACCESS_TOKEN</code>, <code>X_ACCESS_TOKEN_SECRET</code></td></tr>
-      <tr><td>Threads API</td><td>Threads video posting</td><td><code>THREADS_USER_ID</code>, <code>THREADS_ACCESS_TOKEN</code></td></tr>
-      <tr><td>Pinterest API v5</td><td>Video pin creation</td><td><code>PINTEREST_ACCESS_TOKEN</code>, <code>PINTEREST_BOARD_ID</code></td></tr>
-      <tr><td>TikTok Content Posting API</td><td>Video upload via URL pull</td><td><code>TIKTOK_CLIENT_KEY</code>, <code>TIKTOK_CLIENT_SECRET</code>, <code>TIKTOK_ACCESS_TOKEN</code></td></tr>
-      <tr><td>LinkedIn API</td><td>Video post to organization page</td><td><code>LINKEDIN_ACCESS_TOKEN</code>, <code>LINKEDIN_ORG_ID</code></td></tr>
-    </table>
-
-    <!-- ================================================================ -->
-    <h2 id="icon-system">16. Icon System in Accordion Headers</h2>
-
-    <p>Each run&rsquo;s accordion header displays a strip of 8 platform icons indicating social posting status.</p>
-
-    <h3>Icon Types</h3>
-    <table>
-      <tr><th>Platform</th><th>Icon Source</th><th>Default Color</th><th>Live Color</th></tr>
-      <tr><td>Instagram</td><td>Inline SVG</td><td><code>#ccc</code></td><td>Gradient (pink/purple/orange)</td></tr>
-      <tr><td>YouTube</td><td>Inline SVG</td><td><code>#ccc</code></td><td><code>#ff0000</code></td></tr>
-      <tr><td>Facebook</td><td>Inline SVG</td><td><code>#ccc</code></td><td><code>#1877F2</code></td></tr>
-      <tr><td>X</td><td>Inline SVG</td><td><code>#ccc</code></td><td><code>#1D9BF0</code></td></tr>
-      <tr><td>Threads</td><td>Font Awesome brand icon</td><td><code>color:#ccc</code></td><td><code>#000</code></td></tr>
-      <tr><td>Pinterest</td><td>Font Awesome brand icon</td><td><code>color:#ccc</code></td><td><code>#E60023</code></td></tr>
-      <tr><td>TikTok</td><td>Font Awesome brand icon</td><td><code>color:#ccc</code></td><td><code>#000</code></td></tr>
-      <tr><td>LinkedIn</td><td>Font Awesome brand icon</td><td><code>color:#ccc</code></td><td><code>#0A66C2</code></td></tr>
-    </table>
-
-    <h3>Icon Control Functions</h3>
-    <p>Each platform has a pair of JS functions to control icon state:</p>
-    <ul>
-      <li><code>_setNv{Platform}IconLive(ts)</code> &mdash; Sets the icon to its live (colorized) state</li>
-      <li><code>_clearNv{Platform}IconLive(ts)</code> &mdash; Resets the icon to gray</li>
-    </ul>
-    <p>These are called by the <code>showNv{Platform}Done()</code> and <code>restoreNv{Platform}State()</code> functions.</p>
-
-    <!-- ================================================================ -->
-    <h2 id="network-visibility">17. Network Visibility Toggle</h2>
-
+    <h3 id="fe-network-vis">Network Visibility Toggle</h3>
     <p>All platform posting sections in both carousel/cinemagraph and narrated video accordions are wrapped in <code>&lt;div data-smc-net="PLATFORM_KEY"&gt;</code> elements.</p>
-
-    <h3>Mechanism</h3>
     <ul>
       <li><code>applyAllSmcPrefs()</code> reads visibility preferences from <code>localStorage</code> and sets <code>display: none</code> on sections for disabled networks</li>
-      <li>Called after <code>buildRunItem()</code> and <code>loadNarratedRuns()</code></li>
+      <li>Called after <code>buildRunItem()</code>, after new runs are inserted, and on page load</li>
       <li>Each platform can be toggled on/off via the Social Media Content panel header</li>
     </ul>
 
-    <h3>Default Visibility</h3>
+    <h4>Default Visibility</h4>
     <table>
       <tr><th>Platform Key</th><th>Default</th></tr>
       <tr><td><code>instagram</code></td><td>Enabled</td></tr>
@@ -630,6 +587,35 @@
       <tr><td><code>pinterest</code></td><td>Enabled</td></tr>
       <tr><td><code>tiktok</code></td><td><strong>Disabled</strong> (<code>_SMC_DEFAULTS.tiktok = false</code>)</td></tr>
       <tr><td><code>linkedin</code></td><td>Enabled</td></tr>
+    </table>
+
+    <!-- ================================================================ -->
+    <h2 id="env-vars">8. Environment Variables</h2>
+
+    <table>
+      <tr><th>Variable</th><th>Used For</th><th>Notes</th></tr>
+      <tr><td><code>OPENAI_API_KEY</code></td><td>GPT narration script generation + TTS audio synthesis</td><td>Required for video generation</td></tr>
+      <tr><td><code>IG_USER_ID</code></td><td>Instagram posting</td><td>Instagram Business Account ID</td></tr>
+      <tr><td><code>IG_ACCESS_TOKEN</code></td><td>Instagram posting</td><td>Page Access Token (never-expiring, from System User)</td></tr>
+      <tr><td><code>FB_PAGE_ID</code></td><td>Facebook posting</td><td>Facebook Page ID</td></tr>
+      <tr><td><code>FB_PAGE_ACCESS_TOKEN</code></td><td>Facebook posting</td><td>Page Access Token</td></tr>
+      <tr><td colspan="3" style="background:#f0f1f3; font-weight:600;">YouTube uses OAuth &mdash; refresh token stored in <code>site_settings</code> as <code>youtube_refresh_token</code></td></tr>
+      <tr><td><code>X_API_KEY</code></td><td>X (Twitter) posting</td><td>OAuth 1.0a consumer key</td></tr>
+      <tr><td><code>X_API_SECRET</code></td><td>X (Twitter) posting</td><td>OAuth 1.0a consumer secret</td></tr>
+      <tr><td><code>X_ACCESS_TOKEN</code></td><td>X (Twitter) posting</td><td>OAuth 1.0a access token</td></tr>
+      <tr><td><code>X_ACCESS_TOKEN_SECRET</code></td><td>X (Twitter) posting</td><td>OAuth 1.0a access token secret</td></tr>
+      <tr><td><code>THREADS_USER_ID</code></td><td>Threads posting</td><td>Threads User ID</td></tr>
+      <tr><td><code>THREADS_ACCESS_TOKEN</code></td><td>Threads posting</td><td>Threads Access Token</td></tr>
+      <tr><td><code>PINTEREST_ACCESS_TOKEN</code></td><td>Pinterest posting</td><td>Pinterest API access token</td></tr>
+      <tr><td><code>PINTEREST_BOARD_ID</code></td><td>Pinterest posting</td><td>Target board for video pins</td></tr>
+      <tr><td><code>TIKTOK_CLIENT_KEY</code></td><td>TikTok posting</td><td>TikTok app client key</td></tr>
+      <tr><td><code>TIKTOK_CLIENT_SECRET</code></td><td>TikTok posting</td><td>TikTok app client secret</td></tr>
+      <tr><td><code>TIKTOK_ACCESS_TOKEN</code></td><td>TikTok posting</td><td>TikTok access token</td></tr>
+      <tr><td><code>LINKEDIN_ACCESS_TOKEN</code></td><td>LinkedIn posting</td><td>LinkedIn API access token</td></tr>
+      <tr><td><code>LINKEDIN_ORG_ID</code></td><td>LinkedIn posting</td><td>LinkedIn Organisation ID (used as <code>urn:li:organization:{id}</code>)</td></tr>
+      <tr><td><code>GCS_BUCKET_NAME</code></td><td>Video and log storage</td><td>Google Cloud Storage bucket</td></tr>
+      <tr><td><code>GCS_PATH_PREFIX</code></td><td>Storage path prefix</td><td>Optional prefix for GCS object paths</td></tr>
+      <tr><td><code>SITE_URL</code></td><td>Article links in social posts</td><td>Base URL for generating article permalink URLs</td></tr>
     </table>
 
   </main>

@@ -27,7 +27,7 @@
     p code, li code, td code { background: var(--code-bg); padding: 0.1em 0.4em; border-radius: 3px; color: #d63384; }
     table { width: 100%; border-collapse: collapse; font-size: 0.875rem; margin: 1rem 0 1.5rem; }
     th { background: #f0f1f3; font-weight: 600; padding: 0.55rem 0.75rem; border: 1px solid var(--border-color); text-align: left; }
-    td { padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); vertical-top; }
+    td { padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); vertical-align: top; }
     tr:nth-child(even) td { background: #fafafa; }
     .callout { border-left: 4px solid; padding: 0.75rem 1rem; border-radius: 0 6px 6px 0; margin: 1rem 0; font-size: 0.875rem; }
     .callout-info { border-color: #0dcaf0; background: #f0fbff; }
@@ -47,33 +47,42 @@
     <div id="toc-title">Contents</div>
     <div id="toc">
       <a href="#overview">1. Overview</a>
-      <a href="#database-schema" class="toc-sub">2. Database Schema</a>
+      <a href="#database-schema">2. Database Schema</a>
       <a href="#db-articles" class="toc-sub">Articles Table</a>
       <a href="#db-site-settings" class="toc-sub">Site Settings Keys</a>
-      <a href="#image-compositing">3. Image Compositing</a>
+      <a href="#image-generation-pipeline">3. Image Generation Pipeline</a>
+      <a href="#gen-storyboard" class="toc-sub">GPT Storyboard Call</a>
+      <a href="#gen-dalle" class="toc-sub">DALL-E 3 Generation</a>
+      <a href="#gen-style" class="toc-sub">Style Suffix</a>
+      <a href="#gen-storage" class="toc-sub">Storage</a>
+      <a href="#image-compositing">4. Image Compositing</a>
       <a href="#compose-slide" class="toc-sub">compose_carousel_slide()</a>
       <a href="#compute-band-top" class="toc-sub">_compute_max_overlay_band_top()</a>
-      <a href="#generation-pipeline">4. Generation Pipeline</a>
-      <a href="#gen-route" class="toc-sub">Generate Route</a>
-      <a href="#gen-worker" class="toc-sub">Worker Thread</a>
-      <a href="#image-management">5. Image Management Routes</a>
-      <a href="#caption-generation">6. Caption Generation</a>
+      <a href="#caption-generation">5. Caption Generation</a>
+      <a href="#api-routes">6. API Routes</a>
+      <a href="#routes-generation" class="toc-sub">Generation &amp; Management</a>
+      <a href="#routes-instagram" class="toc-sub">Instagram Routes</a>
+      <a href="#routes-facebook" class="toc-sub">Facebook Routes</a>
+      <a href="#routes-x" class="toc-sub">X (Twitter) Routes</a>
+      <a href="#routes-threads" class="toc-sub">Threads Routes</a>
+      <a href="#routes-pinterest" class="toc-sub">Pinterest Routes</a>
+      <a href="#routes-linkedin" class="toc-sub">LinkedIn Routes</a>
       <a href="#social-instagram">7. Social: Instagram</a>
-      <a href="#social-facebook">8. Social: Facebook</a>
-      <a href="#social-x">9. Social: X (Twitter)</a>
-      <a href="#social-threads">10. Social: Threads</a>
-      <a href="#social-pinterest">11. Social: Pinterest</a>
-      <a href="#social-linkedin">12. Social: LinkedIn</a>
-      <a href="#frontend">13. Frontend Architecture</a>
-      <a href="#fe-html" class="toc-sub">HTML Structure</a>
-      <a href="#fe-js" class="toc-sub">Key JS Functions</a>
-      <a href="#fe-polling" class="toc-sub">Polling Pattern</a>
-      <a href="#fe-copy" class="toc-sub">Copy &amp; Auto-Population</a>
-      <a href="#gcs-storage">14. GCS Storage Structure</a>
-      <a href="#settings">15. Settings</a>
-      <a href="#api-dependencies">16. API Dependencies</a>
-      <a href="#error-handling">17. Error Handling</a>
-      <a href="#icon-system">18. Icon System</a>
+      <a href="#social-facebook" class="toc-sub">Facebook</a>
+      <a href="#social-x" class="toc-sub">X (Twitter)</a>
+      <a href="#social-threads" class="toc-sub">Threads</a>
+      <a href="#social-pinterest" class="toc-sub">Pinterest</a>
+      <a href="#social-linkedin" class="toc-sub">LinkedIn</a>
+      <a href="#archive-delete-flow">8. Archive &amp; Delete Flow</a>
+      <a href="#check-live">9. Check If Post Is Still Live</a>
+      <a href="#past-posts-history">10. Past Posts History</a>
+      <a href="#frontend-architecture">11. Frontend Architecture</a>
+      <a href="#fe-network-toggle" class="toc-sub">Network Visibility Toggle</a>
+      <a href="#fe-js-functions" class="toc-sub">Key JS Functions</a>
+      <a href="#fe-polling" class="toc-sub">Polling &amp; SSE</a>
+      <a href="#fe-caption-auto" class="toc-sub">Caption Auto-Population</a>
+      <a href="#fe-icons" class="toc-sub">Icon System</a>
+      <a href="#environment-variables">12. Environment Variables</a>
     </div>
   </nav>
 
@@ -81,25 +90,28 @@
     <h1>Carousel Generator &mdash; Technical Documentation</h1>
     <div class="meta-bar">
       <span><strong>Source:</strong> app.py, templates/article_edit.html</span>
-      <span><strong>Last updated:</strong> 2026-03-21</span>
+      <span><strong>Last updated:</strong> 2026-03-22</span>
     </div>
 
     <!-- ================================================================ -->
     <h2 id="overview">1. Overview</h2>
 
-    <p>The carousel generator creates up to <strong>10 square images</strong> via DALL-E 3 from article content. Each image can have a <strong>punchline</strong> (text overlay) and a per-slide <strong>DALL-E prompt</strong>. Generated images are then available for posting to Instagram, Facebook, X, Threads, Pinterest, and LinkedIn.</p>
+    <p>The carousel generator creates up to <strong>10 square carousel images</strong> via DALL-E 3 from article content. The system breaks article text into scenes using GPT-4.1-mini, generates a DALL-E image for each scene, composites punchline text overlays via Pillow, and then enables posting the finished carousel to <strong>6 social media platforms</strong>: Instagram, Facebook, X (Twitter), Threads, Pinterest, and LinkedIn.</p>
 
     <table>
       <tr><th>Attribute</th><th>Value</th></tr>
-      <tr><td>Max slides</td><td>10</td></tr>
-      <tr><td>Generation time</td><td>~60&ndash;90 seconds</td></tr>
-      <tr><td>Cost per run</td><td>~$0.40</td></tr>
+      <tr><td>Max slides</td><td>10 (active slots indexed 0&ndash;9; archived images stored at index 10+)</td></tr>
+      <tr><td>Generation time</td><td>~60&ndash;90 seconds for a full 10-slide carousel</td></tr>
+      <tr><td>Cost per run</td><td>~$0.40 ($0.04 per DALL-E image)</td></tr>
       <tr><td>DALL-E native size</td><td>1024&times;1024</td></tr>
       <tr><td>Composed output size</td><td>960&times;960 (with punchline text overlays)</td></tr>
+      <tr><td>Storyboard model</td><td>GPT-4.1-mini (max_tokens 3000)</td></tr>
+      <tr><td>Caption model</td><td>GPT-4.1-mini (max_tokens 600)</td></tr>
+      <tr><td>Supported platforms</td><td>Instagram, Facebook, X, Threads, Pinterest, LinkedIn</td></tr>
     </table>
 
     <div class="callout callout-info">
-      Images are generated at 1024&times;1024 by DALL-E 3 and then composed to 960&times;960 with punchline text overlays before posting to social platforms.
+      Images are generated at 1024&times;1024 by DALL-E 3, then composed down to 960&times;960 with punchline text overlays before posting to social platforms. Each platform receives its own composed copy (with platform-specific hint text where applicable).
     </div>
 
     <!-- ================================================================ -->
@@ -110,393 +122,659 @@
 
     <table>
       <tr><th>Column</th><th>Type</th><th>Description</th></tr>
-      <tr><td><code>carousel_images</code></td><td>TEXT</td><td>JSON array of up to 10 image URLs (GCS or local static)</td></tr>
-      <tr><td><code>carousel_prompts</code></td><td>TEXT</td><td>JSON array of per-slide DALL-E prompts</td></tr>
-      <tr><td><code>carousel_punchlines</code></td><td>TEXT</td><td>JSON array of per-slide punchline text strings</td></tr>
-      <tr><td><code>carousel_archived</code></td><td>TEXT</td><td>JSON array of archived image objects</td></tr>
-      <tr><td><code>carousel_ig_post_id</code></td><td>TEXT</td><td>Instagram media ID of current live post</td></tr>
-      <tr><td><code>carousel_ig_permalink</code></td><td>TEXT</td><td>Instagram permalink</td></tr>
-      <tr><td><code>carousel_ig_caption</code></td><td>TEXT</td><td>Posted caption snapshot</td></tr>
+      <tr><td><code>carousel_prompts</code></td><td>TEXT (JSON)</td><td>JSON array of DALL-E prompts. Slots 0&ndash;9 are active; indices 10+ hold archived prompts.</td></tr>
+      <tr><td><code>carousel_images</code></td><td>TEXT (JSON)</td><td>JSON array of image URLs (GCS public URLs or local static paths). Slots 0&ndash;9 are active; 10+ are archived.</td></tr>
+      <tr><td><code>carousel_punchlines</code></td><td>TEXT (JSON)</td><td>JSON array of short caption strings (max ~15 words each) used for text overlay on each slide.</td></tr>
+      <tr><td><code>carousel_style</code></td><td>TEXT</td><td>The DALL-E style suffix that was used for the most recent generation run.</td></tr>
+      <tr><td><code>carousel_created_at</code></td><td>TEXT (JSON)</td><td>JSON array of ISO 8601 timestamps recording when each slide was generated.</td></tr>
+      <tr><td><code>carousel_archived_meta</code></td><td>TEXT (JSON)</td><td>JSON dict keyed by array index (as string). Each value contains <code>archived_at</code> (ISO timestamp) and <code>slot_source</code> (original slot index the image occupied before archiving).</td></tr>
     </table>
-
-    <h3 id="db-site-settings">Site Settings Keys</h3>
-    <p>The <code>site_settings</code> table (key-value store) uses these keys, where <code>{article_id}</code> is the numeric article ID:</p>
-
-    <h4>Generation Status Keys</h4>
-    <table>
-      <tr><th>Key</th><th>Purpose</th></tr>
-      <tr><td><code>carousel_status_{article_id}</code></td><td>Generation progress (e.g., <code>"running:3/10"</code>, <code>"done:10"</code>, <code>"error:..."</code>)</td></tr>
-      <tr><td><code>carousel_result_{article_id}</code></td><td>Final result after generation completes</td></tr>
-      <tr><td><code>carousel_cancel_{article_id}</code></td><td>Cancel flag (<code>"1"</code> to cancel)</td></tr>
-    </table>
-
-    <h4>Per-Platform Post Keys</h4>
-    <p>Each social platform has four keys following this pattern:</p>
-    <pre>{prefix}_status_{article_id}
-{prefix}_result_{article_id}
-{prefix}_post_id_{article_id}   (or _tweet_id_ / _pin_id_)
-{prefix}_history_{article_id}</pre>
-
-    <table>
-      <tr><th>Platform</th><th>Prefix</th><th>ID Key Name</th></tr>
-      <tr><td>Facebook</td><td><code>fb_carousel</code></td><td><code>fb_carousel_post_id_{id}</code></td></tr>
-      <tr><td>X (Twitter)</td><td><code>x_carousel</code></td><td><code>x_carousel_tweet_id_{id}</code></td></tr>
-      <tr><td>Threads</td><td><code>threads_carousel</code></td><td><code>threads_carousel_post_id_{id}</code></td></tr>
-      <tr><td>Pinterest</td><td><code>pinterest_carousel</code></td><td><code>pinterest_carousel_pin_id_{id}</code></td></tr>
-      <tr><td>LinkedIn</td><td><code>linkedin_carousel</code></td><td><code>linkedin_carousel_post_id_{id}</code></td></tr>
-    </table>
-
-    <h4>Global Setting</h4>
-    <table>
-      <tr><th>Key</th><th>Purpose</th></tr>
-      <tr><td><code>carousel_image_style</code></td><td>Global DALL-E style prompt suffix (configurable at <code>/admin/settings</code>)</td></tr>
-    </table>
-
-    <!-- ================================================================ -->
-    <h2 id="image-compositing">3. Image Compositing</h2>
-    <p>Two key functions in <code>app.py</code> handle compositing punchline text overlays onto generated images.</p>
-
-    <h3 id="compose-slide"><code>compose_carousel_slide()</code></h3>
-    <pre>compose_carousel_slide(img_bytes, punchline, slide_index, total_slides, width=960, height=960, band_top=None)</pre>
-    <ul>
-      <li>Takes raw image bytes and composites a punchline text overlay</li>
-      <li>Dark band at the bottom (~92% opacity) with gradient fade above</li>
-      <li>White uppercase text, word-wrapped, left-aligned</li>
-      <li>Yellow "Slide right for more &gt;&gt;&gt;" hint on all slides <strong>except the last</strong></li>
-      <li>Uses <strong>Pillow</strong> for rendering</li>
-      <li>Font: <code>_FONT_PATH</code> (embedded font file)</li>
-      <li>Font sizes: <strong>4.8%</strong> of width (main punchline text), <strong>2.1%</strong> of width (slide hint)</li>
-      <li>Returns composed JPEG bytes</li>
-    </ul>
 
     <div class="callout callout-key">
-      The <code>band_top</code> parameter controls the Y position where the dark overlay band begins. When <code>None</code>, it is computed per-slide. Pass a pre-computed value for consistent band placement across all slides.
+      The active/archived split uses a single JSON array with a positional convention: indices 0&ndash;9 are &ldquo;live&rdquo; slots and indices 10+ are archived. The <code>carousel_archived_meta</code> dict provides provenance for each archived entry.
     </div>
 
-    <h3 id="compute-band-top"><code>_compute_max_overlay_band_top()</code></h3>
-    <pre>_compute_max_overlay_band_top(punchlines, width=960, height=960)</pre>
-    <ul>
-      <li>Pre-computes a <strong>consistent Y position</strong> for the text band across all slides</li>
-      <li>Iterates all punchlines, calculates the required band height for each</li>
-      <li>Returns the minimum <code>band_top</code> value (i.e., the tallest band needed)</li>
-      <li>Ensures all slides have <strong>identical band placement</strong> regardless of text length</li>
-    </ul>
+    <h3 id="db-site-settings">Site Settings Keys</h3>
+    <p>The <code>site_settings</code> table is a key/value store. Carousel-related keys follow platform-specific naming patterns, where <code>{id}</code> is the numeric article ID.</p>
+
+    <h4>Instagram Carousel Keys</h4>
+    <table>
+      <tr><th>Key Pattern</th><th>Purpose</th></tr>
+      <tr><td><code>ig_car_post_status_{id}</code></td><td>Current posting status (<code>running:...</code>, <code>done:permalink</code>, <code>error:msg</code>)</td></tr>
+      <tr><td><code>ig_car_post_result_{id}</code></td><td>Final result after posting completes</td></tr>
+      <tr><td><code>ig_car_post_media_id_{id}</code></td><td>Instagram media ID of the live post</td></tr>
+      <tr><td><code>ig_car_post_history_{id}</code></td><td>JSON array of archived past posts</td></tr>
+      <tr><td><code>ig_car_post_snapshot_{id}</code></td><td>Caption snapshot of the live post</td></tr>
+    </table>
+
+    <h4>Facebook Carousel Keys</h4>
+    <table>
+      <tr><th>Key Pattern</th><th>Purpose</th></tr>
+      <tr><td><code>fb_car_post_status_{id}</code></td><td>Posting status</td></tr>
+      <tr><td><code>fb_car_post_result_{id}</code></td><td>Final result</td></tr>
+      <tr><td><code>fb_car_post_media_id_{id}</code></td><td>Facebook post ID</td></tr>
+      <tr><td><code>fb_car_post_history_{id}</code></td><td>JSON array of archived posts</td></tr>
+      <tr><td><code>fb_car_post_snapshot_{id}</code></td><td>Caption snapshot</td></tr>
+    </table>
+
+    <h4>X (Twitter) Carousel Keys</h4>
+    <table>
+      <tr><th>Key Pattern</th><th>Purpose</th></tr>
+      <tr><td><code>x_carousel_status_{id}</code></td><td>Posting status</td></tr>
+      <tr><td><code>x_carousel_result_{id}</code></td><td>Final result</td></tr>
+      <tr><td><code>x_carousel_tweet_id_{id}</code></td><td>Tweet ID of the live post</td></tr>
+      <tr><td><code>x_carousel_history_{id}</code></td><td>JSON array of archived posts</td></tr>
+      <tr><td><code>x_carousel_snapshot_{id}</code></td><td>Caption snapshot</td></tr>
+    </table>
+
+    <h4>Threads Carousel Keys</h4>
+    <table>
+      <tr><th>Key Pattern</th><th>Purpose</th></tr>
+      <tr><td><code>threads_carousel_status_{id}</code></td><td>Posting status</td></tr>
+      <tr><td><code>threads_carousel_result_{id}</code></td><td>Final result</td></tr>
+      <tr><td><code>threads_carousel_post_id_{id}</code></td><td>Threads post ID</td></tr>
+      <tr><td><code>threads_carousel_history_{id}</code></td><td>JSON array of archived posts</td></tr>
+      <tr><td><code>threads_carousel_snapshot_{id}</code></td><td>Caption snapshot</td></tr>
+    </table>
+
+    <h4>Pinterest Carousel Keys</h4>
+    <table>
+      <tr><th>Key Pattern</th><th>Purpose</th></tr>
+      <tr><td><code>pinterest_carousel_status_{id}</code></td><td>Posting status</td></tr>
+      <tr><td><code>pinterest_carousel_result_{id}</code></td><td>Final result</td></tr>
+      <tr><td><code>pinterest_carousel_pin_id_{id}</code></td><td>Pinterest pin ID</td></tr>
+      <tr><td><code>pinterest_carousel_history_{id}</code></td><td>JSON array of archived posts</td></tr>
+      <tr><td><code>pinterest_carousel_snapshot_{id}</code></td><td>Caption snapshot</td></tr>
+    </table>
+
+    <h4>LinkedIn Carousel Keys</h4>
+    <table>
+      <tr><th>Key Pattern</th><th>Purpose</th></tr>
+      <tr><td><code>linkedin_carousel_status_{id}</code></td><td>Posting status</td></tr>
+      <tr><td><code>linkedin_carousel_result_{id}</code></td><td>Final result</td></tr>
+      <tr><td><code>linkedin_carousel_post_id_{id}</code></td><td>LinkedIn post URN</td></tr>
+      <tr><td><code>linkedin_carousel_history_{id}</code></td><td>JSON array of archived posts</td></tr>
+      <tr><td><code>linkedin_carousel_snapshot_{id}</code></td><td>Caption snapshot</td></tr>
+    </table>
+
+    <h4>Global Generation Settings</h4>
+    <table>
+      <tr><th>Key</th><th>Purpose</th></tr>
+      <tr><td><code>carousel_style</code></td><td>Global DALL-E style prompt suffix (configurable at <code>/admin/settings</code>). Appended to every DALL-E prompt. Falls back to the hardcoded <code>CAROUSEL_STYLE_SUFFIX</code> constant if not set.</td></tr>
+    </table>
 
     <!-- ================================================================ -->
-    <h2 id="generation-pipeline">4. Generation Pipeline</h2>
+    <h2 id="image-generation-pipeline">3. Image Generation Pipeline</h2>
 
-    <h3 id="gen-route">Generate Route</h3>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/carousel/generate</code></p>
+    <h3 id="gen-storyboard">GPT-4.1-mini Storyboard Call</h3>
+    <p>Before generating any images, the system breaks the article into N scenes (up to 10) using a GPT call:</p>
+    <table>
+      <tr><th>Parameter</th><th>Value</th></tr>
+      <tr><td>Model</td><td><code>gpt-4.1-mini</code></td></tr>
+      <tr><td>max_tokens</td><td>3000</td></tr>
+      <tr><td>Input</td><td>Article title + body text</td></tr>
+      <tr><td>Output</td><td>JSON array of objects, each with a <code>prompt</code> (DALL-E scene description) and <code>punchline</code> (max 15 words, short caption for overlay)</td></tr>
+    </table>
+    <p>The storyboard call instructs GPT to decompose the article into visually distinct scenes, writing a detailed DALL-E prompt for each scene and a concise punchline (max 15 words) that summarizes the scene's key point for text overlay.</p>
+
+    <h3 id="gen-dalle">DALL-E 3 Image Generation</h3>
+    <p>Each scene prompt is sent to DALL-E 3 individually:</p>
+    <table>
+      <tr><th>Parameter</th><th>Value</th></tr>
+      <tr><td>Model</td><td><code>dall-e-3</code></td></tr>
+      <tr><td>Size</td><td><code>1024x1024</code></td></tr>
+      <tr><td>Quality</td><td><code>standard</code></td></tr>
+      <tr><td>Style</td><td><code>vivid</code></td></tr>
+      <tr><td>n</td><td><code>1</code></td></tr>
+    </table>
+    <p>Images are generated one at a time (n=1) in sequence. After each image completes, the result is immediately saved to the database so partial results survive interruptions. The generation route uses SSE (Server-Sent Events) to stream progress to the frontend, emitting <code>prompts</code>, <code>image</code>, <code>error</code>, and <code>done</code> events.</p>
+
+    <h3 id="gen-style">Style Suffix</h3>
+    <p>Every DALL-E prompt has a style suffix appended to it before submission. The resolution order is:</p>
     <ol class="flow">
-      <li>Validates: OpenAI client is initialized, generation is not already running, article exists</li>
-      <li>Reads article title, body content, existing prompts and punchlines from DB</li>
-      <li>Sets status to <code>running:0/{n}</code> in <code>site_settings</code></li>
-      <li>Spawns <code>_carousel_worker</code> as a daemon thread</li>
+      <li>Value from <code>site_settings</code> key <code>carousel_style</code> (editable at <code>/admin/settings</code>)</li>
+      <li>If not set, falls back to the hardcoded constant <code>CAROUSEL_STYLE_SUFFIX</code> in <code>app.py</code></li>
     </ol>
+    <p>The style suffix ensures visual consistency across all slides (e.g., specifying art style, color palette, composition rules).</p>
 
-    <h3 id="gen-worker">Worker: <code>_carousel_worker(article_id, ...)</code></h3>
-    <p>For each slide (up to 10):</p>
-    <ol class="flow">
-      <li>Checks cancel flag (<code>carousel_cancel_{article_id}</code>)</li>
-      <li>Generates DALL-E prompt via <strong>GPT-4.1-mini</strong> if no prompt provided for this slide</li>
-      <li>Calls DALL-E 3 API: <code>model="dall-e-3"</code>, <code>size="1024x1024"</code>, <code>quality="standard"</code>, <code>n=1</code></li>
-      <li>Downloads generated image from the returned URL</li>
-      <li>Saves locally to <code>static/articles/{id}/carousel/slide_{i}_{ts}.jpg</code></li>
-      <li>Uploads to GCS: <code>articles/{id}/carousel/slide_{i}_{ts}.jpg</code></li>
-      <li>Updates DB immediately (appends to <code>carousel_images</code> JSON array)</li>
-      <li>Updates status: <code>running:{i}/{n}</code></li>
-    </ol>
-
-    <h4>On Completion</h4>
+    <h3 id="gen-storage">Storage</h3>
+    <p>Each generated image is stored in two locations:</p>
     <ul>
-      <li>Sets result to <code>done:{count}</code>, clears status</li>
-      <li>Writes activity log entry</li>
+      <li><strong>Local:</strong> <code>static/articles/{id}/carousel/image_{slot}.png</code></li>
+      <li><strong>GCS:</strong> <code>articles/{id}/carousel/image_{slot}.png</code> (via <code>upload_bytes_to_gcs()</code>)</li>
     </ul>
-
-    <h4>On Cancel</h4>
-    <ul>
-      <li>Sets result to <code>cancelled</code>, clears status</li>
-    </ul>
+    <p>The GCS URL is stored in the <code>carousel_images</code> JSON array. If GCS is not configured, the local static path is used as a fallback.</p>
 
     <div class="callout callout-warn">
       Generation costs ~$0.04 per image ($0.40 for a full 10-slide carousel). The worker runs in a daemon thread and updates the DB after each individual slide completes, so partial results are preserved if the process is interrupted.
     </div>
 
     <!-- ================================================================ -->
-    <h2 id="image-management">5. Image Management Routes</h2>
+    <h2 id="image-compositing">4. Image Compositing</h2>
+    <p>Two key functions in <code>app.py</code> handle compositing punchline text overlays onto generated images using Pillow.</p>
 
-    <h4>Rerun Single Slide</h4>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/carousel/rerun</code></p>
+    <h3 id="compose-slide"><code>compose_carousel_slide()</code></h3>
+    <pre>compose_carousel_slide(img_bytes, punchline, slide_index, total_slides, width=960, height=960, band_top=None, hint_text=None)</pre>
+
+    <h4>Overlay Elements</h4>
     <ul>
-      <li>Body: <code>{slide_idx, prompt}</code></li>
-      <li>Archives the existing image for that slot</li>
-      <li>Generates a new image using the provided prompt</li>
-      <li>Runs as a single-slide background worker</li>
+      <li><strong>Dark gradient/band:</strong> semi-transparent dark band at the bottom (~92% opacity) with a gradient fade above it</li>
+      <li><strong>Punchline text:</strong> white uppercase text, word-wrapped, left-aligned, using <strong>Roboto-Bold</strong> font</li>
+      <li><strong>Swipe hint:</strong> gold-colored text &ldquo;Slide right for more &gt;&gt;&gt;&rdquo; on all slides <strong>except the last</strong></li>
+      <li><strong>Facebook override:</strong> when <code>hint_text</code> is passed (e.g., <code>"obelisk-stamps.com"</code>), it replaces the default swipe hint on all slides including the last</li>
     </ul>
 
-    <h4>Archive One Slide</h4>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/carousel/archive-slide</code></p>
+    <h4>Technical Details</h4>
     <ul>
-      <li>Body: <code>{slide_idx}</code></li>
-      <li>Moves image to <code>carousel_archived</code> array with metadata: <code>url</code>, <code>prompt</code>, <code>punchline</code>, <code>archived_at</code>, <code>slot_source</code></li>
+      <li>Uses <strong>Pillow</strong> (PIL) for all rendering</li>
+      <li>Font: Roboto-Bold (loaded from embedded font file at <code>_FONT_PATH</code>)</li>
+      <li>Font sizes: <strong>4.8%</strong> of width for main punchline text, <strong>2.1%</strong> of width for the slide hint</li>
+      <li>Output format: JPEG, quality=92</li>
+      <li>The <code>band_top</code> parameter controls the Y position where the dark overlay band begins. When <code>None</code>, it is computed per-slide. Pass a pre-computed value for consistent band placement across all slides.</li>
     </ul>
 
-    <h4>Restore Archived Image</h4>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/carousel/restore</code></p>
+    <h3 id="compute-band-top"><code>_compute_max_overlay_band_top()</code></h3>
+    <pre>_compute_max_overlay_band_top(punchlines, width=960, height=960)</pre>
     <ul>
-      <li>Body: <code>{archived_idx, target_slot}</code></li>
-      <li>Restores from <code>carousel_archived</code> array to a specific slot (0&ndash;9)</li>
-      <li>Auto-archives the displaced image if the target slot is already occupied</li>
+      <li>Pre-computes a <strong>consistent Y position</strong> for the text band across all slides</li>
+      <li>Iterates all punchlines, calculates the required band height for each one</li>
+      <li>Returns the minimum <code>band_top</code> value (i.e., the tallest band needed)</li>
+      <li>Ensures all slides have <strong>identical band placement</strong> regardless of text length differences</li>
     </ul>
 
-    <h4>Archive All</h4>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/carousel/archive-all</code></p>
-    <ul>
-      <li>Moves all non-null images to the archived array</li>
-      <li>Clears all image slots</li>
-    </ul>
-
-    <h4>Cancel Generation</h4>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/carousel/cancel</code></p>
-    <ul>
-      <li>Sets cancel flag in <code>site_settings</code></li>
-      <li>Worker checks the flag before generating each slide</li>
-    </ul>
-
-    <h4>Clear Result Notification</h4>
-    <p><span class="method-badge delete">DELETE</span> <code>/admin/articles/&lt;id&gt;/carousel/result</code></p>
-    <ul>
-      <li>Deletes the <code>carousel_result_{id}</code> key from <code>site_settings</code></li>
-    </ul>
+    <div class="callout callout-key">
+      Always call <code>_compute_max_overlay_band_top()</code> before composing a batch of slides. Pass the returned value as <code>band_top</code> to each <code>compose_carousel_slide()</code> call to guarantee uniform visual appearance.
+    </div>
 
     <!-- ================================================================ -->
-    <h2 id="caption-generation">6. Caption Generation</h2>
+    <h2 id="caption-generation">5. Caption Generation</h2>
 
     <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/generate-ig-caption</code></p>
+
+    <table>
+      <tr><th>Parameter</th><th>Value</th></tr>
+      <tr><td>Model</td><td><code>gpt-4.1-mini</code></td></tr>
+      <tr><td>max_tokens</td><td>600</td></tr>
+      <tr><td>Body</td><td><code>{component: "carousel"|"cinemagraph"|"narrated"}</code></td></tr>
+    </table>
+
+    <h4>Prompt Resolution Order</h4>
+    <ol class="flow">
+      <li><strong>Per-article override:</strong> if the article has a custom caption prompt stored, use that</li>
+      <li><strong>Global setting:</strong> if a global caption prompt is configured in site_settings, use that</li>
+      <li><strong>Hardcoded default:</strong> falls back to <code>_IG_CAPTION_DEFAULT_PROMPT</code> constant in app.py</li>
+    </ol>
+
+    <h4>Post-Processing</h4>
     <ul>
-      <li>Body: <code>{component: "carousel"|"cinemagraph"|"narrated"}</code></li>
-      <li>Uses <strong>GPT-4.1-mini</strong> to generate an Instagram caption from article content</li>
-      <li>System prompt instructs: engaging caption, relevant hashtags, no URLs</li>
+      <li>If <code>SITE_URL</code> environment variable is set, a call-to-action with the article link is appended to the generated caption</li>
       <li>Returns: <code>{caption: "..."}</code></li>
       <li>Cost: ~$0.01 per generation</li>
     </ul>
 
     <!-- ================================================================ -->
-    <h2 id="social-instagram">7. Social Media Posting &mdash; Instagram</h2>
+    <h2 id="api-routes">6. API Routes (Complete Reference)</h2>
 
-    <h3>Post Route</h3>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/post-to-instagram</code></p>
-    <ul>
-      <li>Body: <code>{caption, type: "car"|"cine"}</code></li>
-      <li>For <code>type="car"</code>: requires at least 2 carousel images</li>
-      <li>Spawns <code>_post_to_instagram_worker</code></li>
-    </ul>
-
-    <h3>Worker Flow (type="car")</h3>
-    <ol class="flow">
-      <li>Loads carousel images and punchlines from DB</li>
-      <li>Computes consistent <code>band_top</code> for overlays via <code>_compute_max_overlay_band_top()</code></li>
-      <li>For each slide: composes overlay via <code>compose_carousel_slide()</code>, uploads composed JPEG to GCS as <code>ig_composed_{N}_{ts}.jpg</code></li>
-      <li>Creates IG child containers (<code>IMAGE</code> type) via Graph API</li>
-      <li>Polls each child container until <code>FINISHED</code> (5-minute timeout)</li>
-      <li>Creates carousel container with all children</li>
-      <li>Polls carousel container until <code>FINISHED</code></li>
-      <li>Publishes via <code>POST /{ig_user_id}/media_publish</code></li>
-      <li>Fetches permalink</li>
-      <li>Stores media_id, permalink, caption snapshot in DB</li>
-    </ol>
-
-    <h3>Supporting Routes</h3>
+    <h3 id="routes-generation">Image Generation &amp; Management</h3>
     <table>
-      <tr><th>Route</th><th>Method</th><th>Purpose</th></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/ig-post-status?type=car</code></td><td><span class="method-badge get">GET</span></td><td>Poll posting status</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/check-instagram-post?type=car</code></td><td><span class="method-badge get">GET</span></td><td>Check if post is still live (queries <code>GET /{media_id}?fields=id,permalink</code>)</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/edit-instagram-caption</code></td><td><span class="method-badge post">POST</span></td><td>Edit caption (body: <code>{caption, type}</code>, calls <code>POST /{media_id}</code>)</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/archive-instagram-post</code></td><td><span class="method-badge post">POST</span></td><td>Move to history array, clear active keys</td></tr>
+      <tr><th>Method</th><th>Path</th><th>Function</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/carousel-images</code></td>
+        <td><code>admin_article_carousel_images</code></td>
+        <td>Returns current carousel images, prompts, punchlines, and archived data as JSON</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/generate-carousel</code></td>
+        <td>(SSE stream)</td>
+        <td>Generates carousel via SSE. Events: <code>prompts</code> (storyboard result), <code>image</code> (each slide), <code>error</code>, <code>done</code></td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/archive-carousel</code></td>
+        <td>(archive handler)</td>
+        <td>Moves all active slots (0&ndash;9) to archived positions (10+)</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/restore-carousel-image</code></td>
+        <td>(restore handler)</td>
+        <td>Restores an archived image to a chosen active slot; auto-archives displaced image if slot occupied</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/carousel-composed/&lt;slide_index&gt;</code></td>
+        <td>(composed preview)</td>
+        <td>Returns a composed JPEG preview of the specified slide with punchline overlay applied</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/regenerate-carousel-image</code></td>
+        <td>(regenerate handler)</td>
+        <td>Archives the old image at the given slot, generates a new one using provided or existing prompt</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/generate-ig-caption</code></td>
+        <td>(caption generator)</td>
+        <td>Generates a social media caption via GPT-4.1-mini</td>
+      </tr>
+    </table>
+
+    <h3 id="routes-instagram">Instagram Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/post-to-instagram</code></td>
+        <td>Post carousel to Instagram. Body: <code>{caption, type:"car"}</code></td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/ig-post-status?type=car</code></td>
+        <td>Poll posting status</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/edit-instagram-caption</code></td>
+        <td>Edit caption of live IG post</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/check-instagram-post?type=car</code></td>
+        <td>Check if IG post is still live</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/archive-instagram-post</code></td>
+        <td>Archive the IG post locally (move to history, clear active keys)</td>
+      </tr>
+    </table>
+
+    <h3 id="routes-facebook">Facebook Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/post-to-facebook</code></td>
+        <td>Post carousel to Facebook. Body: <code>{caption, type:"car"}</code></td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/check-facebook-post</code></td>
+        <td>Check if FB post is still live</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/archive-facebook-post</code></td>
+        <td>Archive the FB post locally</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/edit-facebook-caption</code></td>
+        <td>Edit caption of live FB post</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/delete-facebook-post</code></td>
+        <td>Calls DELETE on Graph API to remove the post, then archives locally</td>
+      </tr>
+    </table>
+
+    <h3 id="routes-x">X (Twitter) Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/post-carousel-to-x</code></td>
+        <td>Post carousel to X. Body: <code>{caption, component:"carousel"}</code></td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/carousel-x-status</code></td>
+        <td>Poll posting status</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/check-carousel-x-post</code></td>
+        <td>Check if tweet is still live</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/archive-carousel-x-post</code></td>
+        <td>Archive the tweet locally</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/delete-carousel-x-post</code></td>
+        <td>Deletes tweet via X API, then archives locally</td>
+      </tr>
+    </table>
+
+    <h3 id="routes-threads">Threads Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/post-carousel-to-threads</code></td>
+        <td>Post carousel to Threads. Body: <code>{caption, component:"carousel"}</code></td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/carousel-threads-status</code></td>
+        <td>Poll posting status</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/check-carousel-threads-post</code></td>
+        <td>Check if Threads post is still live</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/archive-carousel-threads-post</code></td>
+        <td>Archive the Threads post locally</td>
+      </tr>
+    </table>
+
+    <h3 id="routes-pinterest">Pinterest Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/post-carousel-to-pinterest</code></td>
+        <td>Post carousel to Pinterest. Body: <code>{caption, component:"carousel"}</code></td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/carousel-pinterest-status</code></td>
+        <td>Poll posting status</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/check-carousel-pinterest-post</code></td>
+        <td>Check if pin is still live</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/archive-carousel-pinterest-post</code></td>
+        <td>Archive the pin locally</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/delete-carousel-pinterest-post</code></td>
+        <td>Deletes pin via Pinterest API, then archives locally</td>
+      </tr>
+    </table>
+
+    <h3 id="routes-linkedin">LinkedIn Routes</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/post-carousel-to-linkedin</code></td>
+        <td>Post carousel to LinkedIn. Body: <code>{type:"carousel", caption}</code></td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/carousel-linkedin-status</code></td>
+        <td>Poll posting status</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge get">GET</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/check-carousel-linkedin-post</code></td>
+        <td>Check if LinkedIn post is still live</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/archive-carousel-linkedin-post</code></td>
+        <td>Archive the LinkedIn post locally</td>
+      </tr>
+      <tr>
+        <td><span class="method-badge post">POST</span></td>
+        <td><code>/admin/articles/&lt;id&gt;/delete-carousel-linkedin-post</code></td>
+        <td>Deletes LinkedIn post via API, then archives locally</td>
+      </tr>
     </table>
 
     <!-- ================================================================ -->
-    <h2 id="social-facebook">8. Social Media Posting &mdash; Facebook</h2>
+    <h2 id="social-instagram">7. Social Media Posting &mdash; Platform Details</h2>
 
-    <h3>Post Route</h3>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/post-carousel-to-facebook</code></p>
-    <ul>
-      <li>Body: <code>{caption}</code></li>
-      <li>Spawns <code>_post_carousel_fb_worker</code></li>
-    </ul>
+    <h3>Instagram</h3>
+    <p><strong>API:</strong> Facebook Graph API v21.0 &nbsp;|&nbsp; <strong>Worker:</strong> <code>_post_to_instagram_worker(article_id, caption, post_type="car")</code></p>
 
-    <h3>Worker Flow</h3>
+    <h4>Posting Flow</h4>
     <ol class="flow">
-      <li>Composes each slide with punchline overlay</li>
-      <li>Uploads each image via <code>POST /{page_id}/photos?published=false</code> (unpublished photo)</li>
-      <li>Creates post with <code>attached_media</code> array via <code>POST /{page_id}/feed</code></li>
-      <li>Stores <code>post_id</code></li>
+      <li>Load carousel images and punchlines from DB</li>
+      <li>Compute consistent <code>band_top</code> via <code>_compute_max_overlay_band_top()</code></li>
+      <li>For each slide: compose overlay via <code>compose_carousel_slide()</code>, upload composed JPEG to GCS</li>
+      <li>Create child containers: <code>POST /{ig_user_id}/media</code> with <code>is_carousel_item=true</code>, <code>image_url</code> pointing to GCS</li>
+      <li>Poll each child container until status is <code>FINISHED</code> (5-minute timeout, exponential backoff)</li>
+      <li>Create carousel container: <code>POST /{ig_user_id}/media</code> with <code>media_type=CAROUSEL</code>, <code>children</code> array, <code>caption</code></li>
+      <li>Poll carousel container until <code>FINISHED</code></li>
+      <li>Publish: <code>POST /{ig_user_id}/media_publish</code> with <code>creation_id</code></li>
+      <li>Fetch permalink from the published media</li>
+      <li>Store media_id, permalink, and caption snapshot in site_settings</li>
     </ol>
 
-    <h3>Supporting Routes</h3>
-    <table>
-      <tr><th>Route</th><th>Method</th><th>Purpose</th></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/carousel-fb-status</code></td><td><span class="method-badge get">GET</span></td><td>Poll posting status</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/archive-carousel-fb-post</code></td><td><span class="method-badge post">POST</span></td><td>Archive post locally</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/delete-carousel-fb-post</code></td><td><span class="method-badge post">POST</span></td><td>Delete from Facebook via Graph API DELETE, then archive locally</td></tr>
-    </table>
+    <div class="callout callout-key">
+      <strong>Rate limit handling:</strong> The <code>_ig_api_call()</code> helper auto-retries once after a 30-second pause if the Graph API returns a rate-limit error.
+    </div>
 
-    <!-- ================================================================ -->
-    <h2 id="social-x">9. Social Media Posting &mdash; X (Twitter)</h2>
+    <h3 id="social-facebook">Facebook</h3>
+    <p><strong>API:</strong> Facebook Graph API v21.0 &nbsp;|&nbsp; <strong>Worker:</strong> <code>_post_to_facebook_worker(article_id, caption, post_type="car")</code></p>
 
-    <h3>Post Route</h3>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/post-carousel-to-x</code></p>
-    <ul>
-      <li>Body: <code>{caption}</code></li>
-      <li>Spawns <code>_post_carousel_x_worker</code></li>
-    </ul>
-
-    <h3>Worker Flow</h3>
+    <h4>Posting Flow</h4>
     <ol class="flow">
-      <li>Composes each slide with overlay (<strong>max 4 images</strong> for X)</li>
-      <li>For each image: <code>INIT</code> chunked upload, <code>APPEND</code> chunks (5 MB), <code>FINALIZE</code>, poll <code>STATUS</code></li>
-      <li>Creates tweet with <code>media_ids</code> array via X API v2</li>
-      <li>Stores <code>tweet_id</code></li>
+      <li>Load carousel images and punchlines from DB</li>
+      <li>Compute consistent <code>band_top</code></li>
+      <li>For each slide: compose overlay with <code>hint_text="obelisk-stamps.com"</code> (instead of the default swipe hint)</li>
+      <li>Upload each composed image as an unpublished photo: <code>POST /{page_id}/photos</code> with <code>published=false</code></li>
+      <li>Create the feed post: <code>POST /{page_id}/feed</code> with <code>message=caption</code> and <code>attached_media</code> array referencing the unpublished photo IDs</li>
+      <li>Store post_id, permalink, and caption snapshot</li>
+    </ol>
+
+    <div class="callout callout-info">
+      Facebook carousel posts use the <strong>unpublished photo + attached_media</strong> pattern. The composed images show <code>"obelisk-stamps.com"</code> as the hint text on every slide instead of the default swipe hint.
+    </div>
+
+    <h3 id="social-x">X (Twitter)</h3>
+    <p><strong>Auth:</strong> OAuth 1.0a via <code>requests_oauthlib</code> &nbsp;|&nbsp; <strong>Worker:</strong> <code>_post_carousel_x_worker(article_id, caption, component)</code></p>
+
+    <h4>Posting Flow</h4>
+    <ol class="flow">
+      <li>Compose each slide with punchline overlay</li>
+      <li>Upload each image: <code>POST upload.twitter.com/1.1/media/upload.json</code></li>
+      <li>If more than 4 images: split into groups of 4 per tweet (X limit is 4 images per tweet)</li>
+      <li>Create first tweet with caption + first batch of media_ids: <code>POST api.twitter.com/2/tweets</code></li>
+      <li>Create reply tweets for remaining batches, numbered &ldquo;2/3&rdquo;, &ldquo;3/3&rdquo; etc., each replying to the previous tweet</li>
+      <li>Store tweet_id of the first tweet</li>
     </ol>
 
     <div class="callout callout-warn">
-      X limits media attachments to <strong>4 images per tweet</strong>. Only the first 4 carousel slides are posted.
+      X limits media attachments to <strong>4 images per tweet</strong>. A 10-slide carousel becomes a thread of 3 tweets (4 + 4 + 2 images). The first tweet carries the full caption; subsequent tweets are numbered replies.
     </div>
 
-    <h3>Supporting Routes</h3>
-    <table>
-      <tr><th>Route</th><th>Method</th><th>Purpose</th></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/carousel-x-status</code></td><td><span class="method-badge get">GET</span></td><td>Poll posting status</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/check-carousel-x-post</code></td><td><span class="method-badge get">GET</span></td><td>Check if live via <code>GET /tweets/{tweet_id}</code></td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/archive-carousel-x-post</code></td><td><span class="method-badge post">POST</span></td><td>Archive post locally</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/delete-carousel-x-post</code></td><td><span class="method-badge post">POST</span></td><td>Delete tweet via <code>DELETE /tweets/{tweet_id}</code>, then archive</td></tr>
-    </table>
+    <h3 id="social-threads">Threads</h3>
+    <p><strong>API:</strong> <code>graph.threads.net/v1.0</code> &nbsp;|&nbsp; <strong>Worker:</strong> <code>_post_carousel_threads_worker(article_id, caption, component)</code></p>
 
-    <!-- ================================================================ -->
-    <h2 id="social-threads">10. Social Media Posting &mdash; Threads</h2>
-
-    <h3>Post Route</h3>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/post-carousel-to-threads</code></p>
-    <ul>
-      <li>Body: <code>{caption}</code></li>
-      <li>Spawns <code>_post_carousel_threads_worker</code></li>
-    </ul>
-
-    <h3>Worker Flow</h3>
+    <h4>Posting Flow</h4>
     <ol class="flow">
-      <li>Composes each slide with punchline overlay</li>
-      <li>Creates child containers (<code>IMAGE</code> type) via Threads API</li>
-      <li>Creates carousel container with children</li>
-      <li>Polls until <code>FINISHED</code> (5-minute timeout)</li>
-      <li>Publishes via <code>threads_publish</code></li>
-      <li>Fetches permalink</li>
+      <li>Compose each slide with punchline overlay</li>
+      <li>Upload composed images to GCS for public URL access</li>
+      <li>Create child containers: <code>POST /{user_id}/threads</code> with <code>media_type=IMAGE</code>, <code>is_carousel_item=true</code>, <code>image_url</code></li>
+      <li>Create carousel container: <code>POST /{user_id}/threads</code> with <code>media_type=CAROUSEL</code>, <code>children</code> array, <code>text=caption[:500]</code></li>
+      <li>Poll carousel container until status is <code>FINISHED</code> (5-minute timeout)</li>
+      <li>Publish: <code>POST /{user_id}/threads_publish</code> with <code>creation_id</code></li>
+      <li>Fetch permalink from published thread</li>
+      <li>Store post_id, permalink, and caption snapshot</li>
     </ol>
 
     <div class="callout callout-info">
-      Threads caption limit is <strong>500 characters</strong>. Captions are truncated: <code>caption[:500]</code>.
+      Threads caption limit is <strong>500 characters</strong>. Captions are automatically truncated: <code>caption[:500]</code>.
     </div>
 
-    <h3>Supporting Routes</h3>
-    <table>
-      <tr><th>Route</th><th>Method</th><th>Purpose</th></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/carousel-threads-status</code></td><td><span class="method-badge get">GET</span></td><td>Poll posting status</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/check-carousel-threads-post</code></td><td><span class="method-badge get">GET</span></td><td>Check if post is still live</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/archive-carousel-threads-post</code></td><td><span class="method-badge post">POST</span></td><td>Archive post locally</td></tr>
-    </table>
+    <h3 id="social-pinterest">Pinterest</h3>
+    <p><strong>API:</strong> <code>api.pinterest.com/v5</code> &nbsp;|&nbsp; <strong>Auth:</strong> Bearer token &nbsp;|&nbsp; <strong>Worker:</strong> <code>_post_carousel_pinterest_worker(article_id, caption, component)</code></p>
 
-    <!-- ================================================================ -->
-    <h2 id="social-pinterest">11. Social Media Posting &mdash; Pinterest</h2>
-
-    <h3>Post Route</h3>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/post-carousel-to-pinterest</code></p>
-    <ul>
-      <li>Body: <code>{caption}</code></li>
-      <li>Spawns <code>_post_carousel_pinterest_worker</code></li>
-    </ul>
-
-    <h3>Worker Flow</h3>
+    <h4>Posting Flow</h4>
     <ol class="flow">
-      <li>Composes the <strong>first slide</strong> as the pin image</li>
-      <li>Uploads image bytes to Pinterest via <code>POST /pins</code></li>
-      <li>Uses caption as pin title (first 100 chars) and description (first 800 chars)</li>
-      <li>Links to article URL if available</li>
-      <li>Stores <code>pin_id</code></li>
+      <li>Compose each slide with punchline overlay</li>
+      <li>Upload composed images to GCS for public URL access</li>
+      <li>Split images into chunks of 5 (Pinterest carousel supports 2&ndash;5 images per pin)</li>
+      <li>For chunks with 2+ images: create pin via <code>POST /v5/pins</code> with <code>media_source.source_type=multiple_image_urls</code> and <code>media_source.items</code> array</li>
+      <li>For single remaining images: create pin with <code>media_source.source_type=image_url</code></li>
+      <li>Each pin includes: <code>board_id</code> from env, <code>title=caption[:100]</code>, <code>description=caption[:800]</code>, <code>link</code> to article URL</li>
+      <li>Store pin_id(s) and permalink(s)</li>
     </ol>
 
     <div class="callout callout-info">
-      Pinterest posts only the <strong>first slide</strong> as a single pin, not a multi-image carousel. Title is truncated to 100 characters, description to 800 characters.
+      Pinterest carousel pins hold 2&ndash;5 images. A 10-slide carousel becomes 2 pins (5 + 5). Title is truncated to 100 characters and description to 800 characters.
     </div>
 
-    <h3>Supporting Routes</h3>
-    <table>
-      <tr><th>Route</th><th>Method</th><th>Purpose</th></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/carousel-pinterest-status</code></td><td><span class="method-badge get">GET</span></td><td>Poll posting status</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/check-carousel-pinterest-post</code></td><td><span class="method-badge get">GET</span></td><td>Check if pin is still live</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/archive-carousel-pinterest-post</code></td><td><span class="method-badge post">POST</span></td><td>Archive post locally</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/delete-carousel-pinterest-post</code></td><td><span class="method-badge post">POST</span></td><td>Delete pin via <code>DELETE /pins/{pin_id}</code>, then archive</td></tr>
-    </table>
+    <h3 id="social-linkedin">LinkedIn</h3>
+    <p><strong>API:</strong> <code>api.linkedin.com/rest</code> &nbsp;|&nbsp; <strong>Auth:</strong> Bearer token &nbsp;|&nbsp; <strong>Worker:</strong> <code>_post_carousel_linkedin_worker(article_id, caption, component)</code></p>
 
-    <!-- ================================================================ -->
-    <h2 id="social-linkedin">12. Social Media Posting &mdash; LinkedIn</h2>
+    <h4>Required Headers</h4>
+    <pre>Authorization: Bearer {LINKEDIN_ACCESS_TOKEN}
+LinkedIn-Version: 202502
+X-Restli-Protocol-Version: 2.0.0</pre>
 
-    <h3>Post Route</h3>
-    <p><span class="method-badge post">POST</span> <code>/admin/articles/&lt;id&gt;/post-carousel-to-linkedin</code></p>
-    <ul>
-      <li>Body: <code>{caption, type: "car"|"cine"}</code></li>
-      <li>Spawns <code>_post_carousel_linkedin_worker</code></li>
-    </ul>
+    <h4>Author URN</h4>
+    <pre>urn:li:organization:{LINKEDIN_ORG_ID}</pre>
 
-    <h3>Worker Flow</h3>
+    <h4>Posting Flow</h4>
     <ol class="flow">
-      <li>Composes each slide with punchline overlay</li>
-      <li>For each image: registers upload via <code>POST /images?action=initializeUpload</code></li>
-      <li>Uploads image bytes to LinkedIn's returned upload URL</li>
-      <li>Creates post via <code>POST /posts</code> with <code>multiImage</code> content (or single <code>media</code> if only 1 image)</li>
-      <li>Uses <code>LinkedIn-Version: 202502</code> header</li>
-      <li>Author: <code>urn:li:organization:{org_id}</code></li>
+      <li>Compose each slide with punchline overlay</li>
+      <li>Upload composed images to GCS for public URL access</li>
+      <li>For each image: initialize upload via <code>POST /images?action=initializeUpload</code> (returns an upload URL and image URN)</li>
+      <li>Upload image bytes via <code>PUT</code> to the returned upload URL</li>
+      <li>Create post via <code>POST /posts</code>:
+        <ul>
+          <li>For multiple images: use <code>multiImage.images</code> array with each image's URN</li>
+          <li>For single image: use <code>media.id</code> with the image URN</li>
+        </ul>
+      </li>
+      <li>Post body includes: <code>author</code> (org URN), <code>commentary=caption[:3000]</code>, <code>visibility=PUBLIC</code>, <code>distribution.feedDistribution=MAIN_FEED</code></li>
+      <li>Store post URN, permalink, and caption snapshot</li>
     </ol>
 
-    <h3>Supporting Routes</h3>
+    <div class="callout callout-info">
+      LinkedIn caption limit is <strong>3000 characters</strong>. The post is published under the organization identity (not a personal profile). The <code>LinkedIn-Version: 202502</code> header is required for all API calls.
+    </div>
+
+    <!-- ================================================================ -->
+    <h2 id="archive-delete-flow">8. Archive &amp; Delete Flow</h2>
+
+    <h3>Archive Carousel Images</h3>
+    <ul>
+      <li>Moves all images from active slots (0&ndash;9) to archived positions (10+) in the <code>carousel_images</code>, <code>carousel_prompts</code>, and <code>carousel_punchlines</code> JSON arrays</li>
+      <li>Populates <code>carousel_archived_meta</code> with an entry for each archived image containing:
+        <ul>
+          <li><code>archived_at</code>: ISO 8601 timestamp of when the archive happened</li>
+          <li><code>slot_source</code>: the original active slot index (0&ndash;9) the image occupied</li>
+        </ul>
+      </li>
+      <li>Clears the active slots (sets indices 0&ndash;9 to null)</li>
+    </ul>
+
+    <h3>Restore Archived Image</h3>
+    <ul>
+      <li>Accepts an archived index (10+) and a target slot (0&ndash;9)</li>
+      <li>If the target slot already contains an image, that image is automatically archived first (displaced to 10+)</li>
+      <li>The archived image is moved to the target active slot, and its archived_meta entry is removed</li>
+    </ul>
+
+    <h3>Archive Social Post</h3>
+    <ul>
+      <li>Takes the current live post data (media_id/post_id, permalink, caption snapshot) and appends it to the platform's history JSON array in site_settings</li>
+      <li>Clears the active post keys (status, result, media_id, snapshot) for that platform</li>
+      <li>Does <strong>not</strong> delete the post from the social platform itself</li>
+    </ul>
+
+    <h3>Delete Social Post (FB, X, Pinterest, LinkedIn)</h3>
+    <ul>
+      <li>Calls the platform's DELETE API to remove the post from the social network:
+        <ul>
+          <li><strong>Facebook:</strong> <code>DELETE /{post_id}</code> via Graph API</li>
+          <li><strong>X:</strong> <code>DELETE /2/tweets/{tweet_id}</code></li>
+          <li><strong>Pinterest:</strong> <code>DELETE /v5/pins/{pin_id}</code></li>
+          <li><strong>LinkedIn:</strong> <code>DELETE /posts/{post_urn}</code></li>
+        </ul>
+      </li>
+      <li>After successful deletion, archives the post locally (same as archive flow)</li>
+      <li>Instagram does <strong>not</strong> support deletion via the Graph API, so no delete route exists for IG</li>
+    </ul>
+
+    <!-- ================================================================ -->
+    <h2 id="check-live">9. Check If Post Is Still Live</h2>
+
+    <p>Each platform has a <span class="method-badge get">GET</span> check endpoint that verifies whether the published post still exists on the social platform.</p>
+
     <table>
-      <tr><th>Route</th><th>Method</th><th>Purpose</th></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/carousel-linkedin-status?type=car</code></td><td><span class="method-badge get">GET</span></td><td>Poll posting status</td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/check-carousel-linkedin-post?type=car</code></td><td><span class="method-badge get">GET</span></td><td>Check if live via <code>GET /posts/{post_id}</code></td></tr>
-      <tr><td><code>/admin/articles/&lt;id&gt;/archive-carousel-linkedin-post</code></td><td><span class="method-badge post">POST</span></td><td>Archive post locally</td></tr>
+      <tr><th>Platform</th><th>Check Endpoint</th><th>API Call</th></tr>
+      <tr><td>Instagram</td><td><code>/check-instagram-post?type=car</code></td><td><code>GET /{media_id}?fields=id,permalink</code> on Graph API</td></tr>
+      <tr><td>Facebook</td><td><code>/check-facebook-post</code></td><td><code>GET /{post_id}?fields=id,permalink_url</code> on Graph API</td></tr>
+      <tr><td>X</td><td><code>/check-carousel-x-post</code></td><td><code>GET /2/tweets/{tweet_id}</code> on X API</td></tr>
+      <tr><td>Threads</td><td><code>/check-carousel-threads-post</code></td><td><code>GET /{post_id}?fields=id,permalink</code> on Threads API</td></tr>
+      <tr><td>Pinterest</td><td><code>/check-carousel-pinterest-post</code></td><td><code>GET /v5/pins/{pin_id}</code> on Pinterest API</td></tr>
+      <tr><td>LinkedIn</td><td><code>/check-carousel-linkedin-post</code></td><td><code>GET /posts/{post_urn}</code> on LinkedIn API</td></tr>
+    </table>
+
+    <p>All check endpoints return a JSON response:</p>
+    <pre>{
+  "live": true,        // or false
+  "permalink": "...",  // if live
+  "error": "..."       // if not live or API error
+}</pre>
+
+    <!-- ================================================================ -->
+    <h2 id="past-posts-history">10. Past Posts History</h2>
+
+    <p>Archived (past) posts are stored as JSON arrays in site_settings, using the key pattern:</p>
+    <pre>{platform}_{component}_history_{article_id}</pre>
+
+    <p>For example: <code>ig_car_post_history_42</code>, <code>x_carousel_history_42</code>, <code>linkedin_carousel_history_42</code>.</p>
+
+    <p>Each entry in the history array contains:</p>
+    <table>
+      <tr><th>Field</th><th>Description</th></tr>
+      <tr><td><code>media_id</code> / <code>post_id</code> / <code>tweet_id</code> / <code>pin_id</code></td><td>Platform-specific identifier of the post</td></tr>
+      <tr><td><code>permalink</code></td><td>Direct URL to the post on the platform</td></tr>
+      <tr><td><code>archived_at</code></td><td>ISO 8601 timestamp of when the post was archived</td></tr>
+      <tr><td><code>caption</code></td><td>Caption text that was posted</td></tr>
+      <tr><td><code>image_urls</code></td><td>Array of image URLs that were included in the post</td></tr>
+      <tr><td><code>posted_at</code></td><td>ISO 8601 timestamp of when the post was originally published</td></tr>
     </table>
 
     <!-- ================================================================ -->
-    <h2 id="frontend">13. Frontend Architecture</h2>
+    <h2 id="frontend-architecture">11. Frontend Architecture</h2>
 
-    <h3 id="fe-html">HTML Structure (<code>article_edit.html</code>)</h3>
+    <p><strong>Template:</strong> <code>templates/article_edit.html</code></p>
+
+    <h3 id="fe-network-toggle">Network Visibility Toggle</h3>
     <ul>
-      <li><strong>Card:</strong> Social Media Content panel</li>
-      <li><strong>Tabs:</strong> Images Grid (count badge) | Archived (count badge) | Preview</li>
-      <li><strong>Image grid:</strong> flexbox layout, 5 columns (20% width), responsive (3 columns at 768px)</li>
-      <li>Each image has: click to open edit modal, "i" info button</li>
-      <li>Per-platform sections wrapped in <code>&lt;div data-smc-net="PLATFORM"&gt;</code> for visibility toggle</li>
+      <li>A kebab menu button (<code>&ctdot;</code>) in the Social Media Content card header opens a dropdown with checkboxes for each platform</li>
+      <li>Preferences are stored in <code>localStorage</code> under the key <code>smcNetworkPrefs</code></li>
+      <li>Default visibility is defined in the <code>_SMC_DEFAULTS</code> object: all platforms enabled <strong>except TikTok</strong> (which defaults to off)</li>
+      <li>Each platform's social section is wrapped in a <code>&lt;div data-smc-net="PLATFORM"&gt;</code> container</li>
     </ul>
 
-    <h4>Network Visibility Toggle</h4>
-    <ul>
-      <li>Horizontal kebab menu (<code>&ctdot;</code>) in card header with checkboxes per network</li>
-      <li>Preferences stored in <code>localStorage</code> under key <code>smcNetworkPrefs</code></li>
-      <li>Defaults: all enabled <strong>except</strong> TikTok (disabled by default)</li>
-    </ul>
-
-    <h3 id="fe-js">Key JS Functions</h3>
+    <h4>Toggle JS Functions</h4>
     <table>
       <tr><th>Function</th><th>Purpose</th></tr>
-      <tr><td><code>startCarousel()</code></td><td>Begin SSE-based generation with real-time grid updates</td></tr>
-      <tr><td><code>stopCarousel()</code></td><td>Cancel in-progress generation</td></tr>
-      <tr><td><code>handleCarouselEvent(data)</code></td><td>Process SSE events (<code>image_ready</code>, <code>done</code>, <code>error</code>)</td></tr>
-      <tr><td><code>addCarouselImage(url, idx)</code></td><td>Add image to the grid at specified index</td></tr>
-      <tr><td><code>carouselDone(count)</code></td><td>Finalize generation UI state</td></tr>
-      <tr><td><code>openCarouselEditModal(idx)</code></td><td>Open modal to edit prompt/punchline for a slide</td></tr>
-      <tr><td><code>rerunCarouselImage(idx)</code></td><td>Re-generate a single image</td></tr>
-      <tr><td><code>showCarouselTab(tab)</code></td><td>Switch between grid / archived / preview views</td></tr>
-      <tr><td><code>updateCarouselTabCounts()</code></td><td>Update badge counts and button visibility</td></tr>
-      <tr><td><code>archiveAllCarousel()</code></td><td>Archive all images</td></tr>
-      <tr><td><code>generateIgCaption(component)</code></td><td>GPT caption generation</td></tr>
+      <tr><td><code>toggleSmcNetwork(network, visible)</code></td><td>Shows/hides a specific platform section by setting <code>display</code> on its <code>data-smc-net</code> wrapper. Updates localStorage.</td></tr>
+      <tr><td><code>applyAllSmcPrefs()</code></td><td>Reads saved preferences from localStorage and applies visibility to all platform sections on page load.</td></tr>
+      <tr><td><code>initSmcNetworkMenu()</code></td><td>Initializes the kebab menu dropdown, binds checkbox change events, sets initial checkbox states from saved prefs.</td></tr>
+    </table>
+
+    <h3 id="fe-js-functions">Key JS Functions</h3>
+    <table>
+      <tr><th>Function</th><th>Purpose</th></tr>
+      <tr><td><code>_platformIconSvg</code></td><td>Map object: platform name &rarr; Font Awesome brand icon SVG string for all 8 platforms (Instagram, Facebook, X, Threads, Pinterest, LinkedIn, TikTok, YouTube)</td></tr>
+      <tr><td><code>_makeViewPostBtn(btn, permalink, platform)</code></td><td>Transforms a post button into an &ldquo;Already posted, click to view&rdquo; state with the platform&rsquo;s icon from <code>_platformIconSvg</code> and an external link icon. Clicking opens the permalink.</td></tr>
+      <tr><td><code>_restorePostBtn(btn)</code></td><td>Restores a post button back to its original state (reverses <code>_makeViewPostBtn</code>). Used when a post is archived.</td></tr>
+      <tr><td><code>generateIgCaption(component)</code></td><td>Calls the caption generation endpoint and populates the Instagram caption textarea</td></tr>
       <tr><td><code>postToInstagram(type)</code></td><td>Instagram posting with status polling</td></tr>
       <tr><td><code>postToFacebook()</code></td><td>Facebook carousel posting</td></tr>
       <tr><td><code>postCarouselToX()</code></td><td>X posting with status polling</td></tr>
@@ -505,94 +783,82 @@
       <tr><td><code>postCarouselToLinkedin()</code></td><td>LinkedIn multi-image posting</td></tr>
     </table>
 
-    <h3 id="fe-polling">Polling Pattern (shared across all platforms)</h3>
+    <h3 id="fe-polling">Polling &amp; SSE Patterns</h3>
+
+    <h4>SSE for Image Generation</h4>
+    <p>The <code>POST /admin/articles/&lt;id&gt;/generate-carousel</code> route returns an SSE stream. The frontend opens an <code>EventSource</code> connection and listens for these event types:</p>
+    <table>
+      <tr><th>Event</th><th>Data</th><th>Frontend Action</th></tr>
+      <tr><td><code>prompts</code></td><td>JSON array of storyboard prompts + punchlines</td><td>Displays prompts in the UI, prepares grid slots</td></tr>
+      <tr><td><code>image</code></td><td>JSON with <code>index</code>, <code>url</code>, <code>prompt</code></td><td>Adds the generated image to the grid at the specified index</td></tr>
+      <tr><td><code>error</code></td><td>Error message string</td><td>Shows error alert</td></tr>
+      <tr><td><code>done</code></td><td>Total count of generated images</td><td>Finalizes generation UI, enables post buttons</td></tr>
+    </table>
+
+    <h4>Status Polling for Social Posting</h4>
+    <p>All social media posting follows the same async pattern:</p>
     <ol class="flow">
-      <li><code>POST</code> to platform route &mdash; returns immediately</li>
-      <li>Frontend polls the status endpoint every <strong>5 seconds</strong></li>
-      <li>Status transitions: <code>null</code> &rarr; <code>running:...</code> &rarr; <code>done:permalink</code> or <code>error:message</code></li>
-      <li>On <code>done:</code> &mdash; transforms post button to "Already posted, click to view" with platform icon</li>
-      <li>On <code>error:</code> &mdash; shows dismissible Bootstrap alert</li>
+      <li><code>POST</code> to the platform's posting route &mdash; returns immediately with <code>{ok: true}</code></li>
+      <li>Frontend starts a <code>setInterval</code> polling the platform's status endpoint every <strong>5 seconds</strong></li>
+      <li>Status transitions: <code>null</code> &rarr; <code>running:step description</code> &rarr; <code>done:permalink</code> or <code>error:message</code></li>
+      <li>On <code>done:</code> &mdash; calls <code>_makeViewPostBtn()</code> to transform the post button to a &ldquo;view post&rdquo; link</li>
+      <li>On <code>error:</code> &mdash; shows a dismissible Bootstrap alert with the error message</li>
+      <li>Polling interval is cleared once a terminal state (<code>done:</code> or <code>error:</code>) is received</li>
     </ol>
 
-    <h3 id="fe-copy">Copy from Instagram &amp; Caption Auto-Population</h3>
+    <h3 id="fe-caption-auto">Caption Auto-Population</h3>
+
+    <h4>On DOMContentLoaded</h4>
+    <ul>
+      <li>Fills empty caption textareas for <strong>Threads, Pinterest, LinkedIn, and X</strong> with <code>defaultCaption</code> (article title + article URL)</li>
+      <li>Instagram caption is <strong>NOT</strong> auto-filled &mdash; it has a dedicated &ldquo;Generate caption&rdquo; link that calls GPT</li>
+    </ul>
 
     <h4>Copy from Instagram</h4>
     <ul>
-      <li>Each non-Instagram platform has a "Copy from Instagram" link</li>
+      <li>Each non-Instagram platform section has a &ldquo;Copy from Instagram&rdquo; link</li>
       <li>Copies the IG caption textarea value to the target platform's textarea</li>
-      <li>Truncates to platform-specific character limit</li>
+      <li>Truncates to the target platform's character limit (e.g., 500 for Threads, 3000 for LinkedIn)</li>
     </ul>
 
-    <h4>Caption Auto-Population</h4>
-    <ul>
-      <li>On page load (<code>DOMContentLoaded</code>), fills empty caption fields for Threads, Pinterest, LinkedIn, and X with <code>defaultCaption</code> (article title + URL)</li>
-      <li>Instagram caption is <strong>NOT</strong> auto-filled (has a separate "Generate caption" link)</li>
-    </ul>
-
-    <!-- ================================================================ -->
-    <h2 id="gcs-storage">14. GCS Storage Structure</h2>
-
-    <pre>articles/{article_id}/carousel/
-  slide_{N}_{timestamp}.jpg              &mdash; raw DALL-E output
-  ig_composed_{N}_{timestamp}.jpg        &mdash; with punchline overlay for Instagram
-  fb_composed_{N}_{timestamp}.jpg        &mdash; with punchline overlay for Facebook
-  x_composed_{N}_{timestamp}.jpg         &mdash; with punchline overlay for X
-  threads_composed_{N}_{timestamp}.jpg   &mdash; with punchline overlay for Threads
-  pinterest_composed_{N}_{timestamp}.jpg &mdash; with punchline overlay for Pinterest
-  linkedin_composed_{N}_{timestamp}.jpg  &mdash; with punchline overlay for LinkedIn</pre>
-
-    <p><strong>Local fallback:</strong> <code>static/articles/{article_id}/carousel/slide_{N}_{ts}.jpg</code></p>
-
-    <div class="callout callout-info">
-      Each platform gets its own composed image file because overlay composition happens at posting time. The raw DALL-E output is stored separately and reused across platforms.
-    </div>
-
-    <!-- ================================================================ -->
-    <h2 id="settings">15. Settings</h2>
-
-    <ul>
-      <li><strong>Carousel Image Style:</strong> a global DALL-E style prompt stored in <code>site_settings</code> key <code>carousel_image_style</code></li>
-      <li>Configurable at <code>/admin/settings</code> under "Carousel Image Style"</li>
-      <li>Appended to every DALL-E prompt when generating carousel images</li>
-      <li>Changes take effect on the next carousel generation</li>
-    </ul>
-
-    <!-- ================================================================ -->
-    <h2 id="api-dependencies">16. API Dependencies</h2>
-
-    <table>
-      <tr><th>API</th><th>Used For</th><th>Auth Env Vars</th></tr>
-      <tr><td>OpenAI DALL-E 3</td><td>Image generation</td><td><code>OPENAI_API_KEY</code></td></tr>
-      <tr><td>OpenAI GPT-4.1-mini</td><td>Prompt &amp; caption generation</td><td><code>OPENAI_API_KEY</code></td></tr>
-      <tr><td>Meta Graph API (IG)</td><td>Instagram carousel posting</td><td><code>IG_USER_ID</code>, <code>IG_ACCESS_TOKEN</code></td></tr>
-      <tr><td>Meta Graph API (FB)</td><td>Facebook multi-photo posting</td><td><code>FB_PAGE_ID</code>, <code>FB_PAGE_TOKEN</code></td></tr>
-      <tr><td>X API v2</td><td>Tweet creation</td><td><code>X_API_KEY</code>, <code>X_API_SECRET</code>, <code>X_ACCESS_TOKEN</code>, <code>X_ACCESS_TOKEN_SECRET</code></td></tr>
-      <tr><td>Threads API</td><td>Threads carousel posting</td><td><code>THREADS_USER_ID</code>, <code>THREADS_ACCESS_TOKEN</code></td></tr>
-      <tr><td>Pinterest API v5</td><td>Pin creation</td><td><code>PINTEREST_ACCESS_TOKEN</code>, <code>PINTEREST_BOARD_ID</code></td></tr>
-      <tr><td>LinkedIn API</td><td>Multi-image post</td><td><code>LINKEDIN_ACCESS_TOKEN</code>, <code>LINKEDIN_ORG_ID</code></td></tr>
-    </table>
-
-    <!-- ================================================================ -->
-    <h2 id="error-handling">17. Error Handling</h2>
-
-    <ul>
-      <li>All posting workers catch exceptions and set <code>error:message</code> in <code>site_settings</code></li>
-      <li>Frontend displays errors as dismissible Bootstrap alerts</li>
-      <li><strong>Rate limit handling:</strong> Instagram worker checks recent posts to confirm publication even if the API returns an error</li>
-      <li>Stale status keys are purged on server startup</li>
-    </ul>
-
-    <!-- ================================================================ -->
-    <h2 id="icon-system">18. Icon System</h2>
-
+    <h3 id="fe-icons">Icon System</h3>
     <ul>
       <li><strong>Section headers:</strong> use inline SVGs (Instagram camera, Facebook F, X logo) or Font Awesome brand icons (Threads, Pinterest, LinkedIn)</li>
-      <li><strong>Post buttons inside body containers:</strong> use FA brand icons: <code>&lt;i class="fa-brands fa-{platform}"&gt;</code></li>
-      <li><strong>"Already posted" buttons:</strong> use the <code>_platformIconSvg</code> map (FA brand icons) + <code>_extLinkSvg</code> (inline SVG external link icon)</li>
+      <li><strong>Post buttons in body containers:</strong> use FA brand icons: <code>&lt;i class="fa-brands fa-{platform}"&gt;</code></li>
+      <li><strong>&ldquo;Already posted&rdquo; buttons:</strong> use the <code>_platformIconSvg</code> map (FA brand icons) combined with <code>_extLinkSvg</code> (inline SVG external link icon)</li>
     </ul>
 
     <div class="callout callout-key">
-      <strong>CSS fix:</strong> <code>font-family: "Font Awesome 6 Brands" !important</code> override on <code>.fa-brands</code> elements inside body containers. This is required to counteract the global <code>font-family !important</code> rule applied to all <code>*</code> children.
+      <strong>CSS fix:</strong> <code>font-family: "Font Awesome 6 Brands" !important</code> override is applied to <code>.fa-brands</code> elements inside social body containers. This is required to counteract the global <code>font-family !important</code> rule applied to all <code>*</code> children within those containers.
+    </div>
+
+    <!-- ================================================================ -->
+    <h2 id="environment-variables">12. Environment Variables</h2>
+
+    <table>
+      <tr><th>Variable</th><th>Purpose</th></tr>
+      <tr><td><code>OPENAI_API_KEY</code></td><td>Authentication for DALL-E 3 image generation and GPT-4.1-mini storyboard/caption calls</td></tr>
+      <tr><td><code>IG_USER_ID</code></td><td>Instagram Business Account user ID for Graph API</td></tr>
+      <tr><td><code>IG_ACCESS_TOKEN</code></td><td>Instagram Graph API access token (Page Access Token, never expires)</td></tr>
+      <tr><td><code>FB_PAGE_ID</code></td><td>Facebook Page ID for posting</td></tr>
+      <tr><td><code>FB_PAGE_ACCESS_TOKEN</code></td><td>Facebook Page Access Token (never expires, derived from System User via Meta Business portfolio)</td></tr>
+      <tr><td><code>X_API_KEY</code></td><td>X (Twitter) OAuth 1.0a consumer API key</td></tr>
+      <tr><td><code>X_API_SECRET</code></td><td>X (Twitter) OAuth 1.0a consumer API secret</td></tr>
+      <tr><td><code>X_ACCESS_TOKEN</code></td><td>X (Twitter) OAuth 1.0a access token</td></tr>
+      <tr><td><code>X_ACCESS_TOKEN_SECRET</code></td><td>X (Twitter) OAuth 1.0a access token secret</td></tr>
+      <tr><td><code>THREADS_USER_ID</code></td><td>Threads user ID for API calls</td></tr>
+      <tr><td><code>THREADS_ACCESS_TOKEN</code></td><td>Threads API access token</td></tr>
+      <tr><td><code>PINTEREST_ACCESS_TOKEN</code></td><td>Pinterest API v5 bearer token</td></tr>
+      <tr><td><code>PINTEREST_BOARD_ID</code></td><td>Pinterest board ID where pins are created</td></tr>
+      <tr><td><code>LINKEDIN_ACCESS_TOKEN</code></td><td>LinkedIn REST API bearer token</td></tr>
+      <tr><td><code>LINKEDIN_ORG_ID</code></td><td>LinkedIn organization ID (used to form <code>urn:li:organization:{id}</code> author URN)</td></tr>
+      <tr><td><code>GCS_BUCKET_NAME</code></td><td>Google Cloud Storage bucket for image uploads</td></tr>
+      <tr><td><code>GCS_PATH_PREFIX</code></td><td>Optional path prefix within the GCS bucket</td></tr>
+      <tr><td><code>SITE_URL</code></td><td>Base URL of the site, used to construct article links appended to generated captions</td></tr>
+    </table>
+
+    <div class="callout callout-warn">
+      All social platform tokens are passed as environment variables from GitHub Secrets to Cloud Run at deploy time. The Facebook/Instagram tokens are Page Access Tokens derived from a System User in the Meta Business portfolio and do not expire.
     </div>
 
   </main>

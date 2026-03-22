@@ -480,13 +480,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleIgSection('car')">
-                <svg id="car-ig-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
-                    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-                    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
-                </svg>
+                <i id="car-ig-icon" class="fa-brands fa-instagram" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Carousel Images to Instagram</span>
                 <svg id="car-ig-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -517,14 +511,7 @@
             </div>
             <div id="car-ig-btn-row" class="d-flex gap-2 flex-wrap align-items-center mb-2">
                 <button type="button" class="btn btn-dark btn-sm" onclick="postToInstagram('car')" id="car-ig-post-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                         stroke-linejoin="round" class="me-1" style="vertical-align:-1px">
-                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
-                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-                        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
-                    </svg>
-                    Post to Instagram
+                    <i class="fa-brands fa-instagram me-1"></i>Post to Instagram
                 </button>
             </div>
             <div id="car-ig-status-area" class="d-none">
@@ -550,11 +537,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleFbSection('car')">
-                <svg id="car-fb-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
-                </svg>
+                <i id="car-fb-icon" class="fa-brands fa-facebook" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Carousel Images to Facebook</span>
                 <svg id="car-fb-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -578,8 +561,7 @@
                 </div>
                 <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-fb-btn-row">
                     <button type="button" class="btn btn-sm btn-primary" onclick="postToFacebook('car')" id="car-fb-post-btn">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" style="vertical-align:-1px"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
-                        Post to Facebook
+                        <i class="fa-brands fa-facebook me-1"></i>Post to Facebook
                     </button>
                 </div>
                 <div id="car-fb-status-area" class="d-none">
@@ -610,12 +592,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleXSection('car')">
-                <svg id="car-x-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <path d="M4 4l11.733 16H20L8.267 4z"/>
-                    <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
-                </svg>
+                <i id="car-x-icon" class="fa-brands fa-x-twitter" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Carousel Images to X</span>
                 <svg id="car-x-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -634,7 +611,7 @@
                 {% else %}
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-x-caption">Caption<span class="ig-caption-tooltip" data-tip="Up to 4 images will be posted in the first tweet. If you have more, they will continue in reply tweets (thread). Each tweet is limited to 280 characters.">?</span></label>
+                        <label class="small text-muted mb-0" for="car-x-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from X. It will be saved below in Past Posts for your records.">?</span></label>
                         <a href="#" class="small ms-auto ig-section-link" id="car-x-copy-link"
                            onclick="event.preventDefault(); copyIgCaptionToX('car')">Copy from Instagram</a>
                     </div>
@@ -645,10 +622,7 @@
                 </div>
                 <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-x-btn-row">
                     <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToX('car')" id="car-x-post-btn">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
-                            <path d="M4 4l11.733 16H20L8.267 4z"/>
-                            <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
-                        </svg>Post to X
+                        <i class="fa-brands fa-x-twitter me-1"></i>Post to X
                     </button>
                 </div>
                 <div id="car-x-status-area" class="d-none">
@@ -731,10 +705,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="togglePinterestSection('car')">
-                <svg id="car-pinterest-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="currentColor" stroke="none" style="flex-shrink:0">
-                    <path d="M12 0C5.372 0 0 5.372 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.372 12-12 0-6.628-5.373-12-12-12z"/>
-                </svg>
+                <i id="car-pinterest-icon" class="fa-brands fa-pinterest" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Carousel Images to Pinterest</span>
                 <svg id="car-pinterest-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -1045,13 +1016,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleIgSection('cine')">
-                <svg id="cine-ig-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
-                    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-                    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
-                </svg>
+                <i id="cine-ig-icon" class="fa-brands fa-instagram" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Cinemagraph to Instagram</span>
                 <svg id="cine-ig-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -1082,14 +1047,7 @@
             </div>
             <div id="cine-ig-btn-row" class="d-flex gap-2 flex-wrap align-items-center mb-2">
                 <button type="button" class="btn btn-dark btn-sm" onclick="postToInstagram('cine')" id="cine-ig-post-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                         stroke-linejoin="round" class="me-1" style="vertical-align:-1px">
-                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
-                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-                        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
-                    </svg>
-                    Post to Instagram
+                    <i class="fa-brands fa-instagram me-1"></i>Post to Instagram
                 </button>
             </div>
             <div id="cine-ig-status-area" class="d-none">
@@ -1115,11 +1073,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleFbSection('cine')">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
-                </svg>
+                <i class="fa-brands fa-facebook" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Cinemagraph to Facebook</span>
                 <svg id="cine-fb-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -1141,12 +1095,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleXSection('cine')">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0">
-                    <path d="M4 4l11.733 16H20L8.267 4z"/>
-                    <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
-                </svg>
+                <i class="fa-brands fa-x-twitter" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Cinemagraph to X</span>
                 <svg id="cine-x-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -1190,10 +1139,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="togglePinterestSection('cine')">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                     fill="currentColor" stroke="none" style="flex-shrink:0">
-                    <path d="M12 0C5.372 0 0 5.372 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.372 12-12 0-6.628-5.373-12-12-12z"/>
-                </svg>
+                <i class="fa-brands fa-pinterest" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Cinemagraph to Pinterest</span>
                 <svg id="cine-pinterest-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -6364,11 +6310,7 @@ function buildRunItem(run, expandIt) {
                 <div data-smc-net="ig">
                 <hr class="mt-3 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvIgSection(${run.ts})">
-                    <svg id="nv-ig-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
-                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
-                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-                        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
-                    </svg>
+                    <i id="nv-ig-hdr-${run.ts}" class="fa-brands fa-instagram" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                     <span class="small fw-semibold">Post to Instagram</span>
                     <svg id="nv-ig-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
                         <polyline points="6 9 12 15 18 9"/>
@@ -6393,12 +6335,7 @@ function buildRunItem(run, expandIt) {
                                 data-video-url="${run.url}"
                                 onclick="postNarratedToIg(${run.ts}, this.dataset.videoUrl)"
                                 ${!IG_CONFIGURED ? 'disabled' : ''}>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                 stroke-linejoin="round" class="me-1">
-                                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
-                                <circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.5" fill="currentColor"/>
-                            </svg>Post to Instagram
+                            <i class="fa-brands fa-instagram me-1"></i>Post to Instagram
                         </button>
                     </div>
                     <div id="nv-ig-${run.ts}-status-area" class="d-none">
@@ -6423,9 +6360,7 @@ function buildRunItem(run, expandIt) {
                 <div data-smc-net="fb">
                 <hr class="mt-0 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvFbSection(${run.ts})">
-                    <svg id="nv-fb-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
-                        <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
-                    </svg>
+                    <i id="nv-fb-hdr-${run.ts}" class="fa-brands fa-facebook" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                     <span class="small fw-semibold">Post to Facebook</span>
                     <svg id="nv-fb-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
                         <polyline points="6 9 12 15 18 9"/>
@@ -6433,16 +6368,13 @@ function buildRunItem(run, expandIt) {
                 </div>
                 <div id="nv-fb-${run.ts}-body" class="nv-social-body d-none pt-1">
                     ${FB_CONFIGURED ? '' : '<div class="alert alert-warning py-1 small mb-2">Facebook not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>'}
-                    ${FB_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from your Facebook Page. It will be saved below in Past Posts for your records.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToFb(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-fb-' + run.ts + '-caption" rows="3" maxlength="2200" placeholder="Write your Facebook caption…" oninput="document.getElementById(\'nv-fb-' + run.ts + '-count\').textContent=this.value.length+\' / 2200\'"></textarea><div class="text-end text-muted small mb-2" id="nv-fb-' + run.ts + '-count">0 / 2200</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-fb-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-primary" id="nv-fb-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToFb(' + run.ts + ', this.dataset.videoUrl)"><svg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' class=\'me-1\'><path d=\'M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z\'/></svg>Post to Facebook</button></div><div id="nv-fb-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-fb-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-primary"></div><span id="nv-fb-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-fb-' + run.ts + '-progress-wrap"><div id="nv-fb-' + run.ts + '-progress-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-fb-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-fb-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-fb-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-fb-' + run.ts + '-history-list"></div></div></div>' : ''}
+                    ${FB_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from your Facebook Page. It will be saved below in Past Posts for your records.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToFb(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-fb-' + run.ts + '-caption" rows="3" maxlength="2200" placeholder="Write your Facebook caption…" oninput="document.getElementById(\'nv-fb-' + run.ts + '-count\').textContent=this.value.length+\' / 2200\'"></textarea><div class="text-end text-muted small mb-2" id="nv-fb-' + run.ts + '-count">0 / 2200</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-fb-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-primary" id="nv-fb-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToFb(' + run.ts + ', this.dataset.videoUrl)"><i class=\'fa-brands fa-facebook me-1\'></i>Post to Facebook</button></div><div id="nv-fb-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-fb-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-primary"></div><span id="nv-fb-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-fb-' + run.ts + '-progress-wrap"><div id="nv-fb-' + run.ts + '-progress-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-fb-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-fb-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-fb-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-fb-' + run.ts + '-history-list"></div></div></div>' : ''}
                 </div>
                 </div><!-- /smc-fb -->
                 <div data-smc-net="yt">
                 <hr class="mt-0 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvYtSection(${run.ts})">
-                    <svg id="nv-yt-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
-                        <path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.54C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/>
-                        <polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/>
-                    </svg>
+                    <i id="nv-yt-hdr-${run.ts}" class="fa-brands fa-youtube" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                     <span class="small fw-semibold">Post to YouTube Shorts</span>
                     <svg id="nv-yt-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
                         <polyline points="6 9 12 15 18 9"/>
@@ -6467,8 +6399,7 @@ function buildRunItem(run, expandIt) {
                             data-video-url="${run.url}"
                             ${!YT_CONFIGURED ? 'disabled' : ''}
                             onclick="postToYouTube(${run.ts}, this)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" class="me-1"><path d="M8.051 1.999h.089c.822.003 4.987.033 6.11.335a2.01 2.01 0 0 1 1.415 1.42c.101.38.172.883.22 1.402l.01.104.022.26.008.104c.065.914.073 1.77.074 1.957v.075c-.001.194-.01 1.108-.082 2.06l-.008.105-.009.104c-.05.572-.124 1.14-.235 1.558a2.007 2.007 0 0 1-1.415 1.42c-1.16.312-5.569.334-6.18.335h-.142c-.309 0-1.587-.006-2.927-.052l-.17-.006-.087-.004-.171-.007-.171-.007c-1.11-.049-2.167-.128-2.654-.26a2.007 2.007 0 0 1-1.415-1.419c-.111-.417-.185-.986-.235-1.558L.09 9.82l-.008-.104A31.4 31.4 0 0 1 0 7.68v-.123c.002-.215.01-.958.064-1.778l.007-.103.003-.052.008-.104.022-.26.01-.104c.048-.519.119-1.023.22-1.402a2.007 2.007 0 0 1 1.415-1.42c.487-.13 1.544-.21 2.654-.26l.17-.007.172-.006.086-.003.171-.007A99.788 99.788 0 0 1 7.858 2h.193zM6.4 5.209v4.818l4.157-2.408L6.4 5.209z"/></svg>
-                        Post to YouTube Shorts
+                        <i class="fa-brands fa-youtube me-1"></i>Post to YouTube Shorts
                     </button>
                     <div id="nv-yt-${run.ts}-running" class="d-none mt-2">
                         <div class="d-flex align-items-center gap-2 mb-1">
@@ -6485,10 +6416,7 @@ function buildRunItem(run, expandIt) {
                 <div data-smc-net="x">
                 <hr class="mt-0 mb-0">
                 <div class="d-flex align-items-center gap-2 py-2 user-select-none" style="cursor:pointer" onclick="toggleNvXSection(${run.ts})">
-                    <svg id="nv-x-hdr-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
-                        <path d="M4 4l11.733 16H20L8.267 4z"/>
-                        <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
-                    </svg>
+                    <i id="nv-x-hdr-${run.ts}" class="fa-brands fa-x-twitter" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                     <span class="small fw-semibold">Post to X</span>
                     <svg id="nv-x-${run.ts}-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1" style="transition:transform 0.2s;flex-shrink:0">
                         <polyline points="6 9 12 15 18 9"/>
