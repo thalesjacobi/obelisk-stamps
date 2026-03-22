@@ -180,8 +180,10 @@
     </script>
     {% block scripts %}{% endblock %}
 
-    <!-- Floating AI Chatbot (global, all pages) -->
+    <!-- Floating AI Chatbot (public pages only) -->
+    {% if not request.path.startswith('/admin') %}
     {% include 'partials/_chatbot.html' %}
     {% include 'partials/_chatbot_scripts.html' %}
+    {% endif %}
 </body>
 </html>

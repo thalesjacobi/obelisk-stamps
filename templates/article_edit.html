@@ -14,38 +14,41 @@
     .ql-container { border-radius: 0 0 4px 4px; }
     .dropdown-menu .dropdown-header { font-size: 0.65rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
 
-    /* Instagram live icon gradient */
+    /* Instagram live icon gradient (FA <i> uses background-clip text trick) */
     .ig-icon-live {
-        stroke: url(#ig-gradient) !important;
+        background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+        background-clip: text !important;
     }
 
     /* Facebook live icon */
-    .fb-icon-live { stroke: #1877F2 !important; }
+    .fb-icon-live { color: #1877F2 !important; }
 
     /* X (Twitter) live icon */
-    .x-icon-live { stroke: #1D9BF0 !important; }
+    .x-icon-live { color: #1D9BF0 !important; }
 
     /* Threads live icon */
-    .threads-icon-live { fill: #000 !important; }
+    .threads-icon-live { color: #000 !important; }
 
     /* Pinterest live icon */
-    .pinterest-icon-live { fill: #E60023 !important; }
+    .pinterest-icon-live { color: #E60023 !important; }
 
     /* LinkedIn live icon */
-    .linkedin-icon-live { stroke: #0A66C2 !important; }
+    .linkedin-icon-live { color: #0A66C2 !important; }
 
     /* TikTok live icon */
-    .tiktok-icon-live { fill: #000 !important; }
+    .tiktok-icon-live { color: #000 !important; }
 
     /* Narrated run per-item social icons */
     .nv-run-ig-live { stroke: url(#ig-gradient) !important; }
     .nv-run-yt-live { stroke: #ff0000 !important; }
     .nv-run-fb-live { stroke: #1877F2 !important; }
     .nv-run-x-live  { stroke: #1D9BF0 !important; }
-    .nv-run-threads-live { fill: #000 !important; }
-    .nv-run-pinterest-live { fill: #E60023 !important; }
-    .nv-run-linkedin-live { stroke: #0A66C2 !important; }
-    .nv-run-tiktok-live { fill: #000 !important; }
+    .nv-run-threads-live { color: #000 !important; }
+    .nv-run-pinterest-live { color: #E60023 !important; }
+    .nv-run-linkedin-live { color: #0A66C2 !important; }
+    .nv-run-tiktok-live { color: #000 !important; }
 
     /* Narrated run hide/show eye icon */
     .nv-eye-btn { opacity: 0; transition: opacity 0.15s; cursor: pointer; flex-shrink: 0; }
@@ -94,6 +97,13 @@
         font-family: "Font Awesome 6 Free" !important;
         font-weight: 900 !important;
     }
+
+    /* Automation Workflow step icons */
+    .smc-wf-icon .fa-circle-dot   { color: #adb5bd; }
+    .smc-wf-icon .fa-spinner      { color: #0d6efd; }
+    .smc-wf-icon .fa-circle-check { color: #198754; }
+    .smc-wf-icon .fa-circle-xmark { color: #dc3545; }
+    .smc-wf-icon .fa-forward      { color: #adb5bd; }
 
     /* Instagram Carousel Generator */
     #carousel-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
@@ -301,7 +311,8 @@
                 <h5 class="mb-0">Social Media Content</h5>
                 <p class="text-muted small mb-0 mt-1">Generate and publish content across social media channels.</p>
             </div>
-            <div class="dropdown ms-2 flex-shrink-0">
+            <div class="d-flex align-items-center gap-2 ms-auto flex-shrink-0">
+            <div class="dropdown">
                 <button type="button" class="btn btn-sm btn-link text-muted p-1 lh-1"
                         style="font-size:1.4rem;text-decoration:none;letter-spacing:.15em"
                         data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
@@ -342,8 +353,44 @@
                     </label></li>
                 </ul>
             </div>
+            </div><!-- /d-flex button+kebab wrapper -->
         </div>
         <div class="card-body p-3">
+            <!-- Accept & Start Workflow Button -->
+            <div class="mb-3 d-flex align-items-center gap-2" id="smc-workflow-btn-wrap">
+                <button type="button" class="btn btn-success" id="smc-workflow-btn"
+                        onclick="smcWfConfirmStart()" disabled>
+                    <i class="fa-solid fa-play me-1"></i>Accept images &amp; start workflow
+                </button>
+                <span class="text-muted" style="cursor:help" id="smc-workflow-btn-tip">
+                    <i class="fa-solid fa-circle-exclamation text-warning"></i>
+                </span>
+                <span class="text-muted" style="cursor:help"
+                      data-bs-toggle="tooltip" data-bs-placement="right" data-bs-html="true"
+                      title="<strong>Automation Workflow</strong><br>1. Generate caption (OpenAI)<br>2. Post cinemagraph to Instagram<br>3. Post carousel images to Facebook &amp; LinkedIn<br>4. Generate narrated video<br>5. Post narrated video to all platforms<br><br>Disabled networks and unconfigured platforms are skipped automatically. You can pause or abort at any time.">
+                    <i class="fa-solid fa-circle-info"></i>
+                </span>
+            </div>
+
+            <!-- Automation Workflow Progress Panel -->
+            <div id="smc-workflow-panel" class="d-none border rounded p-3 bg-light mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0"><i class="fa-solid fa-wand-magic-sparkles me-1"></i>Automation Workflow</h6>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-warning d-none" id="smc-wf-pause-btn"
+                                onclick="smcWfPause()" title="Pause after current step">
+                            <i class="fa-solid fa-pause me-1"></i>Pause
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-success d-none" id="smc-wf-resume-btn"
+                                onclick="smcWfResume()" title="Resume workflow">
+                            <i class="fa-solid fa-play me-1"></i>Resume
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="smc-wf-abort-btn"
+                                onclick="smcWfAbort()">Abort</button>
+                    </div>
+                </div>
+                <div id="smc-wf-steps"></div>
+            </div>
 
     <!-- Instagram Carousel Generator -->
     <div class="card mb-3">
@@ -1073,7 +1120,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleFbSection('cine')">
-                <i class="fa-brands fa-facebook" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
+                <i id="cine-fb-icon" class="fa-brands fa-facebook" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Cinemagraph to Facebook</span>
                 <svg id="cine-fb-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -1095,7 +1142,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleXSection('cine')">
-                <i class="fa-brands fa-x-twitter" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
+                <i id="cine-x-icon" class="fa-brands fa-x-twitter" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Cinemagraph to X</span>
                 <svg id="cine-x-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -1117,7 +1164,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="toggleThreadsSection('cine')">
-                <i class="fa-brands fa-threads" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
+                <i id="cine-threads-icon" class="fa-brands fa-threads" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Cinemagraph to Threads</span>
                 <svg id="cine-threads-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -1139,7 +1186,7 @@
             <hr class="mt-3 mb-0">
             <div class="d-flex align-items-center gap-2 py-2 user-select-none"
                  style="cursor:pointer" onclick="togglePinterestSection('cine')">
-                <i class="fa-brands fa-pinterest" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
+                <i id="cine-pinterest-icon" class="fa-brands fa-pinterest" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Cinemagraph to Pinterest</span>
                 <svg id="cine-pinterest-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
@@ -2416,25 +2463,25 @@ function _setNvIgIconLive(ts) {
     var el = document.getElementById('nv-ig-icon-' + ts);
     if (el) { el.classList.add('nv-run-ig-live'); el.setAttribute('stroke', 'url(#ig-gradient)'); }
     var hdr = document.getElementById('nv-ig-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', '#E1306C');
+    if (hdr) { hdr.style.background = 'linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)'; hdr.style.webkitBackgroundClip = 'text'; hdr.style.webkitTextFillColor = 'transparent'; hdr.style.backgroundClip = 'text'; }
 }
 function _clearNvIgIconLive(ts) {
     var el = document.getElementById('nv-ig-icon-' + ts);
     if (el) { el.classList.remove('nv-run-ig-live'); el.setAttribute('stroke', '#ccc'); }
     var hdr = document.getElementById('nv-ig-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', 'currentColor');
+    if (hdr) { hdr.style.background = ''; hdr.style.webkitBackgroundClip = ''; hdr.style.webkitTextFillColor = ''; hdr.style.backgroundClip = ''; hdr.style.color = ''; }
 }
 function _setNvYtIconLive(ts) {
     var el = document.getElementById('nv-yt-icon-' + ts);
     if (el) { el.classList.add('nv-run-yt-live'); el.setAttribute('stroke', '#ff0000'); }
     var hdr = document.getElementById('nv-yt-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', '#ff0000');
+    if (hdr) hdr.style.color = '#ff0000';
 }
 function _clearNvYtIconLive(ts) {
     var el = document.getElementById('nv-yt-icon-' + ts);
     if (el) { el.classList.remove('nv-run-yt-live'); el.setAttribute('stroke', '#ccc'); }
     var hdr = document.getElementById('nv-yt-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', 'currentColor');
+    if (hdr) hdr.style.color = '';
 }
 
 /* Facebook section header icons (carousel/cinemagraph) */
@@ -2452,13 +2499,13 @@ function _setNvFbIconLive(ts) {
     var el = document.getElementById('nv-fb-icon-' + ts);
     if (el) { el.classList.add('nv-run-fb-live'); el.setAttribute('stroke', '#1877F2'); }
     var hdr = document.getElementById('nv-fb-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', '#1877F2');
+    if (hdr) hdr.style.color = '#1877F2';
 }
 function _clearNvFbIconLive(ts) {
     var el = document.getElementById('nv-fb-icon-' + ts);
     if (el) { el.classList.remove('nv-run-fb-live'); el.setAttribute('stroke', '#ccc'); }
     var hdr = document.getElementById('nv-fb-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', 'currentColor');
+    if (hdr) hdr.style.color = '';
 }
 
 /* X (Twitter) section header icons (carousel) */
@@ -2475,13 +2522,13 @@ function _setNvXIconLive(ts) {
     var el = document.getElementById('nv-x-icon-' + ts);
     if (el) { el.classList.add('nv-run-x-live'); el.setAttribute('stroke', '#1D9BF0'); }
     var hdr = document.getElementById('nv-x-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', '#1D9BF0');
+    if (hdr) hdr.style.color = '#1D9BF0';
 }
 function _clearNvXIconLive(ts) {
     var el = document.getElementById('nv-x-icon-' + ts);
     if (el) { el.classList.remove('nv-run-x-live'); el.setAttribute('stroke', '#ccc'); }
     var hdr = document.getElementById('nv-x-hdr-' + ts);
-    if (hdr) hdr.setAttribute('stroke', 'currentColor');
+    if (hdr) hdr.style.color = '';
 }
 
 /* ── Facebook toggle, post, poll, done, error, archive (carousel/cinemagraph) ── */
@@ -5560,6 +5607,10 @@ function showIgArchiveModal(entry) {
 
 // Pre-populate captions and start status checks for both modes
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize Bootstrap tooltips
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+        new bootstrap.Tooltip(el);
+    });
     initSmcNetworkMenu();
     // Last-used captions from previous posts (empty string if never posted)
     var savedCaptions = {
@@ -5919,6 +5970,8 @@ function updateCarouselTabCounts() {
     }
     // Keep the Instagram carousel posting hint in sync
     updateIgImagesHint('car');
+    // Show/hide workflow button based on image count
+    if (typeof _smcWfUpdateBtnVisibility === 'function') _smcWfUpdateBtnVisibility();
 }
 
 function archiveAllCarousel() {
@@ -7466,6 +7519,8 @@ function updateCinemagraphTabCounts() {
     }
     // Keep the Instagram posting hint in sync
     updateIgImagesHint('cine');
+    // Update workflow button state (needs both carousel + cinemagraph ready)
+    if (typeof _smcWfUpdateBtnVisibility === 'function') _smcWfUpdateBtnVisibility();
 }
 
 function showCinemagraphTab(tab) {
@@ -8284,6 +8339,442 @@ function _cinemagraphUpdateLogBtn(hasLog) {
     const btn = document.getElementById('cinemagraph-log-btn');
     if (!btn) return;
     if (ARTICLE_ID) btn.classList.remove('disabled');
+}
+
+// ── SMC Automation Workflow ──────────────────────────────────────────────
+var _smcWfRunning = false;
+var _smcWfAborted = false;
+var _smcWfPaused = false;
+var _smcWfPauseResolve = null; // resolve fn for pause Promise
+var _smcWfCaption = '';
+var _smcWfNarratedRun = null; // {ts, url}
+var _smcWfNarratedRunsBefore = 0;
+
+var _SMC_WF_STEPS = [
+    {id:'caption',   label:'Generate Caption',                        icon:'fa-solid fa-pen-fancy',   nets:['ig','fb','linkedin','yt','x','threads','pinterest','tiktok']},
+    {id:'cine-ig',   label:'Post Cinemagraph to Instagram',           icon:'fa-brands fa-instagram',  nets:['ig']},
+    {id:'car-fb-li', label:'Post Carousel to Facebook & LinkedIn',    icon:'fa-solid fa-images',      nets:['fb','linkedin']},
+    {id:'narrated',  label:'Generate Narrated Video',                 icon:'fa-solid fa-video',       nets:['ig','fb','yt','x','threads','pinterest','tiktok','linkedin']},
+    {id:'nv-post',   label:'Post Narrated Video to All Platforms',    icon:'fa-solid fa-share-nodes', nets:['ig','fb','yt','x','threads','pinterest','tiktok','linkedin']},
+];
+
+var _NV_PLATFORMS = [
+    {key:'ig',        name:'Instagram',  route:'post-narrated-to-instagram',  poll:'narrated-ig-status',       cfg:'IG_CONFIGURED',        bodyFn:function(r,c){return{video_url:r.url,caption:c,run_ts:r.ts};}},
+    {key:'fb',        name:'Facebook',   route:'post-narrated-to-facebook',   poll:'narrated-fb-status',       cfg:'FB_CONFIGURED',        bodyFn:function(r,c){return{video_url:r.url,caption:c,run_ts:r.ts};}},
+    {key:'yt',        name:'YouTube',    route:'post-to-youtube',             poll:'youtube-status',           cfg:'YT_CONFIGURED',        bodyFn:function(r,c){return{video_url:r.url,title:ARTICLE_TITLE.substring(0,100),description:c,run_ts:r.ts};}},
+    {key:'x',         name:'X',          route:'post-narrated-to-x',          poll:'narrated-x-status',        cfg:'X_CONFIGURED',         bodyFn:function(r,c){return{video_url:r.url,caption:c.substring(0,280),run_ts:r.ts};}},
+    {key:'threads',   name:'Threads',    route:'post-narrated-to-threads',    poll:'narrated-threads-status',  cfg:'THREADS_CONFIGURED',   bodyFn:function(r,c){return{video_url:r.url,caption:c.substring(0,500),run_ts:r.ts};}},
+    {key:'pinterest', name:'Pinterest',  route:'post-narrated-to-pinterest',  poll:'narrated-pinterest-status', cfg:'PINTEREST_CONFIGURED', bodyFn:function(r,c){return{video_url:r.url,caption:c.substring(0,800),run_ts:r.ts};}},
+    {key:'tiktok',    name:'TikTok',     route:'post-narrated-to-tiktok',     poll:'narrated-tiktok-status',   cfg:'TIKTOK_CONFIGURED',    bodyFn:function(r,c){return{video_url:r.url,caption:c,run_ts:r.ts};}},
+    {key:'linkedin',  name:'LinkedIn',   route:'post-narrated-to-linkedin',   poll:'narrated-linkedin-status', cfg:'LINKEDIN_CONFIGURED',  bodyFn:function(r,c){return{video_url:r.url,caption:c.substring(0,3000),run_ts:r.ts};}},
+];
+
+function _smcWfStepById(id) {
+    return _SMC_WF_STEPS.find(function(s){ return s.id === id; });
+}
+
+function _smcWfStepEnabled(step) {
+    if (typeof step === 'string') step = _smcWfStepById(step);
+    if (!step || !step.nets) return true;
+    var cfgMap = {ig:'IG_CONFIGURED',fb:'FB_CONFIGURED',yt:'YT_CONFIGURED',x:'X_CONFIGURED',
+                  threads:'THREADS_CONFIGURED',pinterest:'PINTEREST_CONFIGURED',
+                  tiktok:'TIKTOK_CONFIGURED',linkedin:'LINKEDIN_CONFIGURED'};
+    return step.nets.some(function(n) {
+        return _smcEnabled(n) && window[cfgMap[n]];
+    });
+}
+
+function _smcWfDynamicLabel(step) {
+    var cfgMap = {ig:'IG_CONFIGURED',fb:'FB_CONFIGURED',yt:'YT_CONFIGURED',x:'X_CONFIGURED',
+                  threads:'THREADS_CONFIGURED',pinterest:'PINTEREST_CONFIGURED',
+                  tiktok:'TIKTOK_CONFIGURED',linkedin:'LINKEDIN_CONFIGURED'};
+    var nameMap = {ig:'Instagram',fb:'Facebook',yt:'YouTube',x:'X',
+                   threads:'Threads',pinterest:'Pinterest',tiktok:'TikTok',linkedin:'LinkedIn'};
+    if (!step.nets) return step.label;
+    var active = step.nets.filter(function(n){ return _smcEnabled(n) && window[cfgMap[n]]; });
+    if (active.length === 0) return step.label;
+    // For posting steps, show which platforms are active
+    if (step.id === 'car-fb-li') return 'Post Carousel to ' + active.map(function(n){return nameMap[n];}).join(' & ');
+    if (step.id === 'nv-post')   return 'Post Narrated Video to ' + active.map(function(n){return nameMap[n];}).join(', ');
+    return step.label;
+}
+
+function renderSmcWfSteps() {
+    var container = document.getElementById('smc-wf-steps');
+    container.innerHTML = '';
+    _SMC_WF_STEPS.forEach(function(step) {
+        var enabled = _smcWfStepEnabled(step);
+        var label = _smcWfDynamicLabel(step);
+        var div = document.createElement('div');
+        div.className = 'd-flex align-items-start gap-2 mb-2';
+        div.id = 'smc-wf-step-' + step.id;
+        div.innerHTML =
+            '<span class="smc-wf-icon" style="width:20px;text-align:center;padding-top:2px" id="smc-wf-icon-' + step.id + '">' +
+                '<i class="fa-solid fa-circle-dot"></i>' +
+            '</span>' +
+            '<div class="flex-grow-1">' +
+                '<div class="small fw-semibold">' + label + '</div>' +
+                '<div class="small text-muted" id="smc-wf-detail-' + step.id + '"></div>' +
+            '</div>';
+        container.appendChild(div);
+        if (!enabled) setSmcWfStepState(step.id, 'skipped', 'Skipped (disabled or not configured)');
+    });
+}
+
+function setSmcWfStepState(stepId, state, detail) {
+    var iconEl = document.getElementById('smc-wf-icon-' + stepId);
+    var detailEl = document.getElementById('smc-wf-detail-' + stepId);
+    if (!iconEl) return;
+    var iconMap = {
+        pending:  '<i class="fa-solid fa-circle-dot"></i>',
+        running:  '<i class="fa-solid fa-spinner fa-spin"></i>',
+        done:     '<i class="fa-solid fa-circle-check"></i>',
+        failed:   '<i class="fa-solid fa-circle-xmark"></i>',
+        skipped:  '<i class="fa-solid fa-forward"></i>',
+    };
+    iconEl.innerHTML = iconMap[state] || iconMap.pending;
+    if (detail !== undefined && detailEl) detailEl.innerHTML = detail;
+}
+
+function _smcWfBase() { return '/admin/articles/' + ARTICLE_ID; }
+
+function smcWfPoll(url, checkFn, intervalMs, maxPolls) {
+    return new Promise(function(resolve, reject) {
+        var polls = 0;
+        function tick() {
+            if (_smcWfAborted) { reject(new Error('Aborted by user')); return; }
+            if (++polls > maxPolls) { reject(new Error('Timed out after ' + Math.round(maxPolls * intervalMs / 60000) + ' min')); return; }
+            fetch(url).then(function(r){return r.json();}).then(function(d) {
+                var result = checkFn(d);
+                if (result === 'continue') setTimeout(tick, intervalMs);
+                else if (result && result.error) reject(new Error(result.error));
+                else resolve(result);
+            }).catch(function() { setTimeout(tick, intervalMs); });
+        }
+        setTimeout(tick, intervalMs);
+    });
+}
+
+async function smcWfPhase1() {
+    if (!_smcWfStepEnabled('caption')) { setSmcWfStepState('caption', 'skipped', 'Skipped (no platforms enabled)'); return; }
+    setSmcWfStepState('caption', 'running', 'Generating caption via OpenAI...');
+    var r = await fetch(_smcWfBase() + '/generate-ig-caption', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+    });
+    var d = await r.json();
+    if (d.error) throw new Error('Caption: ' + d.error);
+    _smcWfCaption = d.caption;
+    setSmcWfStepState('caption', 'done', 'Caption ready (' + _smcWfCaption.length + ' chars)');
+}
+
+async function smcWfPhase2() {
+    if (!_smcWfStepEnabled('cine')) { setSmcWfStepState('cine', 'skipped', 'Skipped (Instagram disabled)'); return; }
+    setSmcWfStepState('cine', 'running', 'Starting cinemagraph generation...');
+    var r = await fetch(_smcWfBase() + '/generate-cinemagraphs', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+    });
+    var d = await r.json();
+    if (d.error && d.error !== 'already_running') throw new Error('Cinemagraph: ' + d.error);
+    await smcWfPoll(_smcWfBase() + '/video-data', function(data) {
+        var status = data.cinemagraph_status;
+        if (status && status.startsWith('running')) {
+            setSmcWfStepState('cine', 'running', 'Generating... ' + status.replace('running:', ''));
+            return 'continue';
+        }
+        var cResult = data.cinemagraph_result;
+        if (cResult && cResult.startsWith('error')) return {error: cResult};
+        var urls = data.cinemagraph_urls || [];
+        var filled = urls.filter(function(u){return !!u;}).length;
+        if (filled > 0 && !status) return data;
+        return 'continue';
+    }, 20000, 60);
+    setSmcWfStepState('cine', 'done', 'Cinemagraph clips generated');
+}
+
+async function smcWfPhase3() {
+    if (!_smcWfStepEnabled('cine-ig')) { setSmcWfStepState('cine-ig', 'skipped', 'Skipped'); return; }
+    setSmcWfStepState('cine-ig', 'running', 'Posting cinemagraph carousel to Instagram...');
+    var r = await fetch(_smcWfBase() + '/post-to-instagram', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({caption: _smcWfCaption, type: 'cine'})
+    });
+    var d = await r.json();
+    if (d.error) throw new Error('IG Cinemagraph: ' + d.error);
+    await smcWfPoll(_smcWfBase() + '/ig-post-status?type=cine', function(data) {
+        var s = data.status || '';
+        if (s.startsWith('running')) { setSmcWfStepState('cine-ig', 'running', 'Posting... ' + s.replace('running:', '')); return 'continue'; }
+        if (s.startsWith('done:')) return data;
+        if (s.startsWith('error') || s.startsWith('fail')) return {error: s};
+        return 'continue';
+    }, 5000, 120);
+    setSmcWfStepState('cine-ig', 'done', 'Posted to Instagram');
+}
+
+async function smcWfPhase4() {
+    if (!_smcWfStepEnabled('car-fb-li')) { setSmcWfStepState('car-fb-li', 'skipped', 'Skipped'); return; }
+    setSmcWfStepState('car-fb-li', 'running', 'Posting carousel images...');
+    var promises = [], platforms = [];
+    if (_smcEnabled('fb') && FB_CONFIGURED) {
+        platforms.push('Facebook');
+        promises.push((async function() {
+            var r = await fetch(_smcWfBase() + '/post-to-facebook', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({caption: _smcWfCaption, type: 'car'})
+            });
+            var d = await r.json(); if (d.error) throw new Error('Facebook: ' + d.error);
+            return smcWfPoll(_smcWfBase() + '/fb-post-status?type=car', function(data) {
+                var s = data.status || '';
+                if (s.startsWith('running')) return 'continue';
+                if (s.startsWith('done')) return data;
+                if (s.startsWith('error') || s.startsWith('fail')) return {error: 'Facebook: ' + s};
+                return 'continue';
+            }, 5000, 120);
+        })());
+    }
+    if (_smcEnabled('linkedin') && LINKEDIN_CONFIGURED) {
+        platforms.push('LinkedIn');
+        promises.push((async function() {
+            var r = await fetch(_smcWfBase() + '/post-carousel-to-linkedin', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({caption: _smcWfCaption, type: 'car'})
+            });
+            var d = await r.json(); if (d.error) throw new Error('LinkedIn: ' + d.error);
+            return smcWfPoll(_smcWfBase() + '/carousel-linkedin-status?type=car', function(data) {
+                var s = data.status || '';
+                if (s.startsWith('running')) return 'continue';
+                if (s.startsWith('done')) return data;
+                if (s.startsWith('error') || s.startsWith('fail')) return {error: 'LinkedIn: ' + s};
+                return 'continue';
+            }, 5000, 120);
+        })());
+    }
+    if (promises.length === 0) { setSmcWfStepState('car-fb-li', 'skipped', 'No platforms configured'); return; }
+    var results = await Promise.allSettled(promises);
+    var failed = []; results.forEach(function(r,i){ if (r.status==='rejected') failed.push(platforms[i]+': '+r.reason.message); });
+    if (failed.length > 0 && failed.length === results.length) throw new Error(failed.join('; '));
+    if (failed.length > 0) setSmcWfStepState('car-fb-li', 'done', 'Partial: ' + failed.join('; '));
+    else setSmcWfStepState('car-fb-li', 'done', 'Posted to ' + platforms.join(' & '));
+}
+
+async function smcWfPhase5() {
+    if (!_smcWfStepEnabled('narrated')) { setSmcWfStepState('narrated', 'skipped', 'Skipped (no video platforms enabled)'); return; }
+    setSmcWfStepState('narrated', 'running', 'Starting narrated video generation...');
+    var preData = await fetch(_smcWfBase() + '/video-data').then(function(r){return r.json();});
+    _smcWfNarratedRunsBefore = (preData.narrated_runs || []).length;
+    var r = await fetch(_smcWfBase() + '/generate-narrated-video', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+    });
+    var d = await r.json();
+    if (d.error && d.error !== 'already_running') throw new Error('Narrated: ' + d.error);
+    await smcWfPoll(_smcWfBase() + '/video-data', function(data) {
+        var status = data.narrated_status;
+        if (status && status.startsWith('running')) {
+            setSmcWfStepState('narrated', 'running', 'Generating... ' + status.replace('running:', ''));
+            return 'continue';
+        }
+        if (status && status.startsWith('error')) return {error: status};
+        var runs = data.narrated_runs || [];
+        if (runs.length > _smcWfNarratedRunsBefore && !status) {
+            _smcWfNarratedRun = runs[0];
+            return data;
+        }
+        return 'continue';
+    }, 20000, 90);
+    setSmcWfStepState('narrated', 'done', 'Narrated video ready');
+}
+
+async function smcWfPhase6() {
+    if (!_smcWfNarratedRun || !_smcWfNarratedRun.url) {
+        setSmcWfStepState('nv-post', 'failed', 'No narrated video available');
+        throw new Error('No narrated video run found');
+    }
+    var enabledPlatforms = _NV_PLATFORMS.filter(function(p) { return _smcEnabled(p.key) && window[p.cfg]; });
+    if (enabledPlatforms.length === 0) { setSmcWfStepState('nv-post', 'skipped', 'No platforms enabled'); return; }
+
+    var statuses = {};
+    enabledPlatforms.forEach(function(p){ statuses[p.key] = 'pending'; });
+    function updateBadges() {
+        var html = enabledPlatforms.map(function(p) {
+            var s = statuses[p.key] || 'pending';
+            if (s === 'running') return '<span class="badge bg-info"><span class="spinner-border spinner-border-sm" style="width:.55rem;height:.55rem;border-width:.1em"></span> ' + p.name + '</span>';
+            if (s === 'done')    return '<span class="badge bg-success">' + p.name + '</span>';
+            if (s === 'failed')  return '<span class="badge bg-danger">' + p.name + '</span>';
+            return '<span class="badge bg-secondary">' + p.name + '</span>';
+        }).join(' ');
+        setSmcWfStepState('nv-post', 'running', html);
+    }
+    updateBadges();
+
+    var promises = enabledPlatforms.map(function(plat) {
+        return (async function() {
+            statuses[plat.key] = 'running'; updateBadges();
+            var body = plat.bodyFn(_smcWfNarratedRun, _smcWfCaption);
+            var r = await fetch(_smcWfBase() + '/' + plat.route, {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+            });
+            var d = await r.json();
+            if (d.error) throw new Error(plat.name + ': ' + d.error);
+            await smcWfPoll(_smcWfBase() + '/' + plat.poll + '?ts=' + _smcWfNarratedRun.ts, function(data) {
+                var s = data.status || '';
+                if (s.startsWith('running')) return 'continue';
+                if (s.startsWith('done')) return data;
+                if (s.startsWith('error') || s.startsWith('fail')) return {error: plat.name + ': ' + s};
+                return 'continue';
+            }, 5000, 120);
+            statuses[plat.key] = 'done'; updateBadges();
+        })().catch(function(err) { statuses[plat.key] = 'failed'; updateBadges(); throw err; });
+    });
+
+    var results = await Promise.allSettled(promises);
+    var succeeded = results.filter(function(r){return r.status==='fulfilled';}).length;
+    var failures = results.filter(function(r){return r.status==='rejected';});
+    if (failures.length === 0) setSmcWfStepState('nv-post', 'done', succeeded + '/' + enabledPlatforms.length + ' platforms posted');
+    else if (succeeded > 0) setSmcWfStepState('nv-post', 'done', succeeded + '/' + enabledPlatforms.length + ' posted. Some failed.');
+    else throw new Error('All NV posts failed');
+}
+
+function _smcWfUpdateControls() {
+    var pauseBtn  = document.getElementById('smc-wf-pause-btn');
+    var resumeBtn = document.getElementById('smc-wf-resume-btn');
+    var abortBtn  = document.getElementById('smc-wf-abort-btn');
+    if (!pauseBtn) return;
+    if (_smcWfRunning && !_smcWfPaused && !_smcWfAborted) {
+        pauseBtn.classList.remove('d-none');
+        resumeBtn.classList.add('d-none');
+        abortBtn.disabled = false;
+    } else if (_smcWfRunning && _smcWfPaused) {
+        pauseBtn.classList.add('d-none');
+        resumeBtn.classList.remove('d-none');
+        abortBtn.disabled = false;
+    } else {
+        pauseBtn.classList.add('d-none');
+        resumeBtn.classList.add('d-none');
+    }
+}
+
+async function runSmcWorkflow(startFromStep) {
+    if (_smcWfRunning) return;
+    if (!ARTICLE_ID) { alert('Save the article first.'); return; }
+    _smcWfRunning = true;
+    _smcWfAborted = false;
+    _smcWfPaused = false;
+    startFromStep = startFromStep || 0;
+    var panel = document.getElementById('smc-workflow-panel');
+    var abortBtn = document.getElementById('smc-wf-abort-btn');
+    panel.classList.remove('d-none');
+    document.getElementById('smc-workflow-btn-wrap').classList.add('d-none');
+    abortBtn.disabled = false;
+    abortBtn.textContent = 'Abort';
+    _smcWfUpdateControls();
+    if (startFromStep === 0) renderSmcWfSteps();
+    var phases = [smcWfPhase1, smcWfPhase3, smcWfPhase4, smcWfPhase5, smcWfPhase6];
+    var stepIds = _SMC_WF_STEPS.map(function(s){return s.id;});
+    try {
+        for (var i = startFromStep; i < phases.length; i++) {
+            if (_smcWfAborted) throw new Error('Aborted by user');
+            // Check if paused between steps
+            if (_smcWfPaused) {
+                await new Promise(function(resolve) { _smcWfPauseResolve = resolve; });
+                _smcWfPauseResolve = null;
+                if (_smcWfAborted) throw new Error('Aborted by user');
+            }
+            await phases[i]();
+        }
+        smcWfFinish(true);
+    } catch(e) {
+        var failedStep = startFromStep;
+        for (var j = startFromStep; j < stepIds.length; j++) {
+            var iconEl = document.getElementById('smc-wf-icon-' + stepIds[j]);
+            if (iconEl && iconEl.querySelector('.fa-spinner')) { failedStep = j; break; }
+        }
+        setSmcWfStepState(stepIds[failedStep], 'failed',
+            e.message + ' &mdash; <a href="#" class="small" onclick="event.preventDefault();runSmcWorkflow(' + failedStep + ')">Retry from here</a>');
+        smcWfFinish(false, e.message);
+    }
+}
+
+function smcWfPause() {
+    _smcWfPaused = true;
+    _smcWfUpdateControls();
+}
+
+function smcWfResume() {
+    _smcWfPaused = false;
+    _smcWfUpdateControls();
+    if (_smcWfPauseResolve) _smcWfPauseResolve();
+}
+
+function smcWfAbort() {
+    _smcWfAborted = true;
+    _smcWfRunning = false;
+    _smcWfPaused = false;
+    if (_smcWfPauseResolve) _smcWfPauseResolve(); // unblock if paused
+    _smcWfPauseResolve = null;
+    document.getElementById('smc-wf-abort-btn').disabled = true;
+    _smcWfUpdateControls();
+}
+
+function smcWfFinish(success) {
+    _smcWfRunning = false;
+    _smcWfPaused = false;
+    var abortBtn = document.getElementById('smc-wf-abort-btn');
+    if (abortBtn) { abortBtn.disabled = true; abortBtn.textContent = success ? 'Done' : 'Stopped'; }
+    _smcWfUpdateControls();
+    _smcWfUpdateBtnVisibility();
+}
+
+function _smcWfUpdateBtnVisibility() {
+    var wrap = document.getElementById('smc-workflow-btn-wrap');
+    var btn  = document.getElementById('smc-workflow-btn');
+    if (!wrap || !btn) return;
+
+    // Hide the whole row while workflow is running
+    if (_smcWfRunning) { wrap.classList.add('d-none'); return; }
+    wrap.classList.remove('d-none');
+
+    // Check carousel images (need 10)
+    var carGrid = document.getElementById('carousel-grid');
+    var carCount = carGrid ? carGrid.querySelectorAll('.carousel-col[id^="cimg-"]').length : 0;
+    var carReady = carCount >= 10;
+
+    // Check cinemagraph videos (need 10 with <video> elements)
+    var cineGrid = document.getElementById('cinemagraph-grid');
+    var cineCount = 0;
+    if (cineGrid) {
+        cineCount = Array.from(cineGrid.querySelectorAll('.carousel-col')).filter(function(c) {
+            return c.querySelector('video');
+        }).length;
+    }
+    var cineReady = cineCount >= 10;
+
+    var ready = carReady && cineReady;
+    btn.disabled = !ready;
+
+    // Update tooltip on the button itself when disabled
+    var tipEl = document.getElementById('smc-workflow-btn-tip');
+    if (tipEl) {
+        var instance = bootstrap.Tooltip.getInstance(tipEl);
+        if (ready) {
+            if (instance) instance.dispose();
+            tipEl.classList.add('d-none');
+        } else {
+            tipEl.classList.remove('d-none');
+            var reasons = [];
+            if (!carReady) reasons.push('Carousel images (' + carCount + '/10)');
+            if (!cineReady) reasons.push('Cinemagraph videos (' + cineCount + '/10)');
+            var tip = 'Complete before starting:<br>' + reasons.join('<br>');
+            if (instance) { instance._config.title = tip; }
+            else { new bootstrap.Tooltip(tipEl, {html: true, title: tip, placement: 'right'}); }
+        }
+    }
+}
+
+function smcWfConfirmStart() {
+    var steps = _SMC_WF_STEPS.filter(function(s){ return _smcWfStepEnabled(s); });
+    var list = steps.map(function(s,i){ return (i+1) + '. ' + _smcWfDynamicLabel(s); }).join('\n');
+    var msg = 'This will run the following automation steps:\n\n' + list +
+              '\n\nDisabled or unconfigured platforms will be skipped.\nYou can pause or abort at any time.\n\nProceed?';
+    if (confirm(msg)) runSmcWorkflow();
 }
 
 </script>
