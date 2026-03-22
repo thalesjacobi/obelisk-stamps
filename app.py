@@ -4915,10 +4915,17 @@ def admin_post_to_youtube(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided."}), 400
     status_key = f"yt_status_{article_id}_{run_ts}"
+    title_key  = f"yt_title_{article_id}_{run_ts}"
+    desc_key   = f"yt_desc_{article_id}_{run_ts}"
     if (get_setting(status_key) or "").startswith("running"):
         return jsonify({"error": "Already uploading this video."}), 409
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
             (status_key, "running:start", "running:start"))
+    # Save title/description so they can be restored on page reload
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+            (title_key, title, title))
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+            (desc_key, desc, desc))
     _add_activity_log(article_id, "YouTube Upload Started",
                       f"run_ts={run_ts}\nvideo_url={video_url[:120]}",
                       component="narrated")
@@ -4933,12 +4940,143 @@ def admin_post_to_youtube(article_id):
 @admin_required
 def admin_youtube_status(article_id):
     """Poll YouTube upload status for a given run_ts."""
-    run_ts     = request.args.get("ts", "0")
-    status_key = f"yt_status_{article_id}_{run_ts}"
-    result_key = f"yt_result_{article_id}_{run_ts}"
-    status = get_setting(status_key) or "idle"
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"yt_status_{article_id}_{run_ts}"
+    result_key  = f"yt_result_{article_id}_{run_ts}"
+    title_key   = f"yt_title_{article_id}_{run_ts}"
+    desc_key    = f"yt_desc_{article_id}_{run_ts}"
+    history_key = f"yt_history_{article_id}_{run_ts}"
+    status  = get_setting(status_key) or "idle"
+    result  = get_setting(result_key) or ""
+    title   = get_setting(title_key)  or ""
+    desc    = get_setting(desc_key)   or ""
+    history = json.loads(get_setting(history_key) or "[]")
+    return jsonify({"status": status, "result": result,
+                    "title": title, "description": desc, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-youtube-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_youtube_post(article_id):
+    """Delete a YouTube video and archive the record."""
+    import datetime as _dt
+    data       = request.get_json() or {}
+    run_ts     = str(data.get("run_ts", "0"))
+    status_key  = f"yt_status_{article_id}_{run_ts}"
+    result_key  = f"yt_result_{article_id}_{run_ts}"
+    title_key   = f"yt_title_{article_id}_{run_ts}"
+    desc_key    = f"yt_desc_{article_id}_{run_ts}"
+    history_key = f"yt_history_{article_id}_{run_ts}"
+
     result = get_setting(result_key) or ""
-    return jsonify({"status": status, "result": result})
+    if not result.startswith("done:"):
+        return jsonify({"error": "No YouTube post to delete"}), 400
+    yt_url   = result.replace("done:", "")
+    video_id = yt_url.rstrip("/").split("/")[-1]  # e.g. https://youtube.com/shorts/XXXXX
+
+    # Try to delete from YouTube via Data API
+    refresh_token = get_setting("youtube_refresh_token")
+    if refresh_token:
+        try:
+            import requests as _req
+            token_resp = _req.post("https://oauth2.googleapis.com/token", data={
+                "client_id":     os.getenv("GOOGLE_CLIENT_ID", ""),
+                "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", ""),
+                "refresh_token": refresh_token,
+                "grant_type":    "refresh_token",
+            }, timeout=10)
+            access_token = token_resp.json().get("access_token", "")
+            if access_token:
+                del_resp = _req.delete(
+                    f"https://www.googleapis.com/youtube/v3/videos?id={video_id}",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=15,
+                )
+                if del_resp.status_code not in (200, 204, 404):
+                    return jsonify({"error": f"YouTube API error: {del_resp.text[:200]}"}), 400
+        except Exception as exc:
+            print(f"[YT] delete error: {exc}", flush=True)
+            # Continue to archive even if API delete fails
+
+    # Archive
+    title   = get_setting(title_key) or ""
+    desc    = get_setting(desc_key) or ""
+    history = json.loads(get_setting(history_key) or "[]")
+    history.append({
+        "video_id": video_id, "url": yt_url, "title": title, "description": desc,
+        "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    })
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (status_key, result_key, title_key, desc_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, "YouTube Post Deleted & Archived",
+                      f"video_id={video_id}", component="narrated")
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/archive-youtube-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_youtube_post(article_id):
+    """Archive a YouTube post record without deleting from YouTube."""
+    import datetime as _dt
+    data       = request.get_json() or {}
+    run_ts     = str(data.get("run_ts", "0"))
+    status_key  = f"yt_status_{article_id}_{run_ts}"
+    result_key  = f"yt_result_{article_id}_{run_ts}"
+    title_key   = f"yt_title_{article_id}_{run_ts}"
+    desc_key    = f"yt_desc_{article_id}_{run_ts}"
+    history_key = f"yt_history_{article_id}_{run_ts}"
+
+    result = get_setting(result_key) or ""
+    if not result.startswith("done:"):
+        return jsonify({"error": "No YouTube post to archive"}), 400
+    yt_url   = result.replace("done:", "")
+    video_id = yt_url.rstrip("/").split("/")[-1]
+    title    = get_setting(title_key) or ""
+    desc     = get_setting(desc_key) or ""
+    history  = json.loads(get_setting(history_key) or "[]")
+    history.append({
+        "video_id": video_id, "url": yt_url, "title": title, "description": desc,
+        "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    })
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (status_key, result_key, title_key, desc_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    _add_activity_log(article_id, "YouTube Post Archived",
+                      f"video_id={video_id}", component="narrated")
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/check-youtube-post")
+@login_required
+@admin_required
+def admin_check_youtube_post(article_id):
+    """Check if a YouTube video is still live."""
+    import requests as _req
+    run_ts     = request.args.get("ts", "0")
+    result_key = f"yt_result_{article_id}_{run_ts}"
+    result     = get_setting(result_key) or ""
+    if not result.startswith("done:"):
+        return jsonify({"error": "No YouTube post to check"}), 400
+    yt_url   = result.replace("done:", "")
+    video_id = yt_url.rstrip("/").split("/")[-1]
+    try:
+        # Use oEmbed endpoint (no auth required)
+        resp = _req.get(
+            f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json",
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return jsonify({"live": True})
+        return jsonify({"live": False, "api_error": f"HTTP {resp.status_code}"})
+    except Exception as exc:
+        return jsonify({"error": f"Check failed: {exc}"}), 500
 
 
 # ------------------------------------------------------------
@@ -6612,12 +6750,16 @@ def admin_post_narrated_to_facebook(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
 
-    status_key = f"narrated_fb_status_{article_id}_{run_ts}"
-    result_key = f"narrated_fb_result_{article_id}_{run_ts}"
+    status_key  = f"narrated_fb_status_{article_id}_{run_ts}"
+    result_key  = f"narrated_fb_result_{article_id}_{run_ts}"
+    caption_key = f"narrated_fb_caption_{article_id}_{run_ts}"
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s", (result_key, "", ""))
+    # Save caption so it can be restored on page reload
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (caption_key, caption, caption))
 
     t = threading.Thread(target=_post_narrated_fb_worker,
                          args=(article_id, video_url, caption, run_ts), daemon=True)
@@ -6629,13 +6771,15 @@ def admin_post_narrated_to_facebook(article_id):
 @login_required
 @admin_required
 def admin_narrated_fb_status(article_id):
-    run_ts     = request.args.get("ts", "0")
-    status_key = f"narrated_fb_status_{article_id}_{run_ts}"
-    result_key = f"narrated_fb_result_{article_id}_{run_ts}"
-    status     = get_setting(status_key) or "idle"
-    result     = get_setting(result_key) or ""
-    history    = json.loads(get_setting(f"narrated_fb_history_{article_id}_{run_ts}") or "[]")
-    return jsonify({"status": status, "result": result, "history": history})
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"narrated_fb_status_{article_id}_{run_ts}"
+    result_key  = f"narrated_fb_result_{article_id}_{run_ts}"
+    caption_key = f"narrated_fb_caption_{article_id}_{run_ts}"
+    status      = get_setting(status_key) or "idle"
+    result      = get_setting(result_key) or ""
+    caption     = get_setting(caption_key) or ""
+    history     = json.loads(get_setting(f"narrated_fb_history_{article_id}_{run_ts}") or "[]")
+    return jsonify({"status": status, "result": result, "caption": caption, "history": history})
 
 
 @app.route("/admin/articles/<int:article_id>/check-narrated-fb-post")
