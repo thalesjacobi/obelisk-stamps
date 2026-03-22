@@ -32,7 +32,7 @@
     .x-icon-live { color: #1D9BF0 !important; }
 
     /* Threads live icon */
-    .threads-icon-live { color: #000 !important; }
+    .threads-icon-live { color: #1DA1F2 !important; }
 
     /* Pinterest live icon */
     .pinterest-icon-live { color: #E60023 !important; }
@@ -48,7 +48,7 @@
     .nv-run-yt-live { stroke: #ff0000 !important; }
     .nv-run-fb-live { stroke: #1877F2 !important; }
     .nv-run-x-live  { stroke: #1D9BF0 !important; }
-    .nv-run-threads-live { color: #000 !important; }
+    .nv-run-threads-live { color: #1DA1F2 !important; }
     .nv-run-pinterest-live { color: #E60023 !important; }
     .nv-run-linkedin-live { color: #0A66C2 !important; }
     .nv-run-tiktok-live { color: #000 !important; }
@@ -4169,9 +4169,9 @@ function _nvThreadsId(ts, suffix) { return 'nv-threads-' + ts + '-' + suffix; }
 
 function _setNvThreadsIconLive(ts) {
     var el = document.getElementById('nv-threads-icon-' + ts);
-    if (el) { el.classList.add('nv-run-threads-live'); el.style.color = '#000'; }
+    if (el) { el.classList.add('nv-run-threads-live'); el.style.color = '#1DA1F2'; }
     var hdr = document.getElementById('nv-threads-hdr-' + ts);
-    if (hdr) hdr.style.color = '#000';
+    if (hdr) hdr.style.color = '#1DA1F2';
 }
 function _clearNvThreadsIconLive(ts) {
     var el = document.getElementById('nv-threads-icon-' + ts);
@@ -5638,7 +5638,7 @@ document.addEventListener('DOMContentLoaded', function() {
         updateIgImagesHint(mode);
         if (typeof ARTICLE_ID !== 'undefined' && ARTICLE_ID) {
             checkIgRunning(mode);
-            checkFbRunning(mode);
+            if (mode === 'car') checkFbRunning(mode);
         }
         // Pre-populate other social captions with article title + URL (if empty)
         ['threads', 'pinterest', 'linkedin', 'x'].forEach(function(net) {
@@ -7030,24 +7030,12 @@ function showNvYtDone(runTs, ytUrl) {
     if (btnRow) {
         btnRow.querySelectorAll('.nv-yt-done-btn').forEach(function(b) { b.remove(); });
         var ts = runTs;
-        var checkBtn = document.createElement('button');
-        checkBtn.type = 'button';
-        checkBtn.className = 'btn btn-outline-primary btn-sm nv-yt-done-btn';
-        checkBtn.id = 'nv-yt-' + runTs + '-check-live-btn';
-        checkBtn.textContent = 'Check if post is still live';
-        checkBtn.onclick = function() { nvYtCheckPostLive(ts); };
-        btnRow.appendChild(checkBtn);
         var archiveBtn = document.createElement('button');
         archiveBtn.type = 'button';
         archiveBtn.className = 'btn btn-outline-danger btn-sm nv-yt-done-btn';
         archiveBtn.textContent = 'Delete and archive post';
         archiveBtn.onclick = function() { nvYtDeleteAndArchive(ts); };
         btnRow.appendChild(archiveBtn);
-    }
-    var resultEl = document.getElementById('nv-yt-' + runTs + '-result');
-    if (resultEl) {
-        resultEl.classList.remove('d-none');
-        resultEl.innerHTML = '<div id="nv-yt-' + runTs + '-check-live-status" class="small mb-2"></div>';
     }
 }
 
