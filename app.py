@@ -257,6 +257,70 @@ if LINKEDIN_CONFIGURED:
 else:
     print("LinkedIn: credentials not set — posting disabled")
 
+# --- Bluesky (AT Protocol) ---
+BLUESKY_HANDLE       = os.getenv("BLUESKY_HANDLE", "")
+BLUESKY_APP_PASSWORD = os.getenv("BLUESKY_APP_PASSWORD", "")
+BLUESKY_CONFIGURED   = bool(BLUESKY_HANDLE and BLUESKY_APP_PASSWORD)
+if BLUESKY_CONFIGURED:
+    print("Bluesky: credentials configured")
+else:
+    print("Bluesky: BLUESKY_HANDLE / BLUESKY_APP_PASSWORD not set — posting disabled")
+
+# --- Reddit API ---
+REDDIT_CLIENT_ID      = os.getenv("REDDIT_CLIENT_ID", "")
+REDDIT_CLIENT_SECRET  = os.getenv("REDDIT_CLIENT_SECRET", "")
+REDDIT_REFRESH_TOKEN  = os.getenv("REDDIT_REFRESH_TOKEN", "")
+REDDIT_SUBREDDIT      = os.getenv("REDDIT_SUBREDDIT", "")
+REDDIT_CONFIGURED     = bool(REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET and REDDIT_REFRESH_TOKEN and REDDIT_SUBREDDIT)
+if REDDIT_CONFIGURED:
+    print("Reddit: credentials configured")
+else:
+    print("Reddit: credentials not set — posting disabled")
+
+# --- Telegram Bot ---
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_CONFIGURED = bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
+if TELEGRAM_CONFIGURED:
+    print("Telegram: credentials configured")
+else:
+    print("Telegram: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set — posting disabled")
+
+# --- Vimeo ---
+VIMEO_ACCESS_TOKEN = os.getenv("VIMEO_ACCESS_TOKEN", "")
+VIMEO_CONFIGURED   = bool(VIMEO_ACCESS_TOKEN)
+if VIMEO_CONFIGURED:
+    print("Vimeo: credentials configured")
+else:
+    print("Vimeo: VIMEO_ACCESS_TOKEN not set — posting disabled")
+
+# --- Mastodon ---
+MASTODON_INSTANCE_URL  = os.getenv("MASTODON_INSTANCE_URL", "").rstrip("/")
+MASTODON_ACCESS_TOKEN  = os.getenv("MASTODON_ACCESS_TOKEN", "")
+MASTODON_CONFIGURED    = bool(MASTODON_INSTANCE_URL and MASTODON_ACCESS_TOKEN)
+if MASTODON_CONFIGURED:
+    print("Mastodon: credentials configured")
+else:
+    print("Mastodon: credentials not set — posting disabled")
+
+# --- VKontakte (VK) ---
+VK_ACCESS_TOKEN = os.getenv("VK_ACCESS_TOKEN", "")
+VK_OWNER_ID     = os.getenv("VK_OWNER_ID", "")
+VK_CONFIGURED   = bool(VK_ACCESS_TOKEN and VK_OWNER_ID)
+if VK_CONFIGURED:
+    print("VK: credentials configured")
+else:
+    print("VK: VK_ACCESS_TOKEN / VK_OWNER_ID not set — posting disabled")
+
+# --- Tumblr ---
+TUMBLR_ACCESS_TOKEN = os.getenv("TUMBLR_ACCESS_TOKEN", "")
+TUMBLR_BLOG_NAME    = os.getenv("TUMBLR_BLOG_NAME", "")
+TUMBLR_CONFIGURED   = bool(TUMBLR_ACCESS_TOKEN and TUMBLR_BLOG_NAME)
+if TUMBLR_CONFIGURED:
+    print("Tumblr: credentials configured")
+else:
+    print("Tumblr: TUMBLR_ACCESS_TOKEN / TUMBLR_BLOG_NAME not set — posting disabled")
+
 
 # --- Knowledge Base (ChromaDB) ---
 KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb")
@@ -2640,7 +2704,14 @@ def admin_article_new():
                            threads_configured=THREADS_CONFIGURED,
                            pinterest_configured=PINTEREST_CONFIGURED,
                            tiktok_configured=TIKTOK_CONFIGURED,
-                           linkedin_configured=LINKEDIN_CONFIGURED)
+                           linkedin_configured=LINKEDIN_CONFIGURED,
+                           bluesky_configured=BLUESKY_CONFIGURED,
+                           reddit_configured=REDDIT_CONFIGURED,
+                           telegram_configured=TELEGRAM_CONFIGURED,
+                           vimeo_configured=VIMEO_CONFIGURED,
+                           mastodon_configured=MASTODON_CONFIGURED,
+                           vk_configured=VK_CONFIGURED,
+                           tumblr_configured=TUMBLR_CONFIGURED)
 
 
 @app.route("/admin/articles/new", methods=["POST"])
@@ -2712,6 +2783,13 @@ def admin_article_edit(article_id):
                            pinterest_configured=PINTEREST_CONFIGURED,
                            tiktok_configured=TIKTOK_CONFIGURED,
                            linkedin_configured=LINKEDIN_CONFIGURED,
+                           bluesky_configured=BLUESKY_CONFIGURED,
+                           reddit_configured=REDDIT_CONFIGURED,
+                           telegram_configured=TELEGRAM_CONFIGURED,
+                           vimeo_configured=VIMEO_CONFIGURED,
+                           mastodon_configured=MASTODON_CONFIGURED,
+                           vk_configured=VK_CONFIGURED,
+                           tumblr_configured=TUMBLR_CONFIGURED,
                            ig_cine_caption=cine_caption,
                            ig_car_caption=car_caption)
 
@@ -9262,6 +9340,2699 @@ def admin_delete_narrated_linkedin_post(article_id):
             "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
             "LinkedIn-Version": "202502", "X-Restli-Protocol-Version": "2.0.0",
         }, timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete post: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ══════════════════════════════════════════════════════════════
+# BLUESKY (AT Protocol): Workers & Routes
+# ══════════════════════════════════════════════════════════════
+
+def _bluesky_auth():
+    """Authenticate with Bluesky and return (jwt, did)."""
+    import requests as _req
+    resp = _req.post("https://bsky.social/xrpc/com.atproto.server.createSession", json={
+        "identifier": BLUESKY_HANDLE,
+        "password":   BLUESKY_APP_PASSWORD,
+    }, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["accessJwt"], data["did"]
+
+
+def _post_carousel_bluesky_worker(article_id, caption, component):
+    """Background thread: compose carousel images and post to Bluesky."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"bluesky_{component}_status_{article_id}"
+    result_key = f"bluesky_{component}_result_{article_id}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        row = query_one(
+            "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+            (article_id,)
+        )
+        if not row:
+            _set_result("error:Article not found")
+            return
+
+        images     = (json.loads(row[0]) if row[0] else [])[:10]
+        punchlines = (json.loads(row[1]) if row[1] else [])[:10]
+        valid_imgs = [u for u in images if u]
+        if not valid_imgs:
+            _set_result("error:No images found")
+            return
+
+        n = len(valid_imgs)
+        carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+
+        # Authenticate
+        jwt, did = _bluesky_auth()
+
+        # 1. Compose, upload images as blobs
+        _set_status(f"running:compose:0/{n}")
+        ts_t = int(_time_mod.time())
+        blobs = []
+
+        for idx, img_url in enumerate(valid_imgs):
+            _set_status(f"running:compose:{idx+1}/{n}")
+            try:
+                if img_url.startswith("https://"):
+                    resp_img = _req.get(img_url, timeout=20)
+                    resp_img.raise_for_status()
+                    img_bytes = resp_img.content
+                else:
+                    local = resolve_image_to_local_path(img_url)
+                    img_bytes = local.read_bytes() if local and local.exists() else b""
+            except Exception as e:
+                _set_result(f"error:Could not fetch image {idx+1}: {e}")
+                return
+
+            punchline  = punchlines[idx] if idx < len(punchlines) else ""
+            jpeg_bytes = compose_carousel_slide(img_bytes, punchline, idx, n,
+                                                band_top=carousel_band_top,
+                                                hint_text="obelisk-stamps.com")
+            # Also upload to GCS for archival
+            gcs_obj    = f"articles/{article_id}/bluesky/{component}_{idx+1}_{ts_t}.jpg"
+            upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+
+            # Upload blob to Bluesky
+            _set_status(f"running:upload:{idx+1}/{n}")
+            resp = _req.post("https://bsky.social/xrpc/com.atproto.repo.uploadBlob",
+                             headers={"Authorization": f"Bearer {jwt}",
+                                      "Content-Type": "image/jpeg"},
+                             data=jpeg_bytes, timeout=30)
+            resp.raise_for_status()
+            blob_data = resp.json().get("blob")
+            if not blob_data:
+                _set_result(f"error:Blob upload failed at {idx+1}: {resp.json()}")
+                return
+            blobs.append(blob_data)
+            print(f"[Bluesky] Blob uploaded {idx+1}/{n}", flush=True)
+
+        # 2. Create post(s) — max 4 images per post, thread for overflow
+        _set_status("running:publish")
+        from datetime import datetime, timezone
+        iso_now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        first_uri = None
+        first_cid = None
+        first_rkey = None
+        parent_uri = None
+        parent_cid = None
+
+        blob_chunks = [blobs[i:i+4] for i in range(0, len(blobs), 4)]
+        for chunk_idx, chunk in enumerate(blob_chunks):
+            images_embed = [{"alt": "", "image": b} for b in chunk]
+            record = {
+                "$type": "app.bsky.feed.post",
+                "text": caption[:300] if caption and chunk_idx == 0 else "",
+                "createdAt": iso_now,
+                "embed": {
+                    "$type": "app.bsky.embed.images",
+                    "images": images_embed,
+                },
+            }
+            if parent_uri and parent_cid:
+                record["reply"] = {
+                    "root":   {"uri": first_uri, "cid": first_cid},
+                    "parent": {"uri": parent_uri, "cid": parent_cid},
+                }
+            resp = _req.post("https://bsky.social/xrpc/com.atproto.repo.createRecord", json={
+                "repo": did,
+                "collection": "app.bsky.feed.post",
+                "record": record,
+            }, headers={"Authorization": f"Bearer {jwt}"}, timeout=30)
+            resp.raise_for_status()
+            rec_data = resp.json()
+            uri = rec_data.get("uri", "")
+            cid = rec_data.get("cid", "")
+            if chunk_idx == 0:
+                first_uri = uri
+                first_cid = cid
+                first_rkey = uri.split("/")[-1] if "/" in uri else ""
+            parent_uri = uri
+            parent_cid = cid
+            print(f"[Bluesky] Post created (chunk {chunk_idx+1}/{len(blob_chunks)}): {uri}", flush=True)
+
+        permalink = f"https://bsky.app/profile/{BLUESKY_HANDLE}/post/{first_rkey}"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"bluesky_{component}_post_id_{article_id}", first_rkey, first_rkey))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, f"Bluesky {component.title()} Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"rkey={first_rkey}\nimages={n}",
+                          component=component)
+        print(f"[Bluesky] Carousel posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Bluesky] Carousel worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, f"Bluesky {component.title()} Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component=component)
+
+
+def _post_narrated_bluesky_worker(article_id, video_url, caption, run_ts):
+    """Background thread: upload narrated video to Bluesky."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"bluesky_narrated_status_{article_id}_{run_ts}"
+    result_key = f"bluesky_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        jwt, did = _bluesky_auth()
+
+        # 1. Download video
+        _set_status("running:download")
+        resp_dl = _req.get(video_url, timeout=120)
+        resp_dl.raise_for_status()
+        video_bytes = resp_dl.content
+
+        # 2. Upload video to Bluesky video service
+        _set_status("running:upload")
+        resp = _req.post(
+            f"https://video.bsky.app/xrpc/app.bsky.video.uploadVideo?did={did}&name=video.mp4",
+            headers={"Authorization": f"Bearer {jwt}",
+                     "Content-Type": "video/mp4"},
+            data=video_bytes, timeout=120)
+        resp.raise_for_status()
+        job_data = resp.json()
+        job_id = job_data.get("jobId", "")
+        if not job_id:
+            _set_result(f"error:Video upload failed: {job_data}")
+            return
+        print(f"[Bluesky] Video upload job: {job_id}", flush=True)
+
+        # 3. Poll job status
+        _set_status("running:poll")
+        blob_ref = None
+        for attempt in range(60):
+            _time_mod.sleep(5)
+            resp = _req.get("https://video.bsky.app/xrpc/app.bsky.video.getJobStatus",
+                            params={"jobId": job_id},
+                            headers={"Authorization": f"Bearer {jwt}"},
+                            timeout=15)
+            status_data = resp.json()
+            job_state = status_data.get("jobStatus", {}).get("state", "")
+            print(f"[Bluesky] Video job state: {job_state}", flush=True)
+            if job_state == "JOB_STATE_COMPLETED":
+                blob_ref = status_data.get("jobStatus", {}).get("blob")
+                break
+            if job_state == "JOB_STATE_FAILED":
+                err_msg = status_data.get("jobStatus", {}).get("error", "Processing failed")
+                _set_result(f"error:{err_msg}")
+                return
+        else:
+            _set_result("error:Video processing timed out after 5 minutes")
+            return
+
+        if not blob_ref:
+            _set_result("error:No blob reference returned")
+            return
+
+        # 4. Create post with video embed
+        _set_status("running:publish")
+        from datetime import datetime, timezone
+        iso_now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        record = {
+            "$type": "app.bsky.feed.post",
+            "text": caption[:300] if caption else "",
+            "createdAt": iso_now,
+            "embed": {
+                "$type": "app.bsky.embed.video",
+                "video": blob_ref,
+            },
+        }
+        resp = _req.post("https://bsky.social/xrpc/com.atproto.repo.createRecord", json={
+            "repo": did,
+            "collection": "app.bsky.feed.post",
+            "record": record,
+        }, headers={"Authorization": f"Bearer {jwt}"}, timeout=30)
+        resp.raise_for_status()
+        rec_data = resp.json()
+        uri  = rec_data.get("uri", "")
+        rkey = uri.split("/")[-1] if "/" in uri else ""
+
+        permalink = f"https://bsky.app/profile/{BLUESKY_HANDLE}/post/{rkey}"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"bluesky_narrated_post_id_{article_id}_{run_ts}", rkey, rkey))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, "Bluesky Narrated Video Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"rkey={rkey}\nrun_ts={run_ts}",
+                          component="narrated")
+        print(f"[Bluesky] Narrated video posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Bluesky] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "Bluesky Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+
+
+# ── Bluesky: Post carousel ──────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-carousel-to-bluesky", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_carousel_to_bluesky(article_id):
+    if not BLUESKY_CONFIGURED:
+        return jsonify({"error": "Bluesky credentials not configured."}), 400
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    caption   = data.get("caption", "")
+    status_key = f"bluesky_{component}_status_{article_id}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_carousel_bluesky_worker,
+                     args=(article_id, caption, component), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-bluesky-status")
+@login_required
+@admin_required
+def admin_carousel_bluesky_status(article_id):
+    component   = request.args.get("type", "car")
+    status_key  = f"bluesky_{component}_status_{article_id}"
+    result_key  = f"bluesky_{component}_result_{article_id}"
+    history_key = f"bluesky_{component}_history_{article_id}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-carousel-bluesky-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_carousel_bluesky_post(article_id):
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"bluesky_{component}_post_id_{article_id}"
+    result_key  = f"bluesky_{component}_result_{article_id}"
+    status_key  = f"bluesky_{component}_status_{article_id}"
+    history_key = f"bluesky_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-carousel-bluesky-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_carousel_bluesky_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"bluesky_{component}_post_id_{article_id}"
+    result_key  = f"bluesky_{component}_result_{article_id}"
+    status_key  = f"bluesky_{component}_status_{article_id}"
+    history_key = f"bluesky_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        jwt, did = _bluesky_auth()
+        resp = _req.post("https://bsky.social/xrpc/com.atproto.repo.deleteRecord", json={
+            "repo": did,
+            "collection": "app.bsky.feed.post",
+            "rkey": post_id,
+        }, headers={"Authorization": f"Bearer {jwt}"}, timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete post: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ── Bluesky: Post narrated video ─────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-bluesky", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_bluesky(article_id):
+    if not BLUESKY_CONFIGURED:
+        return jsonify({"error": "Bluesky credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"bluesky_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_bluesky_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-bluesky-status")
+@login_required
+@admin_required
+def admin_narrated_bluesky_status(article_id):
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"bluesky_narrated_status_{article_id}_{run_ts}"
+    result_key  = f"bluesky_narrated_result_{article_id}_{run_ts}"
+    history_key = f"bluesky_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-bluesky-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_bluesky_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"bluesky_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"bluesky_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"bluesky_narrated_status_{article_id}_{run_ts}"
+    history_key = f"bluesky_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-narrated-bluesky-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_narrated_bluesky_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"bluesky_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"bluesky_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"bluesky_narrated_status_{article_id}_{run_ts}"
+    history_key = f"bluesky_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        jwt, did = _bluesky_auth()
+        resp = _req.post("https://bsky.social/xrpc/com.atproto.repo.deleteRecord", json={
+            "repo": did,
+            "collection": "app.bsky.feed.post",
+            "rkey": post_id,
+        }, headers={"Authorization": f"Bearer {jwt}"}, timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete post: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ══════════════════════════════════════════════════════════════
+# REDDIT: Workers & Routes
+# ══════════════════════════════════════════════════════════════
+
+def _reddit_get_access_token():
+    """Get a fresh Reddit access token using the refresh token."""
+    import requests as _req
+    resp = _req.post("https://www.reddit.com/api/v1/access_token",
+                     auth=(REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET),
+                     data={"grant_type": "refresh_token", "refresh_token": REDDIT_REFRESH_TOKEN},
+                     headers={"User-Agent": "ObeliskStamps/1.0"},
+                     timeout=15)
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+
+def _post_carousel_reddit_worker(article_id, caption, component):
+    """Background thread: compose carousel images and post to Reddit as self post."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"reddit_{component}_status_{article_id}"
+    result_key = f"reddit_{component}_result_{article_id}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        row = query_one(
+            "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+            (article_id,)
+        )
+        if not row:
+            _set_result("error:Article not found")
+            return
+
+        images     = (json.loads(row[0]) if row[0] else [])[:10]
+        punchlines = (json.loads(row[1]) if row[1] else [])[:10]
+        valid_imgs = [u for u in images if u]
+        if not valid_imgs:
+            _set_result("error:No images found")
+            return
+
+        n = len(valid_imgs)
+        carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+
+        # 1. Compose and upload images to GCS
+        _set_status(f"running:compose:0/{n}")
+        ts_t = int(_time_mod.time())
+        public_urls = []
+
+        for idx, img_url in enumerate(valid_imgs):
+            _set_status(f"running:compose:{idx+1}/{n}")
+            try:
+                if img_url.startswith("https://"):
+                    resp_img = _req.get(img_url, timeout=20)
+                    resp_img.raise_for_status()
+                    img_bytes = resp_img.content
+                else:
+                    local = resolve_image_to_local_path(img_url)
+                    img_bytes = local.read_bytes() if local and local.exists() else b""
+            except Exception as e:
+                _set_result(f"error:Could not fetch image {idx+1}: {e}")
+                return
+
+            punchline  = punchlines[idx] if idx < len(punchlines) else ""
+            jpeg_bytes = compose_carousel_slide(img_bytes, punchline, idx, n,
+                                                band_top=carousel_band_top,
+                                                hint_text="obelisk-stamps.com")
+            gcs_obj    = f"articles/{article_id}/reddit/{component}_{idx+1}_{ts_t}.jpg"
+            public_url = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+            if not public_url:
+                _set_result(f"error:Image upload failed for slide {idx+1}")
+                return
+            public_urls.append(public_url)
+
+        # 2. Post to Reddit as self post with image links
+        _set_status("running:publish")
+        token = _reddit_get_access_token()
+        title = caption[:300] if caption else "New post"
+        body  = caption + "\n\n" if caption else ""
+        for i, url in enumerate(public_urls):
+            body += f"![Slide {i+1}]({url})\n\n"
+
+        resp = _req.post("https://oauth.reddit.com/api/submit",
+                         headers={"Authorization": f"Bearer {token}",
+                                  "User-Agent": "ObeliskStamps/1.0"},
+                         data={"kind": "self", "sr": REDDIT_SUBREDDIT,
+                               "title": title, "text": body},
+                         timeout=30)
+        resp.raise_for_status()
+        rdata = resp.json()
+        post_url  = rdata.get("json", {}).get("data", {}).get("url", "")
+        post_name = rdata.get("json", {}).get("data", {}).get("name", "")
+        if not post_url:
+            _set_result(f"error:Reddit submit failed: {rdata}")
+            return
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"reddit_{component}_post_id_{article_id}", post_name, post_name))
+        _set_result(f"done:{post_url}")
+        _add_activity_log(article_id, f"Reddit {component.title()} Posted",
+                          f"<a href=\"{post_url}\" target=\"_blank\">{post_url}</a>\n"
+                          f"fullname={post_name}\nimages={n}",
+                          component=component)
+        print(f"[Reddit] Carousel posted: {post_url}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Reddit] Carousel worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, f"Reddit {component.title()} Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component=component)
+
+
+def _post_narrated_reddit_worker(article_id, video_url, caption, run_ts):
+    """Background thread: post narrated video to Reddit as link post."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"reddit_narrated_status_{article_id}_{run_ts}"
+    result_key = f"reddit_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        _set_status("running:publish")
+        token = _reddit_get_access_token()
+        title = caption[:300] if caption else "New video"
+
+        resp = _req.post("https://oauth.reddit.com/api/submit",
+                         headers={"Authorization": f"Bearer {token}",
+                                  "User-Agent": "ObeliskStamps/1.0"},
+                         data={"kind": "link", "sr": REDDIT_SUBREDDIT,
+                               "title": title, "url": video_url},
+                         timeout=30)
+        resp.raise_for_status()
+        rdata = resp.json()
+        post_url  = rdata.get("json", {}).get("data", {}).get("url", "")
+        post_name = rdata.get("json", {}).get("data", {}).get("name", "")
+        if not post_url:
+            _set_result(f"error:Reddit submit failed: {rdata}")
+            return
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"reddit_narrated_post_id_{article_id}_{run_ts}", post_name, post_name))
+        _set_result(f"done:{post_url}")
+        _add_activity_log(article_id, "Reddit Narrated Video Posted",
+                          f"<a href=\"{post_url}\" target=\"_blank\">{post_url}</a>\n"
+                          f"fullname={post_name}\nrun_ts={run_ts}",
+                          component="narrated")
+        print(f"[Reddit] Narrated video posted: {post_url}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Reddit] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "Reddit Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+
+
+# ── Reddit: Post carousel ────────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-carousel-to-reddit", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_carousel_to_reddit(article_id):
+    if not REDDIT_CONFIGURED:
+        return jsonify({"error": "Reddit credentials not configured."}), 400
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    caption   = data.get("caption", "")
+    status_key = f"reddit_{component}_status_{article_id}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_carousel_reddit_worker,
+                     args=(article_id, caption, component), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-reddit-status")
+@login_required
+@admin_required
+def admin_carousel_reddit_status(article_id):
+    component   = request.args.get("type", "car")
+    status_key  = f"reddit_{component}_status_{article_id}"
+    result_key  = f"reddit_{component}_result_{article_id}"
+    history_key = f"reddit_{component}_history_{article_id}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-carousel-reddit-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_carousel_reddit_post(article_id):
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"reddit_{component}_post_id_{article_id}"
+    result_key  = f"reddit_{component}_result_{article_id}"
+    status_key  = f"reddit_{component}_status_{article_id}"
+    history_key = f"reddit_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-carousel-reddit-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_carousel_reddit_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"reddit_{component}_post_id_{article_id}"
+    result_key  = f"reddit_{component}_result_{article_id}"
+    status_key  = f"reddit_{component}_status_{article_id}"
+    history_key = f"reddit_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        token = _reddit_get_access_token()
+        resp = _req.post("https://oauth.reddit.com/api/del",
+                         headers={"Authorization": f"Bearer {token}",
+                                  "User-Agent": "ObeliskStamps/1.0"},
+                         data={"id": post_id}, timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete post: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ── Reddit: Post narrated video ──────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-reddit", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_reddit(article_id):
+    if not REDDIT_CONFIGURED:
+        return jsonify({"error": "Reddit credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"reddit_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_reddit_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-reddit-status")
+@login_required
+@admin_required
+def admin_narrated_reddit_status(article_id):
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"reddit_narrated_status_{article_id}_{run_ts}"
+    result_key  = f"reddit_narrated_result_{article_id}_{run_ts}"
+    history_key = f"reddit_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-reddit-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_reddit_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"reddit_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"reddit_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"reddit_narrated_status_{article_id}_{run_ts}"
+    history_key = f"reddit_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-narrated-reddit-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_narrated_reddit_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"reddit_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"reddit_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"reddit_narrated_status_{article_id}_{run_ts}"
+    history_key = f"reddit_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        token = _reddit_get_access_token()
+        resp = _req.post("https://oauth.reddit.com/api/del",
+                         headers={"Authorization": f"Bearer {token}",
+                                  "User-Agent": "ObeliskStamps/1.0"},
+                         data={"id": post_id}, timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete post: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ══════════════════════════════════════════════════════════════
+# TELEGRAM: Workers & Routes
+# ══════════════════════════════════════════════════════════════
+
+def _post_carousel_telegram_worker(article_id, caption, component):
+    """Background thread: compose carousel images and post as Telegram media group."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"telegram_{component}_status_{article_id}"
+    result_key = f"telegram_{component}_result_{article_id}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        row = query_one(
+            "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+            (article_id,)
+        )
+        if not row:
+            _set_result("error:Article not found")
+            return
+
+        images     = (json.loads(row[0]) if row[0] else [])[:10]
+        punchlines = (json.loads(row[1]) if row[1] else [])[:10]
+        valid_imgs = [u for u in images if u]
+        if not valid_imgs:
+            _set_result("error:No images found")
+            return
+
+        n = len(valid_imgs)
+        carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+
+        # 1. Compose and upload images to GCS
+        _set_status(f"running:compose:0/{n}")
+        ts_t = int(_time_mod.time())
+        public_urls = []
+
+        for idx, img_url in enumerate(valid_imgs):
+            _set_status(f"running:compose:{idx+1}/{n}")
+            try:
+                if img_url.startswith("https://"):
+                    resp_img = _req.get(img_url, timeout=20)
+                    resp_img.raise_for_status()
+                    img_bytes = resp_img.content
+                else:
+                    local = resolve_image_to_local_path(img_url)
+                    img_bytes = local.read_bytes() if local and local.exists() else b""
+            except Exception as e:
+                _set_result(f"error:Could not fetch image {idx+1}: {e}")
+                return
+
+            punchline  = punchlines[idx] if idx < len(punchlines) else ""
+            jpeg_bytes = compose_carousel_slide(img_bytes, punchline, idx, n,
+                                                band_top=carousel_band_top,
+                                                hint_text="obelisk-stamps.com")
+            gcs_obj    = f"articles/{article_id}/telegram/{component}_{idx+1}_{ts_t}.jpg"
+            public_url = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+            if not public_url:
+                _set_result(f"error:Image upload failed for slide {idx+1}")
+                return
+            public_urls.append(public_url)
+
+        # 2. Send as media group (max 10 photos)
+        _set_status("running:publish")
+        media = []
+        for i, url in enumerate(public_urls):
+            item = {"type": "photo", "media": url}
+            if i == 0 and caption:
+                item["caption"] = caption[:1024]
+            media.append(item)
+
+        resp = _req.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMediaGroup",
+                         json={"chat_id": TELEGRAM_CHAT_ID, "media": media},
+                         timeout=60)
+        resp.raise_for_status()
+        rdata = resp.json()
+        if not rdata.get("ok"):
+            _set_result(f"error:Telegram API error: {rdata.get('description', '')}")
+            return
+
+        # Store all message_ids for deletion
+        results = rdata.get("result", [])
+        msg_ids = [str(m.get("message_id", "")) for m in results if m.get("message_id")]
+        msg_ids_str = json.dumps(msg_ids)
+        first_msg_id = msg_ids[0] if msg_ids else ""
+
+        # Telegram doesn't have public permalinks for bot messages in private chats
+        permalink = f"telegram:chat={TELEGRAM_CHAT_ID}:msg={first_msg_id}"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"telegram_{component}_post_id_{article_id}", msg_ids_str, msg_ids_str))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, f"Telegram {component.title()} Posted",
+                          f"chat_id={TELEGRAM_CHAT_ID}\nmessage_ids={msg_ids_str}\nimages={n}",
+                          component=component)
+        print(f"[Telegram] Media group posted: {msg_ids_str}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Telegram] Carousel worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, f"Telegram {component.title()} Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component=component)
+
+
+def _post_narrated_telegram_worker(article_id, video_url, caption, run_ts):
+    """Background thread: post narrated video to Telegram."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"telegram_narrated_status_{article_id}_{run_ts}"
+    result_key = f"telegram_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        _set_status("running:publish")
+        resp = _req.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo",
+                         json={"chat_id": TELEGRAM_CHAT_ID,
+                               "video": video_url,
+                               "caption": caption[:1024] if caption else ""},
+                         timeout=120)
+        resp.raise_for_status()
+        rdata = resp.json()
+        if not rdata.get("ok"):
+            _set_result(f"error:Telegram API error: {rdata.get('description', '')}")
+            return
+
+        msg_id = str(rdata.get("result", {}).get("message_id", ""))
+        permalink = f"telegram:chat={TELEGRAM_CHAT_ID}:msg={msg_id}"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"telegram_narrated_post_id_{article_id}_{run_ts}", msg_id, msg_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, "Telegram Narrated Video Posted",
+                          f"chat_id={TELEGRAM_CHAT_ID}\nmessage_id={msg_id}\nrun_ts={run_ts}",
+                          component="narrated")
+        print(f"[Telegram] Narrated video posted: msg_id={msg_id}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Telegram] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "Telegram Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+
+
+# ── Telegram: Post carousel ──────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-carousel-to-telegram", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_carousel_to_telegram(article_id):
+    if not TELEGRAM_CONFIGURED:
+        return jsonify({"error": "Telegram credentials not configured."}), 400
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    caption   = data.get("caption", "")
+    status_key = f"telegram_{component}_status_{article_id}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_carousel_telegram_worker,
+                     args=(article_id, caption, component), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-telegram-status")
+@login_required
+@admin_required
+def admin_carousel_telegram_status(article_id):
+    component   = request.args.get("type", "car")
+    status_key  = f"telegram_{component}_status_{article_id}"
+    result_key  = f"telegram_{component}_result_{article_id}"
+    history_key = f"telegram_{component}_history_{article_id}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-carousel-telegram-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_carousel_telegram_post(article_id):
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"telegram_{component}_post_id_{article_id}"
+    result_key  = f"telegram_{component}_result_{article_id}"
+    status_key  = f"telegram_{component}_status_{article_id}"
+    history_key = f"telegram_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-carousel-telegram-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_carousel_telegram_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"telegram_{component}_post_id_{article_id}"
+    result_key  = f"telegram_{component}_result_{article_id}"
+    status_key  = f"telegram_{component}_status_{article_id}"
+    history_key = f"telegram_{component}_history_{article_id}"
+    post_id_raw = get_setting(post_key)
+    if not post_id_raw:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        # post_id_raw is JSON array of message_ids for media groups
+        msg_ids = json.loads(post_id_raw)
+        if not isinstance(msg_ids, list):
+            msg_ids = [str(post_id_raw)]
+    except (json.JSONDecodeError, TypeError):
+        msg_ids = [str(post_id_raw)]
+    try:
+        for mid in msg_ids:
+            _req.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteMessage",
+                      json={"chat_id": TELEGRAM_CHAT_ID, "message_id": int(mid)},
+                      timeout=15)
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id_raw, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ── Telegram: Post narrated video ────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-telegram", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_telegram(article_id):
+    if not TELEGRAM_CONFIGURED:
+        return jsonify({"error": "Telegram credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"telegram_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_telegram_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-telegram-status")
+@login_required
+@admin_required
+def admin_narrated_telegram_status(article_id):
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"telegram_narrated_status_{article_id}_{run_ts}"
+    result_key  = f"telegram_narrated_result_{article_id}_{run_ts}"
+    history_key = f"telegram_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-telegram-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_telegram_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"telegram_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"telegram_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"telegram_narrated_status_{article_id}_{run_ts}"
+    history_key = f"telegram_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-narrated-telegram-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_narrated_telegram_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"telegram_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"telegram_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"telegram_narrated_status_{article_id}_{run_ts}"
+    history_key = f"telegram_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        _req.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteMessage",
+                  json={"chat_id": TELEGRAM_CHAT_ID, "message_id": int(post_id)},
+                  timeout=15)
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ══════════════════════════════════════════════════════════════
+# VIMEO: Workers & Routes (Narrated Video ONLY)
+# ══════════════════════════════════════════════════════════════
+
+def _post_narrated_vimeo_worker(article_id, video_url, caption, run_ts):
+    """Background thread: upload narrated video to Vimeo via tus protocol."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"vimeo_narrated_status_{article_id}_{run_ts}"
+    result_key = f"vimeo_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        # 1. Download video
+        _set_status("running:download")
+        resp_dl = _req.get(video_url, timeout=120)
+        resp_dl.raise_for_status()
+        video_bytes = resp_dl.content
+        file_size = len(video_bytes)
+
+        vimeo_headers = {
+            "Authorization": f"Bearer {VIMEO_ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+            "Accept": "application/vnd.vimeo.*+json;version=3.4",
+        }
+
+        # 2. Create video on Vimeo
+        _set_status("running:create")
+        title = caption[:128] if caption else "Narrated Video"
+        resp = _req.post("https://api.vimeo.com/me/videos", headers=vimeo_headers, json={
+            "upload": {"approach": "tus", "size": str(file_size)},
+            "name": title,
+            "description": caption[:5000] if caption else "",
+            "privacy": {"view": "anybody"},
+        }, timeout=30)
+        resp.raise_for_status()
+        vdata = resp.json()
+        upload_link = vdata.get("upload", {}).get("upload_link", "")
+        video_uri   = vdata.get("uri", "")
+        video_id    = video_uri.split("/")[-1] if "/" in video_uri else ""
+        if not upload_link or not video_id:
+            _set_result(f"error:Vimeo video creation failed: {vdata}")
+            return
+        print(f"[Vimeo] Video created: {video_uri}", flush=True)
+
+        # 3. Upload via tus
+        _set_status("running:upload")
+        resp = _req.patch(upload_link, headers={
+            "Content-Type": "application/offset+octet-stream",
+            "Upload-Offset": "0",
+            "Tus-Resumable": "1.0.0",
+        }, data=video_bytes, timeout=300)
+        if resp.status_code not in (200, 204):
+            _set_result(f"error:Vimeo upload failed: {resp.status_code}")
+            return
+        print(f"[Vimeo] Upload complete", flush=True)
+
+        # 4. Poll for transcode completion
+        _set_status("running:transcode")
+        for attempt in range(120):
+            _time_mod.sleep(5)
+            resp = _req.get(f"https://api.vimeo.com/videos/{video_id}?fields=transcode.status",
+                            headers={"Authorization": f"Bearer {VIMEO_ACCESS_TOKEN}",
+                                     "Accept": "application/vnd.vimeo.*+json;version=3.4"},
+                            timeout=15)
+            if resp.status_code == 200:
+                t_status = resp.json().get("transcode", {}).get("status", "")
+                print(f"[Vimeo] Transcode status: {t_status}", flush=True)
+                if t_status == "complete":
+                    break
+                if t_status == "error":
+                    _set_result("error:Vimeo transcode failed")
+                    return
+        else:
+            _set_result("error:Vimeo transcode timed out")
+            return
+
+        permalink = f"https://vimeo.com/{video_id}"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"vimeo_narrated_post_id_{article_id}_{run_ts}", video_id, video_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, "Vimeo Narrated Video Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"video_id={video_id}\nrun_ts={run_ts}",
+                          component="narrated")
+        print(f"[Vimeo] Narrated video posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Vimeo] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "Vimeo Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+
+
+# ── Vimeo: Post narrated video ───────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-vimeo", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_vimeo(article_id):
+    if not VIMEO_CONFIGURED:
+        return jsonify({"error": "Vimeo credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"vimeo_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_vimeo_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-vimeo-status")
+@login_required
+@admin_required
+def admin_narrated_vimeo_status(article_id):
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"vimeo_narrated_status_{article_id}_{run_ts}"
+    result_key  = f"vimeo_narrated_result_{article_id}_{run_ts}"
+    history_key = f"vimeo_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-vimeo-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_vimeo_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"vimeo_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"vimeo_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"vimeo_narrated_status_{article_id}_{run_ts}"
+    history_key = f"vimeo_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-narrated-vimeo-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_narrated_vimeo_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"vimeo_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"vimeo_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"vimeo_narrated_status_{article_id}_{run_ts}"
+    history_key = f"vimeo_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        resp = _req.delete(f"https://api.vimeo.com/videos/{post_id}",
+                           headers={"Authorization": f"Bearer {VIMEO_ACCESS_TOKEN}"},
+                           timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete video: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ══════════════════════════════════════════════════════════════
+# MASTODON: Workers & Routes
+# ══════════════════════════════════════════════════════════════
+
+def _post_carousel_mastodon_worker(article_id, caption, component):
+    """Background thread: compose carousel images and post to Mastodon."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"mastodon_{component}_status_{article_id}"
+    result_key = f"mastodon_{component}_result_{article_id}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        row = query_one(
+            "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+            (article_id,)
+        )
+        if not row:
+            _set_result("error:Article not found")
+            return
+
+        images     = (json.loads(row[0]) if row[0] else [])[:10]
+        punchlines = (json.loads(row[1]) if row[1] else [])[:10]
+        valid_imgs = [u for u in images if u]
+        if not valid_imgs:
+            _set_result("error:No images found")
+            return
+
+        n = len(valid_imgs)
+        carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+        masto_headers = {"Authorization": f"Bearer {MASTODON_ACCESS_TOKEN}"}
+
+        # 1. Compose and upload images
+        _set_status(f"running:compose:0/{n}")
+        ts_t = int(_time_mod.time())
+        media_ids = []
+
+        for idx, img_url in enumerate(valid_imgs):
+            _set_status(f"running:compose:{idx+1}/{n}")
+            try:
+                if img_url.startswith("https://"):
+                    resp_img = _req.get(img_url, timeout=20)
+                    resp_img.raise_for_status()
+                    img_bytes = resp_img.content
+                else:
+                    local = resolve_image_to_local_path(img_url)
+                    img_bytes = local.read_bytes() if local and local.exists() else b""
+            except Exception as e:
+                _set_result(f"error:Could not fetch image {idx+1}: {e}")
+                return
+
+            punchline  = punchlines[idx] if idx < len(punchlines) else ""
+            jpeg_bytes = compose_carousel_slide(img_bytes, punchline, idx, n,
+                                                band_top=carousel_band_top,
+                                                hint_text="obelisk-stamps.com")
+            # Also upload to GCS
+            gcs_obj    = f"articles/{article_id}/mastodon/{component}_{idx+1}_{ts_t}.jpg"
+            upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+
+            # Upload to Mastodon
+            _set_status(f"running:upload:{idx+1}/{n}")
+            resp = _req.post(f"{MASTODON_INSTANCE_URL}/api/v2/media",
+                             headers=masto_headers,
+                             files={"file": (f"slide_{idx+1}.jpg", jpeg_bytes, "image/jpeg")},
+                             timeout=60)
+            resp.raise_for_status()
+            mid = resp.json().get("id")
+            if not mid:
+                _set_result(f"error:Media upload failed at {idx+1}: {resp.json()}")
+                return
+            media_ids.append(mid)
+            print(f"[Mastodon] Media uploaded {idx+1}/{n}: {mid}", flush=True)
+
+        # 2. Create status(es) — max 4 media per status, thread for overflow
+        _set_status("running:publish")
+        first_status_id = None
+        first_status_url = None
+        parent_id = None
+
+        id_chunks = [media_ids[i:i+4] for i in range(0, len(media_ids), 4)]
+        for chunk_idx, chunk in enumerate(id_chunks):
+            payload = {
+                "status": caption[:500] if caption and chunk_idx == 0 else "",
+                "media_ids": chunk,
+                "visibility": "public",
+            }
+            if parent_id:
+                payload["in_reply_to_id"] = parent_id
+
+            resp = _req.post(f"{MASTODON_INSTANCE_URL}/api/v1/statuses",
+                             headers={**masto_headers, "Content-Type": "application/json"},
+                             json=payload, timeout=30)
+            resp.raise_for_status()
+            sdata = resp.json()
+            sid = sdata.get("id", "")
+            surl = sdata.get("url", "")
+            if chunk_idx == 0:
+                first_status_id = sid
+                first_status_url = surl
+            parent_id = sid
+            print(f"[Mastodon] Status created (chunk {chunk_idx+1}): {surl}", flush=True)
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"mastodon_{component}_post_id_{article_id}", first_status_id, first_status_id))
+        _set_result(f"done:{first_status_url}")
+        _add_activity_log(article_id, f"Mastodon {component.title()} Posted",
+                          f"<a href=\"{first_status_url}\" target=\"_blank\">{first_status_url}</a>\n"
+                          f"status_id={first_status_id}\nimages={n}",
+                          component=component)
+        print(f"[Mastodon] Carousel posted: {first_status_url}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Mastodon] Carousel worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, f"Mastodon {component.title()} Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component=component)
+
+
+def _post_narrated_mastodon_worker(article_id, video_url, caption, run_ts):
+    """Background thread: upload narrated video to Mastodon."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"mastodon_narrated_status_{article_id}_{run_ts}"
+    result_key = f"mastodon_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        masto_headers = {"Authorization": f"Bearer {MASTODON_ACCESS_TOKEN}"}
+
+        # 1. Download video
+        _set_status("running:download")
+        resp_dl = _req.get(video_url, timeout=120)
+        resp_dl.raise_for_status()
+        video_bytes = resp_dl.content
+
+        # 2. Upload video to Mastodon
+        _set_status("running:upload")
+        resp = _req.post(f"{MASTODON_INSTANCE_URL}/api/v2/media",
+                         headers=masto_headers,
+                         files={"file": ("video.mp4", video_bytes, "video/mp4")},
+                         timeout=120)
+        resp.raise_for_status()
+        media_data = resp.json()
+        media_id = media_data.get("id")
+        if not media_id:
+            _set_result(f"error:Media upload failed: {media_data}")
+            return
+        print(f"[Mastodon] Video uploaded: {media_id}", flush=True)
+
+        # 3. Poll until media is processed (url becomes non-null)
+        _set_status("running:poll")
+        for attempt in range(60):
+            _time_mod.sleep(5)
+            resp = _req.get(f"{MASTODON_INSTANCE_URL}/api/v1/media/{media_id}",
+                            headers=masto_headers, timeout=15)
+            if resp.status_code == 200:
+                mdata = resp.json()
+                if mdata.get("url"):
+                    break
+            elif resp.status_code == 206:
+                # Still processing
+                continue
+        else:
+            _set_result("error:Video processing timed out")
+            return
+
+        # 4. Create status
+        _set_status("running:publish")
+        resp = _req.post(f"{MASTODON_INSTANCE_URL}/api/v1/statuses",
+                         headers={**masto_headers, "Content-Type": "application/json"},
+                         json={"status": caption[:500] if caption else "",
+                               "media_ids": [media_id],
+                               "visibility": "public"},
+                         timeout=30)
+        resp.raise_for_status()
+        sdata = resp.json()
+        status_id = sdata.get("id", "")
+        status_url = sdata.get("url", "")
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"mastodon_narrated_post_id_{article_id}_{run_ts}", status_id, status_id))
+        _set_result(f"done:{status_url}")
+        _add_activity_log(article_id, "Mastodon Narrated Video Posted",
+                          f"<a href=\"{status_url}\" target=\"_blank\">{status_url}</a>\n"
+                          f"status_id={status_id}\nrun_ts={run_ts}",
+                          component="narrated")
+        print(f"[Mastodon] Narrated video posted: {status_url}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Mastodon] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "Mastodon Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+
+
+# ── Mastodon: Post carousel ──────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-carousel-to-mastodon", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_carousel_to_mastodon(article_id):
+    if not MASTODON_CONFIGURED:
+        return jsonify({"error": "Mastodon credentials not configured."}), 400
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    caption   = data.get("caption", "")
+    status_key = f"mastodon_{component}_status_{article_id}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_carousel_mastodon_worker,
+                     args=(article_id, caption, component), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-mastodon-status")
+@login_required
+@admin_required
+def admin_carousel_mastodon_status(article_id):
+    component   = request.args.get("type", "car")
+    status_key  = f"mastodon_{component}_status_{article_id}"
+    result_key  = f"mastodon_{component}_result_{article_id}"
+    history_key = f"mastodon_{component}_history_{article_id}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-carousel-mastodon-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_carousel_mastodon_post(article_id):
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"mastodon_{component}_post_id_{article_id}"
+    result_key  = f"mastodon_{component}_result_{article_id}"
+    status_key  = f"mastodon_{component}_status_{article_id}"
+    history_key = f"mastodon_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-carousel-mastodon-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_carousel_mastodon_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"mastodon_{component}_post_id_{article_id}"
+    result_key  = f"mastodon_{component}_result_{article_id}"
+    status_key  = f"mastodon_{component}_status_{article_id}"
+    history_key = f"mastodon_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        resp = _req.delete(f"{MASTODON_INSTANCE_URL}/api/v1/statuses/{post_id}",
+                           headers={"Authorization": f"Bearer {MASTODON_ACCESS_TOKEN}"},
+                           timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete status: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ── Mastodon: Post narrated video ────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-mastodon", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_mastodon(article_id):
+    if not MASTODON_CONFIGURED:
+        return jsonify({"error": "Mastodon credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"mastodon_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_mastodon_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-mastodon-status")
+@login_required
+@admin_required
+def admin_narrated_mastodon_status(article_id):
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"mastodon_narrated_status_{article_id}_{run_ts}"
+    result_key  = f"mastodon_narrated_result_{article_id}_{run_ts}"
+    history_key = f"mastodon_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-mastodon-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_mastodon_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"mastodon_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"mastodon_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"mastodon_narrated_status_{article_id}_{run_ts}"
+    history_key = f"mastodon_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-narrated-mastodon-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_narrated_mastodon_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"mastodon_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"mastodon_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"mastodon_narrated_status_{article_id}_{run_ts}"
+    history_key = f"mastodon_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        resp = _req.delete(f"{MASTODON_INSTANCE_URL}/api/v1/statuses/{post_id}",
+                           headers={"Authorization": f"Bearer {MASTODON_ACCESS_TOKEN}"},
+                           timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete status: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ══════════════════════════════════════════════════════════════
+# VK (VKontakte): Workers & Routes
+# ══════════════════════════════════════════════════════════════
+
+def _post_carousel_vk_worker(article_id, caption, component):
+    """Background thread: compose carousel images and post to VK wall."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"vk_{component}_status_{article_id}"
+    result_key = f"vk_{component}_result_{article_id}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        row = query_one(
+            "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+            (article_id,)
+        )
+        if not row:
+            _set_result("error:Article not found")
+            return
+
+        images     = (json.loads(row[0]) if row[0] else [])[:10]
+        punchlines = (json.loads(row[1]) if row[1] else [])[:10]
+        valid_imgs = [u for u in images if u]
+        if not valid_imgs:
+            _set_result("error:No images found")
+            return
+
+        n = len(valid_imgs)
+        carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+        group_id = str(abs(int(VK_OWNER_ID)))
+
+        # 1. Get upload server
+        _set_status(f"running:compose:0/{n}")
+        resp = _req.get("https://api.vk.com/method/photos.getWallUploadServer", params={
+            "access_token": VK_ACCESS_TOKEN, "v": "5.199", "group_id": group_id,
+        }, timeout=15)
+        resp.raise_for_status()
+        upload_url = resp.json().get("response", {}).get("upload_url", "")
+        if not upload_url:
+            _set_result(f"error:Could not get VK upload server: {resp.json()}")
+            return
+
+        ts_t = int(_time_mod.time())
+        attachments = []
+
+        for idx, img_url in enumerate(valid_imgs):
+            _set_status(f"running:compose:{idx+1}/{n}")
+            try:
+                if img_url.startswith("https://"):
+                    resp_img = _req.get(img_url, timeout=20)
+                    resp_img.raise_for_status()
+                    img_bytes = resp_img.content
+                else:
+                    local = resolve_image_to_local_path(img_url)
+                    img_bytes = local.read_bytes() if local and local.exists() else b""
+            except Exception as e:
+                _set_result(f"error:Could not fetch image {idx+1}: {e}")
+                return
+
+            punchline  = punchlines[idx] if idx < len(punchlines) else ""
+            jpeg_bytes = compose_carousel_slide(img_bytes, punchline, idx, n,
+                                                band_top=carousel_band_top,
+                                                hint_text="obelisk-stamps.com")
+            # Also GCS
+            gcs_obj = f"articles/{article_id}/vk/{component}_{idx+1}_{ts_t}.jpg"
+            upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+
+            # Upload to VK
+            _set_status(f"running:upload:{idx+1}/{n}")
+            resp = _req.post(upload_url,
+                             files={"photo": (f"slide_{idx+1}.jpg", jpeg_bytes, "image/jpeg")},
+                             timeout=30)
+            resp.raise_for_status()
+            udata = resp.json()
+            server = udata.get("server", "")
+            photo  = udata.get("photo", "")
+            hash_  = udata.get("hash", "")
+
+            # Save photo
+            resp = _req.get("https://api.vk.com/method/photos.saveWallPhoto", params={
+                "access_token": VK_ACCESS_TOKEN, "v": "5.199", "group_id": group_id,
+                "server": server, "photo": photo, "hash": hash_,
+            }, timeout=15)
+            resp.raise_for_status()
+            saved = resp.json().get("response", [])
+            if not saved:
+                _set_result(f"error:VK photo save failed at {idx+1}: {resp.json()}")
+                return
+            oid = saved[0].get("owner_id")
+            pid = saved[0].get("id")
+            attachments.append(f"photo{oid}_{pid}")
+            print(f"[VK] Photo saved {idx+1}/{n}: photo{oid}_{pid}", flush=True)
+
+        # 2. Create wall post
+        _set_status("running:publish")
+        resp = _req.get("https://api.vk.com/method/wall.post", params={
+            "access_token": VK_ACCESS_TOKEN, "v": "5.199",
+            "owner_id": VK_OWNER_ID,
+            "message": caption[:10000] if caption else "",
+            "attachments": ",".join(attachments),
+        }, timeout=30)
+        resp.raise_for_status()
+        wdata = resp.json()
+        post_id = str(wdata.get("response", {}).get("post_id", ""))
+        if not post_id:
+            _set_result(f"error:VK wall.post failed: {wdata}")
+            return
+
+        permalink = f"https://vk.com/wall{VK_OWNER_ID}_{post_id}"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"vk_{component}_post_id_{article_id}", post_id, post_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, f"VK {component.title()} Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"post_id={post_id}\nimages={n}",
+                          component=component)
+        print(f"[VK] Carousel posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[VK] Carousel worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, f"VK {component.title()} Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component=component)
+
+
+def _post_narrated_vk_worker(article_id, video_url, caption, run_ts):
+    """Background thread: upload narrated video to VK."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"vk_narrated_status_{article_id}_{run_ts}"
+    result_key = f"vk_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        group_id = str(abs(int(VK_OWNER_ID)))
+        title = caption[:128] if caption else "Narrated Video"
+
+        # 1. Create video entry
+        _set_status("running:create")
+        resp = _req.get("https://api.vk.com/method/video.save", params={
+            "access_token": VK_ACCESS_TOKEN, "v": "5.199",
+            "group_id": group_id,
+            "name": title,
+            "description": caption[:5000] if caption else "",
+            "wallpost": "0",
+        }, timeout=15)
+        resp.raise_for_status()
+        vdata = resp.json().get("response", {})
+        vk_upload_url = vdata.get("upload_url", "")
+        video_id      = str(vdata.get("video_id", ""))
+        owner_id      = str(vdata.get("owner_id", ""))
+        if not vk_upload_url or not video_id:
+            _set_result(f"error:VK video.save failed: {resp.json()}")
+            return
+
+        # 2. Download video
+        _set_status("running:download")
+        resp_dl = _req.get(video_url, timeout=120)
+        resp_dl.raise_for_status()
+        video_bytes = resp_dl.content
+
+        # 3. Upload video
+        _set_status("running:upload")
+        resp = _req.post(vk_upload_url,
+                         files={"video_file": ("video.mp4", video_bytes, "video/mp4")},
+                         timeout=300)
+        resp.raise_for_status()
+
+        permalink = f"https://vk.com/video{owner_id}_{video_id}"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"vk_narrated_post_id_{article_id}_{run_ts}", video_id, video_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, "VK Narrated Video Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"video_id={video_id}\nrun_ts={run_ts}",
+                          component="narrated")
+        print(f"[VK] Narrated video posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[VK] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "VK Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+
+
+# ── VK: Post carousel ────────────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-carousel-to-vk", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_carousel_to_vk(article_id):
+    if not VK_CONFIGURED:
+        return jsonify({"error": "VK credentials not configured."}), 400
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    caption   = data.get("caption", "")
+    status_key = f"vk_{component}_status_{article_id}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_carousel_vk_worker,
+                     args=(article_id, caption, component), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-vk-status")
+@login_required
+@admin_required
+def admin_carousel_vk_status(article_id):
+    component   = request.args.get("type", "car")
+    status_key  = f"vk_{component}_status_{article_id}"
+    result_key  = f"vk_{component}_result_{article_id}"
+    history_key = f"vk_{component}_history_{article_id}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-carousel-vk-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_carousel_vk_post(article_id):
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"vk_{component}_post_id_{article_id}"
+    result_key  = f"vk_{component}_result_{article_id}"
+    status_key  = f"vk_{component}_status_{article_id}"
+    history_key = f"vk_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-carousel-vk-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_carousel_vk_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"vk_{component}_post_id_{article_id}"
+    result_key  = f"vk_{component}_result_{article_id}"
+    status_key  = f"vk_{component}_status_{article_id}"
+    history_key = f"vk_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        resp = _req.get("https://api.vk.com/method/wall.delete", params={
+            "access_token": VK_ACCESS_TOKEN, "v": "5.199",
+            "owner_id": VK_OWNER_ID, "post_id": post_id,
+        }, timeout=15)
+        rdata = resp.json()
+        if rdata.get("error"):
+            err_msg = rdata["error"].get("error_msg", "Unknown error")
+            return jsonify({"error": f"Could not delete post: {err_msg}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ── VK: Post narrated video ──────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-vk", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_vk(article_id):
+    if not VK_CONFIGURED:
+        return jsonify({"error": "VK credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"vk_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_vk_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-vk-status")
+@login_required
+@admin_required
+def admin_narrated_vk_status(article_id):
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"vk_narrated_status_{article_id}_{run_ts}"
+    result_key  = f"vk_narrated_result_{article_id}_{run_ts}"
+    history_key = f"vk_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-vk-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_vk_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"vk_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"vk_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"vk_narrated_status_{article_id}_{run_ts}"
+    history_key = f"vk_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-narrated-vk-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_narrated_vk_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"vk_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"vk_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"vk_narrated_status_{article_id}_{run_ts}"
+    history_key = f"vk_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        # VK video deletion — use video.delete
+        resp = _req.get("https://api.vk.com/method/video.delete", params={
+            "access_token": VK_ACCESS_TOKEN, "v": "5.199",
+            "video_id": post_id, "owner_id": VK_OWNER_ID,
+        }, timeout=15)
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ══════════════════════════════════════════════════════════════
+# TUMBLR: Workers & Routes
+# ══════════════════════════════════════════════════════════════
+
+def _post_carousel_tumblr_worker(article_id, caption, component):
+    """Background thread: compose carousel images and post to Tumblr via NPF."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"tumblr_{component}_status_{article_id}"
+    result_key = f"tumblr_{component}_result_{article_id}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        row = query_one(
+            "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
+            (article_id,)
+        )
+        if not row:
+            _set_result("error:Article not found")
+            return
+
+        images     = (json.loads(row[0]) if row[0] else [])[:10]
+        punchlines = (json.loads(row[1]) if row[1] else [])[:10]
+        valid_imgs = [u for u in images if u]
+        if not valid_imgs:
+            _set_result("error:No images found")
+            return
+
+        n = len(valid_imgs)
+        carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
+        tumblr_headers = {
+            "Authorization": f"Bearer {TUMBLR_ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        }
+
+        # 1. Compose and upload images to GCS
+        _set_status(f"running:compose:0/{n}")
+        ts_t = int(_time_mod.time())
+        public_urls = []
+
+        for idx, img_url in enumerate(valid_imgs):
+            _set_status(f"running:compose:{idx+1}/{n}")
+            try:
+                if img_url.startswith("https://"):
+                    resp_img = _req.get(img_url, timeout=20)
+                    resp_img.raise_for_status()
+                    img_bytes = resp_img.content
+                else:
+                    local = resolve_image_to_local_path(img_url)
+                    img_bytes = local.read_bytes() if local and local.exists() else b""
+            except Exception as e:
+                _set_result(f"error:Could not fetch image {idx+1}: {e}")
+                return
+
+            punchline  = punchlines[idx] if idx < len(punchlines) else ""
+            jpeg_bytes = compose_carousel_slide(img_bytes, punchline, idx, n,
+                                                band_top=carousel_band_top,
+                                                hint_text="obelisk-stamps.com")
+            gcs_obj    = f"articles/{article_id}/tumblr/{component}_{idx+1}_{ts_t}.jpg"
+            public_url = upload_bytes_to_gcs(jpeg_bytes, gcs_obj, content_type="image/jpeg")
+            if not public_url:
+                _set_result(f"error:Image upload failed for slide {idx+1}")
+                return
+            public_urls.append(public_url)
+
+        # 2. Create Tumblr post (NPF format)
+        _set_status("running:publish")
+        content_blocks = []
+        if caption:
+            content_blocks.append({"type": "text", "text": caption[:4096]})
+        for url in public_urls:
+            content_blocks.append({"type": "image", "media": [{"url": url}]})
+
+        resp = _req.post(f"https://api.tumblr.com/v2/blog/{TUMBLR_BLOG_NAME}/posts",
+                         headers=tumblr_headers,
+                         json={"content": content_blocks, "state": "published"},
+                         timeout=30)
+        resp.raise_for_status()
+        tdata = resp.json()
+        post_id = str(tdata.get("response", {}).get("id", ""))
+        if not post_id:
+            _set_result(f"error:Tumblr post failed: {tdata}")
+            return
+
+        permalink = f"https://{TUMBLR_BLOG_NAME}.tumblr.com/post/{post_id}"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"tumblr_{component}_post_id_{article_id}", post_id, post_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, f"Tumblr {component.title()} Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"post_id={post_id}\nimages={n}",
+                          component=component)
+        print(f"[Tumblr] Carousel posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Tumblr] Carousel worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, f"Tumblr {component.title()} Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component=component)
+
+
+def _post_narrated_tumblr_worker(article_id, video_url, caption, run_ts):
+    """Background thread: post narrated video to Tumblr via NPF."""
+    import requests as _req
+    import time as _time_mod
+
+    status_key = f"tumblr_narrated_status_{article_id}_{run_ts}"
+    result_key = f"tumblr_narrated_result_{article_id}_{run_ts}"
+
+    def _set_status(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (status_key, v, v))
+
+    def _set_result(v):
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+    try:
+        tumblr_headers = {
+            "Authorization": f"Bearer {TUMBLR_ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        }
+
+        _set_status("running:publish")
+        content_blocks = []
+        if caption:
+            content_blocks.append({"type": "text", "text": caption[:4096]})
+        content_blocks.append({"type": "video", "url": video_url})
+
+        resp = _req.post(f"https://api.tumblr.com/v2/blog/{TUMBLR_BLOG_NAME}/posts",
+                         headers=tumblr_headers,
+                         json={"content": content_blocks, "state": "published"},
+                         timeout=30)
+        resp.raise_for_status()
+        tdata = resp.json()
+        post_id = str(tdata.get("response", {}).get("id", ""))
+        if not post_id:
+            _set_result(f"error:Tumblr post failed: {tdata}")
+            return
+
+        permalink = f"https://{TUMBLR_BLOG_NAME}.tumblr.com/post/{post_id}"
+
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (f"tumblr_narrated_post_id_{article_id}_{run_ts}", post_id, post_id))
+        _set_result(f"done:{permalink}")
+        _add_activity_log(article_id, "Tumblr Narrated Video Posted",
+                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+                          f"post_id={post_id}\nrun_ts={run_ts}",
+                          component="narrated")
+        print(f"[Tumblr] Narrated video posted: {permalink}", flush=True)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Tumblr] Narrated worker error: {e}\n{tb}", flush=True)
+        _set_result(f"error:{e}")
+        _add_activity_log(article_id, "Tumblr Narrated Video Post Failed",
+                          f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+
+
+# ── Tumblr: Post carousel ────────────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-carousel-to-tumblr", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_carousel_to_tumblr(article_id):
+    if not TUMBLR_CONFIGURED:
+        return jsonify({"error": "Tumblr credentials not configured."}), 400
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    caption   = data.get("caption", "")
+    status_key = f"tumblr_{component}_status_{article_id}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_carousel_tumblr_worker,
+                     args=(article_id, caption, component), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/carousel-tumblr-status")
+@login_required
+@admin_required
+def admin_carousel_tumblr_status(article_id):
+    component   = request.args.get("type", "car")
+    status_key  = f"tumblr_{component}_status_{article_id}"
+    result_key  = f"tumblr_{component}_result_{article_id}"
+    history_key = f"tumblr_{component}_history_{article_id}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-carousel-tumblr-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_carousel_tumblr_post(article_id):
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"tumblr_{component}_post_id_{article_id}"
+    result_key  = f"tumblr_{component}_result_{article_id}"
+    status_key  = f"tumblr_{component}_status_{article_id}"
+    history_key = f"tumblr_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-carousel-tumblr-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_carousel_tumblr_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data      = request.get_json() or {}
+    component = data.get("type", "car")
+    post_key    = f"tumblr_{component}_post_id_{article_id}"
+    result_key  = f"tumblr_{component}_result_{article_id}"
+    status_key  = f"tumblr_{component}_status_{article_id}"
+    history_key = f"tumblr_{component}_history_{article_id}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        resp = _req.delete(f"https://api.tumblr.com/v2/blog/{TUMBLR_BLOG_NAME}/post/{post_id}",
+                           headers={"Authorization": f"Bearer {TUMBLR_ACCESS_TOKEN}"},
+                           timeout=15)
+        if resp.status_code not in (200, 204, 404):
+            try:
+                err = resp.json()
+            except Exception:
+                err = resp.text[:300]
+            return jsonify({"error": f"Could not delete post: {err}"}), 400
+    except Exception:
+        pass
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+# ── Tumblr: Post narrated video ──────────────────────────────
+
+@app.route("/admin/articles/<int:article_id>/post-narrated-to-tumblr", methods=["POST"])
+@login_required
+@admin_required
+def admin_post_narrated_to_tumblr(article_id):
+    if not TUMBLR_CONFIGURED:
+        return jsonify({"error": "Tumblr credentials not configured."}), 400
+    data      = request.get_json() or {}
+    video_url = data.get("video_url", "")
+    caption   = data.get("caption", "")
+    run_ts    = str(data.get("run_ts", "0"))
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    status_key = f"tumblr_narrated_status_{article_id}_{run_ts}"
+    if (get_setting(status_key) or "").startswith("running"):
+        return jsonify({"error": "Already posting this video."}), 409
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    threading.Thread(target=_post_narrated_tumblr_worker,
+                     args=(article_id, video_url, caption, run_ts), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/narrated-tumblr-status")
+@login_required
+@admin_required
+def admin_narrated_tumblr_status(article_id):
+    run_ts      = request.args.get("ts", "0")
+    status_key  = f"tumblr_narrated_status_{article_id}_{run_ts}"
+    result_key  = f"tumblr_narrated_result_{article_id}_{run_ts}"
+    history_key = f"tumblr_narrated_history_{article_id}_{run_ts}"
+    return jsonify({
+        "status":  get_setting(status_key) or "idle",
+        "result":  get_setting(result_key) or "",
+        "history": json.loads(get_setting(history_key) or "[]"),
+    })
+
+
+@app.route("/admin/articles/<int:article_id>/archive-narrated-tumblr-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_archive_narrated_tumblr_post(article_id):
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"tumblr_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"tumblr_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"tumblr_narrated_status_{article_id}_{run_ts}"
+    history_key = f"tumblr_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post to archive"}), 400
+    result    = get_setting(result_key) or ""
+    permalink = result.replace("done:", "") if result.startswith("done:") else ""
+    history   = json.loads(get_setting(history_key) or "[]")
+    history.append({"post_id": post_id, "permalink": permalink,
+                    "archived_at": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    hist_val = json.dumps(history)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
+    for k in (post_key, result_key, status_key):
+        execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
+    return jsonify({"ok": True, "history": history})
+
+
+@app.route("/admin/articles/<int:article_id>/delete-narrated-tumblr-post", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_narrated_tumblr_post(article_id):
+    import requests as _req
+    import datetime as _dt
+    data    = request.get_json() or {}
+    run_ts  = str(data.get("run_ts", "0"))
+    post_key    = f"tumblr_narrated_post_id_{article_id}_{run_ts}"
+    result_key  = f"tumblr_narrated_result_{article_id}_{run_ts}"
+    status_key  = f"tumblr_narrated_status_{article_id}_{run_ts}"
+    history_key = f"tumblr_narrated_history_{article_id}_{run_ts}"
+    post_id = get_setting(post_key)
+    if not post_id:
+        return jsonify({"error": "No post record found"}), 400
+    try:
+        resp = _req.delete(f"https://api.tumblr.com/v2/blog/{TUMBLR_BLOG_NAME}/post/{post_id}",
+                           headers={"Authorization": f"Bearer {TUMBLR_ACCESS_TOKEN}"},
+                           timeout=15)
         if resp.status_code not in (200, 204, 404):
             try:
                 err = resp.json()
