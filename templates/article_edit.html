@@ -336,6 +336,54 @@
         </defs>
     </svg>
 
+    <!-- ── Engagement & Analytics ─────────────────────────────────────── -->
+    <div class="card mb-4">
+        <div class="card-header d-flex align-items-center gap-2">
+            <h5 class="mb-0"><i class="fa-solid fa-chart-line me-1"></i>Engagement &amp; Analytics</h5>
+            <button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="engagement-refresh-btn" onclick="refreshEngagement()">
+                <i class="fa-solid fa-arrows-rotate me-1"></i>Refresh Metrics
+            </button>
+        </div>
+        <div class="card-body">
+            <div id="engagement-loading" class="d-none text-center py-3">
+                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                Fetching metrics from platform APIs...
+            </div>
+            <div id="engagement-empty" class="text-muted small text-center py-3">
+                No engagement data yet. Click <strong>Refresh Metrics</strong> to fetch from platform APIs.
+            </div>
+            <div id="engagement-content" class="d-none">
+                <!-- Totals row -->
+                <div class="d-flex flex-wrap gap-3 mb-3" id="engagement-totals"></div>
+                <!-- Platform breakdown table -->
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-2" id="engagement-table">
+                        <thead>
+                            <tr>
+                                <th>Platform</th>
+                                <th class="text-end">Likes</th>
+                                <th class="text-end">Views</th>
+                                <th class="text-end">Shares</th>
+                                <th class="text-end">Comments</th>
+                                <th class="text-end">Saves</th>
+                            </tr>
+                        </thead>
+                        <tbody id="engagement-tbody"></tbody>
+                        <tfoot id="engagement-tfoot"></tfoot>
+                    </table>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <small class="text-muted" id="engagement-updated"></small>
+                    {% if ga_measurement_id %}
+                    <a href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener" class="ms-auto small">
+                        <i class="fa-solid fa-chart-bar me-1"></i>Open Google Analytics
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ══════════════════════════════════════════════════════════
          Social Media Content — Master Component
          ══════════════════════════════════════════════════════════ -->
@@ -2616,6 +2664,139 @@ function showStatus(msg, success) {
     el.classList.remove('d-none');
     if (success) setTimeout(() => el.classList.add('d-none'), 3000);
 }
+
+// ── Engagement & Analytics ──────────────────────────────────────────
+var _PLATFORM_NAMES = {
+    ig:'Instagram', fb:'Facebook', yt:'YouTube', x:'X', threads:'Threads',
+    pinterest:'Pinterest', tiktok:'TikTok', linkedin:'LinkedIn',
+    bluesky:'Bluesky', reddit:'Reddit', telegram:'Telegram',
+    vimeo:'Vimeo', mastodon:'Mastodon', vk:'VK', tumblr:'Tumblr'
+};
+var _PLATFORM_ICONS = {
+    ig:'fa-brands fa-instagram', fb:'fa-brands fa-facebook', yt:'fa-brands fa-youtube',
+    x:'fa-brands fa-x-twitter', threads:'fa-brands fa-threads', pinterest:'fa-brands fa-pinterest',
+    tiktok:'fa-brands fa-tiktok', linkedin:'fa-brands fa-linkedin',
+    bluesky:'fa-brands fa-bluesky', reddit:'fa-brands fa-reddit',
+    telegram:'fa-brands fa-telegram', vimeo:'fa-brands fa-vimeo',
+    mastodon:'fa-brands fa-mastodon', vk:'fa-brands fa-vk', tumblr:'fa-brands fa-tumblr'
+};
+
+function refreshEngagement() {
+    var btn = document.getElementById('engagement-refresh-btn');
+    var loading = document.getElementById('engagement-loading');
+    var empty = document.getElementById('engagement-empty');
+    var content = document.getElementById('engagement-content');
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Fetching...';
+    loading.classList.remove('d-none');
+    empty.classList.add('d-none');
+    content.classList.add('d-none');
+
+    fetch(`/admin/articles/${ARTICLE_ID}/refresh-engagement`, {method:'POST'})
+        .then(r => r.json())
+        .then(data => {
+            loading.classList.add('d-none');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-arrows-rotate me-1"></i>Refresh Metrics';
+
+            if (!data.ok || !data.details || data.details.length === 0) {
+                empty.classList.remove('d-none');
+                empty.textContent = 'No posts found to track. Publish content first, then refresh.';
+                return;
+            }
+            renderEngagement(data);
+        })
+        .catch(err => {
+            loading.classList.add('d-none');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-arrows-rotate me-1"></i>Refresh Metrics';
+            empty.classList.remove('d-none');
+            empty.innerHTML = '<span class="text-danger">Error fetching metrics: ' + err.message + '</span>';
+        });
+}
+
+function loadEngagement() {
+    fetch(`/admin/articles/${ARTICLE_ID}/engagement`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.fetched_at && data.details && data.details.length > 0) {
+                renderEngagement(data);
+            }
+        })
+        .catch(() => {});
+}
+
+function renderEngagement(data) {
+    var content = document.getElementById('engagement-content');
+    var empty = document.getElementById('engagement-empty');
+    var totals = data.totals || {};
+    var platforms = data.platforms || {};
+
+    empty.classList.add('d-none');
+    content.classList.remove('d-none');
+
+    // Totals row
+    var totalsEl = document.getElementById('engagement-totals');
+    var metricLabels = [
+        {key:'likes', icon:'fa-solid fa-heart', color:'#dc3545', label:'Likes'},
+        {key:'views', icon:'fa-solid fa-eye', color:'#0d6efd', label:'Views'},
+        {key:'shares', icon:'fa-solid fa-share', color:'#198754', label:'Shares'},
+        {key:'comments', icon:'fa-solid fa-comment', color:'#ffc107', label:'Comments'},
+        {key:'saves', icon:'fa-solid fa-bookmark', color:'#6f42c1', label:'Saves'},
+    ];
+    totalsEl.innerHTML = metricLabels.map(function(m) {
+        var val = totals[m.key] || 0;
+        if (val === 0 && m.key === 'saves') return '';  // hide saves if 0
+        return '<div class="border rounded px-3 py-2 text-center" style="min-width:100px">' +
+               '<div class="fw-bold fs-5" style="color:' + m.color + '">' +
+               '<i class="' + m.icon + ' me-1" style="font-size:.8em"></i>' + val.toLocaleString() +
+               '</div><div class="text-muted small">' + m.label + '</div></div>';
+    }).filter(Boolean).join('');
+
+    // Platform table
+    var tbody = document.getElementById('engagement-tbody');
+    var tfoot = document.getElementById('engagement-tfoot');
+    var rows = '';
+    var sortedPlatforms = Object.keys(platforms).sort(function(a,b) {
+        return (platforms[b].likes + platforms[b].views) - (platforms[a].likes + platforms[a].views);
+    });
+    sortedPlatforms.forEach(function(p) {
+        var d = platforms[p];
+        rows += '<tr>' +
+            '<td><i class="' + (_PLATFORM_ICONS[p]||'') + ' me-1"></i>' + (_PLATFORM_NAMES[p]||p) + '</td>' +
+            '<td class="text-end">' + (d.likes||0).toLocaleString() + '</td>' +
+            '<td class="text-end">' + (d.views||0).toLocaleString() + '</td>' +
+            '<td class="text-end">' + (d.shares||0).toLocaleString() + '</td>' +
+            '<td class="text-end">' + (d.comments||0).toLocaleString() + '</td>' +
+            '<td class="text-end">' + (d.saves||0).toLocaleString() + '</td>' +
+            '</tr>';
+    });
+    tbody.innerHTML = rows;
+
+    tfoot.innerHTML = '<tr class="fw-bold">' +
+        '<td>Total</td>' +
+        '<td class="text-end">' + (totals.likes||0).toLocaleString() + '</td>' +
+        '<td class="text-end">' + (totals.views||0).toLocaleString() + '</td>' +
+        '<td class="text-end">' + (totals.shares||0).toLocaleString() + '</td>' +
+        '<td class="text-end">' + (totals.comments||0).toLocaleString() + '</td>' +
+        '<td class="text-end">' + (totals.saves||0).toLocaleString() + '</td>' +
+        '</tr>';
+
+    // Updated timestamp
+    var updatedEl = document.getElementById('engagement-updated');
+    if (data.fetched_at) {
+        var d = new Date(data.fetched_at);
+        updatedEl.textContent = 'Last updated: ' + d.toLocaleDateString() + ', ' + d.toLocaleTimeString();
+    }
+}
+
+// Load existing engagement data on page load
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof ARTICLE_ID !== 'undefined' && ARTICLE_ID) {
+        loadEngagement();
+    }
+});
 
 // ── Instagram Carousel Generator ───────────────────────────────────────────
 let carouselAbortCtrl = null;

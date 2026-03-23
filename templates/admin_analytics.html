@@ -1,0 +1,107 @@
+{% extends "layout.html" %}
+
+{% block head %}
+<style>
+    .analytics-card { transition: transform .15s; }
+    .analytics-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+    .metric-badge { font-size: 1.5rem; font-weight: 700; }
+    .platform-icon { width: 20px; text-align: center; display: inline-block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width:1200px">
+    <div class="d-flex align-items-center mb-4">
+        <h2 class="mb-0"><i class="fa-solid fa-chart-line me-2"></i>Analytics Dashboard</h2>
+        <form method="post" action="{{ url_for('admin_engagement_poll_all') }}" class="ms-auto">
+            <button type="submit" class="btn btn-primary">
+                <i class="fa-solid fa-arrows-rotate me-1"></i>Refresh All Articles
+            </button>
+        </form>
+    </div>
+
+    <!-- Platform Performance Summary -->
+    {% if platform_totals %}
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">Platform Performance</h5></div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Platform</th>
+                            <th class="text-end">Likes</th>
+                            <th class="text-end">Views</th>
+                            <th class="text-end">Shares</th>
+                            <th class="text-end">Comments</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in platform_totals %}
+                        <tr>
+                            <td><span class="platform-icon"><i class="fa-brands fa-{{ 'x-twitter' if p.platform == 'x' else ('youtube' if p.platform == 'yt' else ('instagram' if p.platform == 'ig' else p.platform)) }}"></i></span> {{ {'ig':'Instagram','fb':'Facebook','yt':'YouTube','x':'X','threads':'Threads','pinterest':'Pinterest','tiktok':'TikTok','linkedin':'LinkedIn','bluesky':'Bluesky','reddit':'Reddit'}.get(p.platform, p.platform) }}</td>
+                            <td class="text-end">{{ "{:,}".format(p.total_likes|int) }}</td>
+                            <td class="text-end">{{ "{:,}".format(p.total_views|int) }}</td>
+                            <td class="text-end">{{ "{:,}".format(p.total_shares|int) }}</td>
+                            <td class="text-end">{{ "{:,}".format(p.total_comments|int) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Article Performance Table -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">Article Performance</h5></div>
+        <div class="card-body">
+            {% if articles %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Article</th>
+                            <th class="text-end">Likes</th>
+                            <th class="text-end">Views</th>
+                            <th class="text-end">Shares</th>
+                            <th class="text-end">Comments</th>
+                            <th class="text-end">Last Fetched</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in articles %}
+                        <tr>
+                            <td>{{ a.title }}</td>
+                            <td class="text-end">{{ "{:,}".format(a.total_likes|int) }}</td>
+                            <td class="text-end">{{ "{:,}".format(a.total_views|int) }}</td>
+                            <td class="text-end">{{ "{:,}".format(a.total_shares|int) }}</td>
+                            <td class="text-end">{{ "{:,}".format(a.total_comments|int) }}</td>
+                            <td class="text-end small text-muted">
+                                {% if a.last_fetched %}
+                                {{ a.last_fetched.strftime("%d %b %Y, %H:%M") if a.last_fetched else '—' }}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td><a href="{{ url_for('admin_edit_article', article_id=a.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No published articles yet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if ga_measurement_id %}
+    <div class="text-center">
+        <a href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener" class="btn btn-outline-primary">
+            <i class="fa-solid fa-chart-bar me-1"></i>Open Google Analytics Dashboard
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

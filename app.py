@@ -321,6 +321,13 @@ if TUMBLR_CONFIGURED:
 else:
     print("Tumblr: TUMBLR_ACCESS_TOKEN / TUMBLR_BLOG_NAME not set — posting disabled")
 
+# --- Google Analytics 4 ---
+GA_MEASUREMENT_ID = os.getenv("GA_MEASUREMENT_ID", "")
+if GA_MEASUREMENT_ID:
+    print(f"GA4: Measurement ID configured ({GA_MEASUREMENT_ID})")
+else:
+    print("GA4: GA_MEASUREMENT_ID not set — analytics disabled")
+
 
 # --- Knowledge Base (ChromaDB) ---
 KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb")
@@ -1034,6 +1041,38 @@ def init_site_settings():
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
     """)
+    cur.execute("""CREATE TABLE IF NOT EXISTS article_engagement (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        article_id INT NOT NULL,
+        platform VARCHAR(20) NOT NULL,
+        content_type VARCHAR(20) NOT NULL,
+        post_id VARCHAR(255),
+        permalink VARCHAR(500),
+        likes INT DEFAULT 0,
+        views INT DEFAULT 0,
+        shares INT DEFAULT 0,
+        comments INT DEFAULT 0,
+        saves INT DEFAULT 0,
+        clicks INT DEFAULT 0,
+        impressions INT DEFAULT 0,
+        reach INT DEFAULT 0,
+        fetched_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_article (article_id),
+        INDEX idx_platform (platform),
+        INDEX idx_fetched (fetched_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    # Add UTM attribution columns to orders table if not present
+    try:
+        cur.execute("""
+            SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND COLUMN_NAME = 'utm_source'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE orders ADD COLUMN utm_source VARCHAR(50) DEFAULT NULL")
+            cur.execute("ALTER TABLE orders ADD COLUMN utm_campaign VARCHAR(255) DEFAULT NULL")
+    except Exception:
+        pass  # orders table may not exist yet
     # Migrate existing TEXT column to MEDIUMTEXT if not already upgraded
     cur.execute("""
         SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
@@ -1309,6 +1348,21 @@ def convert_catalogue_price(price_gbp, target_currency):
     return convert_price(price_gbp, "GBP", target_currency)
 
 
+_UTM_PLATFORM_MAP = {
+    'ig': 'instagram', 'fb': 'facebook', 'yt': 'youtube', 'x': 'twitter',
+    'threads': 'threads', 'pinterest': 'pinterest', 'tiktok': 'tiktok',
+    'linkedin': 'linkedin', 'bluesky': 'bluesky', 'reddit': 'reddit',
+    'telegram': 'telegram', 'vimeo': 'vimeo', 'mastodon': 'mastodon',
+    'vk': 'vk', 'tumblr': 'tumblr',
+}
+
+def make_utm_url(article_slug, platform_key):
+    """Build article URL with UTM tracking parameters."""
+    source = _UTM_PLATFORM_MAP.get(platform_key, platform_key)
+    base = f"{SITE_URL}/articles/{article_slug}"
+    return f"{base}?utm_source={source}&utm_medium=social&utm_campaign={article_slug}"
+
+
 @app.context_processor
 def inject_currency_helpers():
     """Make currency helpers available in all templates."""
@@ -1321,7 +1375,337 @@ def inject_currency_helpers():
         "is_admin": is_admin(),
         "contact_email": os.getenv("CONTACT_TO_EMAIL", "thalesjacobi@gmail.com"),
         "site_url": SITE_URL,
+        "ga_measurement_id": GA_MEASUREMENT_ID,
     }
+
+
+# ------------------------------------------------------------
+# ENGAGEMENT FETCHERS
+# ------------------------------------------------------------
+
+def _fetch_ig_engagement(article_id):
+    """Fetch Instagram engagement metrics for all post types."""
+    import requests as _req
+    results = []
+    for content_type, prefix in [('carousel', 'ig_car'), ('cinemagraph', 'ig_cine')]:
+        post_id = get_setting(f"instagram_media_id_{article_id}") if content_type == 'carousel' else get_setting(f"ig_cine_post_id_{article_id}")
+        if not post_id:
+            continue
+        try:
+            resp = _req.get(f"https://graph.instagram.com/{post_id}",
+                params={"fields": "like_count,comments_count,media_type", "access_token": IG_ACCESS_TOKEN}, timeout=15)
+            data = resp.json()
+            if 'error' not in data:
+                results.append({
+                    'platform': 'ig', 'content_type': content_type,
+                    'post_id': post_id,
+                    'likes': data.get('like_count', 0),
+                    'comments': data.get('comments_count', 0),
+                })
+        except Exception as e:
+            print(f"IG engagement fetch error: {e}")
+    # Also check NV posts
+    rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (f"ig_narrated_post_id_{article_id}_%",))
+    for row in (rows or []):
+        post_id = row['value']
+        if not post_id:
+            continue
+        try:
+            resp = _req.get(f"https://graph.instagram.com/{post_id}",
+                params={"fields": "like_count,comments_count,media_type", "access_token": IG_ACCESS_TOKEN}, timeout=15)
+            data = resp.json()
+            if 'error' not in data:
+                results.append({
+                    'platform': 'ig', 'content_type': 'narrated_video',
+                    'post_id': post_id,
+                    'likes': data.get('like_count', 0),
+                    'comments': data.get('comments_count', 0),
+                })
+        except Exception as e:
+            print(f"IG NV engagement fetch error: {e}")
+    return results
+
+
+def _fetch_fb_engagement(article_id):
+    """Fetch Facebook engagement metrics."""
+    import requests as _req
+    results = []
+    for content_type, key_prefix in [('carousel', 'fb_car'), ('narrated_video', 'fb_narrated')]:
+        if content_type == 'carousel':
+            post_id = get_setting(f"fb_car_post_id_{article_id}")
+        else:
+            rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (f"fb_narrated_post_id_{article_id}_%",))
+            for row in (rows or []):
+                post_id = row['value']
+                if not post_id:
+                    continue
+                try:
+                    resp = _req.get(f"https://graph.facebook.com/v21.0/{post_id}",
+                        params={"fields": "likes.summary(true),shares,comments.summary(true)",
+                                "access_token": FB_PAGE_ACCESS_TOKEN}, timeout=15)
+                    data = resp.json()
+                    if 'error' not in data:
+                        results.append({
+                            'platform': 'fb', 'content_type': content_type,
+                            'post_id': post_id,
+                            'likes': data.get('likes', {}).get('summary', {}).get('total_count', 0),
+                            'shares': data.get('shares', {}).get('count', 0),
+                            'comments': data.get('comments', {}).get('summary', {}).get('total_count', 0),
+                        })
+                except Exception as e:
+                    print(f"FB engagement fetch error: {e}")
+            continue
+        if not post_id:
+            continue
+        try:
+            resp = _req.get(f"https://graph.facebook.com/v21.0/{post_id}",
+                params={"fields": "likes.summary(true),shares,comments.summary(true)",
+                        "access_token": FB_PAGE_ACCESS_TOKEN}, timeout=15)
+            data = resp.json()
+            if 'error' not in data:
+                results.append({
+                    'platform': 'fb', 'content_type': content_type,
+                    'post_id': post_id,
+                    'likes': data.get('likes', {}).get('summary', {}).get('total_count', 0),
+                    'shares': data.get('shares', {}).get('count', 0),
+                    'comments': data.get('comments', {}).get('summary', {}).get('total_count', 0),
+                })
+        except Exception as e:
+            print(f"FB engagement fetch error: {e}")
+    return results
+
+
+def _fetch_x_engagement(article_id):
+    """Fetch X/Twitter engagement metrics using OAuth 1.0a."""
+    results = []
+    if not X_CONFIGURED:
+        return results
+    try:
+        from requests_oauthlib import OAuth1Session
+        oauth = OAuth1Session(X_API_KEY, client_secret=X_API_SECRET,
+                              resource_owner_key=X_ACCESS_TOKEN,
+                              resource_owner_secret=X_ACCESS_TOKEN_SECRET)
+        for content_type, key_pattern in [('carousel', f'x_car_tweet_id_{article_id}'),
+                                           ('narrated_video', f'x_narrated_tweet_id_{article_id}_%')]:
+            if '%' in key_pattern:
+                rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (key_pattern,))
+            else:
+                val = get_setting(key_pattern)
+                rows = [{'value': val}] if val else []
+            for row in (rows or []):
+                tweet_id = row['value']
+                if not tweet_id:
+                    continue
+                resp = oauth.get(f"https://api.x.com/2/tweets/{tweet_id}",
+                    params={"tweet.fields": "public_metrics"}, timeout=15)
+                data = resp.json()
+                metrics = data.get('data', {}).get('public_metrics', {})
+                if metrics:
+                    results.append({
+                        'platform': 'x', 'content_type': content_type,
+                        'post_id': tweet_id,
+                        'likes': metrics.get('like_count', 0),
+                        'views': metrics.get('impression_count', 0),
+                        'shares': metrics.get('retweet_count', 0),
+                        'comments': metrics.get('reply_count', 0),
+                    })
+    except Exception as e:
+        print(f"X engagement fetch error: {e}")
+    return results
+
+
+def _fetch_threads_engagement(article_id):
+    """Fetch Threads engagement metrics."""
+    import requests as _req
+    results = []
+    if not THREADS_CONFIGURED:
+        return results
+    for content_type, key_pattern in [('carousel', f'threads_car_post_id_{article_id}'),
+                                       ('narrated_video', f'threads_narrated_post_id_{article_id}_%')]:
+        if '%' in key_pattern:
+            rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (key_pattern,))
+        else:
+            val = get_setting(key_pattern)
+            rows = [{'value': val}] if val else []
+        for row in (rows or []):
+            post_id = row['value']
+            if not post_id:
+                continue
+            try:
+                resp = _req.get(f"{_THREADS_API_URL}/{post_id}",
+                    params={"fields": "likes,replies,reposts,quotes,views",
+                            "access_token": THREADS_ACCESS_TOKEN}, timeout=15)
+                data = resp.json()
+                if 'error' not in data:
+                    results.append({
+                        'platform': 'threads', 'content_type': content_type,
+                        'post_id': post_id,
+                        'likes': data.get('likes', 0),
+                        'comments': data.get('replies', 0),
+                        'shares': data.get('reposts', 0) + data.get('quotes', 0),
+                        'views': data.get('views', 0),
+                    })
+            except Exception as e:
+                print(f"Threads engagement fetch error: {e}")
+    return results
+
+
+def _fetch_youtube_engagement(article_id):
+    """Fetch YouTube engagement metrics."""
+    import requests as _req
+    results = []
+    yt_refresh = get_setting("youtube_refresh_token")
+    if not yt_refresh:
+        return results
+    try:
+        token_resp = _req.post("https://oauth2.googleapis.com/token", data={
+            "client_id": os.getenv("GOOGLE_CLIENT_ID", ""),
+            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", ""),
+            "refresh_token": yt_refresh,
+            "grant_type": "refresh_token",
+        }, timeout=15)
+        access_token = token_resp.json().get("access_token", "")
+        if not access_token:
+            return results
+    except Exception:
+        return results
+
+    rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s",
+                     (f"youtube_video_id_{article_id}_%",))
+    for row in (rows or []):
+        video_id = row['value']
+        if not video_id:
+            continue
+        try:
+            resp = _req.get("https://www.googleapis.com/youtube/v3/videos",
+                params={"part": "statistics", "id": video_id,
+                        "access_token": access_token}, timeout=15)
+            data = resp.json()
+            items = data.get('items', [])
+            if items:
+                stats = items[0].get('statistics', {})
+                results.append({
+                    'platform': 'yt', 'content_type': 'narrated_video',
+                    'post_id': video_id,
+                    'likes': int(stats.get('likeCount', 0)),
+                    'views': int(stats.get('viewCount', 0)),
+                    'comments': int(stats.get('commentCount', 0)),
+                })
+        except Exception as e:
+            print(f"YouTube engagement fetch error: {e}")
+    return results
+
+
+def _fetch_pinterest_engagement(article_id):
+    """Fetch Pinterest engagement metrics."""
+    import requests as _req
+    results = []
+    if not PINTEREST_CONFIGURED:
+        return results
+    for content_type, key_pattern in [('carousel', f'pinterest_car_pin_id_{article_id}'),
+                                       ('narrated_video', f'pinterest_narrated_pin_id_{article_id}_%')]:
+        if '%' in key_pattern:
+            rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (key_pattern,))
+        else:
+            val = get_setting(key_pattern)
+            rows = [{'value': val}] if val else []
+        for row in (rows or []):
+            pin_id = row['value']
+            if not pin_id:
+                continue
+            try:
+                resp = _req.get(f"https://api.pinterest.com/v5/pins/{pin_id}",
+                    headers={"Authorization": f"Bearer {PINTEREST_ACCESS_TOKEN}"}, timeout=15)
+                data = resp.json()
+                if 'code' not in data:
+                    results.append({
+                        'platform': 'pinterest', 'content_type': content_type,
+                        'post_id': pin_id,
+                        'saves': data.get('pin_metrics', {}).get('save', 0),
+                        'comments': data.get('pin_metrics', {}).get('comment_count', 0) if 'pin_metrics' in data else 0,
+                    })
+            except Exception as e:
+                print(f"Pinterest engagement fetch error: {e}")
+    return results
+
+
+def _fetch_bluesky_engagement(article_id):
+    """Fetch Bluesky engagement metrics via AT Protocol."""
+    import requests as _req
+    results = []
+    if not BLUESKY_CONFIGURED:
+        return results
+    try:
+        auth_resp = _req.post("https://bsky.social/xrpc/com.atproto.server.createSession",
+            json={"identifier": BLUESKY_HANDLE, "password": BLUESKY_APP_PASSWORD}, timeout=15)
+        auth_data = auth_resp.json()
+        access_jwt = auth_data.get("accessJwt", "")
+        if not access_jwt:
+            return results
+    except Exception:
+        return results
+
+    for content_type, key_pattern in [('carousel', f'bluesky_car_post_uri_{article_id}'),
+                                       ('narrated_video', f'bluesky_narrated_post_uri_{article_id}_%')]:
+        if '%' in key_pattern:
+            rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (key_pattern,))
+        else:
+            val = get_setting(key_pattern)
+            rows = [{'value': val}] if val else []
+        for row in (rows or []):
+            post_uri = row['value']
+            if not post_uri:
+                continue
+            try:
+                resp = _req.get("https://bsky.social/xrpc/app.bsky.feed.getPostThread",
+                    params={"uri": post_uri, "depth": 0},
+                    headers={"Authorization": f"Bearer {access_jwt}"}, timeout=15)
+                data = resp.json()
+                post = data.get('thread', {}).get('post', {})
+                if post:
+                    results.append({
+                        'platform': 'bluesky', 'content_type': content_type,
+                        'post_id': post_uri,
+                        'likes': post.get('likeCount', 0),
+                        'shares': post.get('repostCount', 0),
+                        'comments': post.get('replyCount', 0),
+                    })
+            except Exception as e:
+                print(f"Bluesky engagement fetch error: {e}")
+    return results
+
+
+def fetch_all_engagement(article_id):
+    """Fetch engagement metrics from all configured platforms and store snapshots."""
+    from datetime import datetime as _dt_now
+    all_results = []
+
+    if IG_USER_ID and IG_ACCESS_TOKEN:
+        all_results.extend(_fetch_ig_engagement(article_id))
+    if FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN:
+        all_results.extend(_fetch_fb_engagement(article_id))
+    if X_CONFIGURED:
+        all_results.extend(_fetch_x_engagement(article_id))
+    if THREADS_CONFIGURED:
+        all_results.extend(_fetch_threads_engagement(article_id))
+    if get_setting("youtube_refresh_token"):
+        all_results.extend(_fetch_youtube_engagement(article_id))
+    if PINTEREST_CONFIGURED:
+        all_results.extend(_fetch_pinterest_engagement(article_id))
+    if BLUESKY_CONFIGURED:
+        all_results.extend(_fetch_bluesky_engagement(article_id))
+
+    # Store snapshots
+    now = _dt_now.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    for r in all_results:
+        execute("""INSERT INTO article_engagement
+            (article_id, platform, content_type, post_id, likes, views, shares, comments, saves, clicks, impressions, reach, fetched_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (article_id, r.get('platform',''), r.get('content_type',''), r.get('post_id',''),
+             r.get('likes',0), r.get('views',0), r.get('shares',0), r.get('comments',0),
+             r.get('saves',0), r.get('clicks',0), r.get('impressions',0), r.get('reach',0), now))
+
+    return all_results
 
 
 # ------------------------------------------------------------
@@ -1358,6 +1742,12 @@ def articles():
 
 @app.route("/articles/<slug>")
 def article_view(slug):
+    # Store UTM params in session for purchase attribution
+    if request.args.get('utm_source'):
+        session['utm_source'] = request.args.get('utm_source', '')
+        session['utm_campaign'] = request.args.get('utm_campaign', '')
+        session['utm_medium'] = request.args.get('utm_medium', '')
+
     row = query_one(
         "SELECT id, slug, title, subtitle, content, excerpt, image_url, published_at, "
         "carousel_images, carousel_punchlines, carousel_cinemagraphs, show_slideshow "
@@ -2177,6 +2567,8 @@ def create_checkout_session():
             },
             metadata={
                 "user_id": str(current_user.id),
+                "utm_source": session.get("utm_source", ""),
+                "utm_campaign": session.get("utm_campaign", ""),
             },
             payment_intent_data={
                 "metadata": {
@@ -2260,8 +2652,9 @@ def _create_order_from_session(session):
     order_id = execute(
         """INSERT INTO orders
            (user_id, stripe_checkout_session_id, stripe_payment_intent_id, status,
-            total_amount, currency, shipping_name, shipping_email, shipping_address)
-           VALUES (%s, %s, %s, 'paid', %s, %s, %s, %s, %s)""",
+            total_amount, currency, shipping_name, shipping_email, shipping_address,
+            utm_source, utm_campaign)
+           VALUES (%s, %s, %s, 'paid', %s, %s, %s, %s, %s, %s, %s)""",
         (
             user_id,
             session.id,
@@ -2271,6 +2664,8 @@ def _create_order_from_session(session):
             shipping.get("name"),
             session.customer_email,
             address_str,
+            (session.metadata or {}).get("utm_source", "") or None,
+            (session.metadata or {}).get("utm_campaign", "") or None,
         ),
     )
 
@@ -4792,6 +5187,10 @@ def admin_article_archive_all_cinemagraphs(article_id):
 # ------------------------------------------------------------
 def _upload_to_youtube_worker(article_id, video_url, title, desc, run_ts, refresh_token):
     """Background thread: download video → upload to YouTube as a Short."""
+    # UTM tracking: replace plain article URL with YouTube-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        desc = desc.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'yt'))
     import requests as _req
     import tempfile as _tmp
     import os as _os
@@ -5306,6 +5705,11 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
     access_token  = IG_ACCESS_TOKEN
 
     try:
+        # UTM tracking: replace plain article URL with IG-tagged version
+        _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        if _art and _art[0] and SITE_URL:
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'ig'))
+
         # ── 1. Load carousel data ──────────────────────────────────────────
         row = query_one(
             "SELECT carousel_images, carousel_punchlines, carousel_cinemagraphs "
@@ -5909,6 +6313,11 @@ def _post_narrated_reel_worker(article_id, video_url, caption, run_ts):
         execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
 
     try:
+        # UTM tracking: replace plain article URL with IG-tagged version
+        _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        if _art and _art[0] and SITE_URL:
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'ig'))
+
         # ── 1. Create Reel container ──────────────────────────────────────
         _set_status("running:container")
         print(f"IG Reel: creating container article={article_id}", flush=True)
@@ -6393,6 +6802,11 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
     access_token = FB_PAGE_ACCESS_TOKEN
 
     try:
+        # UTM tracking: replace plain article URL with FB-tagged version
+        _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        if _art and _art[0] and SITE_URL:
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'fb'))
+
         _set_status("running:0")
 
         # ── Fetch article data ─────────────────────────────────
@@ -6595,6 +7009,11 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s", (k, v, v))
 
     try:
+        # UTM tracking: replace plain article URL with FB-tagged version
+        _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        if _art and _art[0] and SITE_URL:
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'fb'))
+
         _set_status("running:upload")
 
         _add_activity_log(
@@ -7113,6 +7532,11 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
 
     tmp_path = None
     try:
+        # UTM tracking: replace plain article URL with X-tagged version
+        _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        if _art and _art[0] and SITE_URL:
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'x'))
+
         auth = _x_auth()
 
         # 1. Download video to temp file
@@ -7242,6 +7666,11 @@ def _post_carousel_x_worker(article_id, caption, run_ts, component):
         execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
 
     try:
+        # UTM tracking: replace plain article URL with X-tagged version
+        _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        if _art and _art[0] and SITE_URL:
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'x'))
+
         auth = _x_auth()
 
         # Fetch images from DB
@@ -7666,6 +8095,11 @@ def _post_carousel_threads_worker(article_id, caption, component):
         execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
 
     try:
+        # UTM tracking: replace plain article URL with Threads-tagged version
+        _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        if _art and _art[0] and SITE_URL:
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'threads'))
+
         row = query_one(
             "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
             (article_id,)
@@ -7821,6 +8255,11 @@ def _post_narrated_threads_worker(article_id, video_url, caption, run_ts):
         execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
 
     try:
+        # UTM tracking: replace plain article URL with Threads-tagged version
+        _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        if _art and _art[0] and SITE_URL:
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'threads'))
+
         # 1. Create video container
         _set_status("running:container")
         resp = _req.post(f"{_THREADS_API_URL}/{THREADS_USER_ID}/threads", params={
@@ -8109,6 +8548,10 @@ def _pinterest_headers():
 
 def _post_carousel_pinterest_worker(article_id, caption, component):
     """Background thread: compose carousel images and post as Pinterest pin(s)."""
+    # UTM tracking: replace plain article URL with Pinterest-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'pinterest'))
     import requests as _req
     import time as _time_mod
 
@@ -8255,6 +8698,10 @@ def _post_carousel_pinterest_worker(article_id, caption, component):
 
 def _post_narrated_pinterest_worker(article_id, video_url, caption, run_ts):
     """Background thread: upload narrated video to Pinterest as a video pin."""
+    # UTM tracking: replace plain article URL with Pinterest-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'pinterest'))
     import requests as _req
     import time as _time_mod
 
@@ -8666,6 +9113,10 @@ def admin_delete_narrated_pinterest_post(article_id):
 
 def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
     """Background thread: upload narrated video to TikTok via Content Posting API."""
+    # UTM tracking: replace plain article URL with TikTok-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'tiktok'))
     import requests as _req
     import time as _time_mod
 
@@ -8828,6 +9279,10 @@ def admin_archive_narrated_tiktok_post(article_id):
 
 def _post_carousel_linkedin_worker(article_id, caption, component):
     """Background thread: compose carousel images and post to LinkedIn."""
+    # UTM tracking: replace plain article URL with LinkedIn-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'linkedin'))
     import requests as _req
     import time as _time_mod
 
@@ -8970,6 +9425,10 @@ def _post_carousel_linkedin_worker(article_id, caption, component):
 
 def _post_narrated_linkedin_worker(article_id, video_url, caption, run_ts):
     """Background thread: upload narrated video to LinkedIn."""
+    # UTM tracking: replace plain article URL with LinkedIn-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'linkedin'))
     import requests as _req
     import time as _time_mod
     import tempfile as _tmp
@@ -9379,6 +9838,10 @@ def _bluesky_auth():
 
 def _post_carousel_bluesky_worker(article_id, caption, component):
     """Background thread: compose carousel images and post to Bluesky."""
+    # UTM tracking: replace plain article URL with Bluesky-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'bluesky'))
     import requests as _req
     import time as _time_mod
 
@@ -9525,6 +9988,10 @@ def _post_carousel_bluesky_worker(article_id, caption, component):
 
 def _post_narrated_bluesky_worker(article_id, video_url, caption, run_ts):
     """Background thread: upload narrated video to Bluesky."""
+    # UTM tracking: replace plain article URL with Bluesky-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'bluesky'))
     import requests as _req
     import time as _time_mod
 
@@ -9869,6 +10336,10 @@ def _reddit_get_access_token():
 
 def _post_carousel_reddit_worker(article_id, caption, component):
     """Background thread: compose carousel images and post to Reddit as self post."""
+    # UTM tracking: replace plain article URL with Reddit-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'reddit'))
     import requests as _req
     import time as _time_mod
 
@@ -9976,6 +10447,10 @@ def _post_carousel_reddit_worker(article_id, caption, component):
 
 def _post_narrated_reddit_worker(article_id, video_url, caption, run_ts):
     """Background thread: post narrated video to Reddit as link post."""
+    # UTM tracking: replace plain article URL with Reddit-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'reddit'))
     import requests as _req
     import time as _time_mod
 
@@ -10248,6 +10723,10 @@ def admin_delete_narrated_reddit_post(article_id):
 
 def _post_carousel_telegram_worker(article_id, caption, component):
     """Background thread: compose carousel images and post as Telegram media group."""
+    # UTM tracking: replace plain article URL with Telegram-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'telegram'))
     import requests as _req
     import time as _time_mod
 
@@ -10359,6 +10838,10 @@ def _post_carousel_telegram_worker(article_id, caption, component):
 
 def _post_narrated_telegram_worker(article_id, video_url, caption, run_ts):
     """Background thread: post narrated video to Telegram."""
+    # UTM tracking: replace plain article URL with Telegram-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'telegram'))
     import requests as _req
     import time as _time_mod
 
@@ -10619,6 +11102,10 @@ def admin_delete_narrated_telegram_post(article_id):
 
 def _post_narrated_vimeo_worker(article_id, video_url, caption, run_ts):
     """Background thread: upload narrated video to Vimeo via tus protocol."""
+    # UTM tracking: replace plain article URL with Vimeo-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'vimeo'))
     import requests as _req
     import time as _time_mod
 
@@ -10832,6 +11319,10 @@ def admin_delete_narrated_vimeo_post(article_id):
 
 def _post_carousel_mastodon_worker(article_id, caption, component):
     """Background thread: compose carousel images and post to Mastodon."""
+    # UTM tracking: replace plain article URL with Mastodon-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'mastodon'))
     import requests as _req
     import time as _time_mod
 
@@ -10958,6 +11449,10 @@ def _post_carousel_mastodon_worker(article_id, caption, component):
 
 def _post_narrated_mastodon_worker(article_id, video_url, caption, run_ts):
     """Background thread: upload narrated video to Mastodon."""
+    # UTM tracking: replace plain article URL with Mastodon-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'mastodon'))
     import requests as _req
     import time as _time_mod
 
@@ -11260,6 +11755,10 @@ def admin_delete_narrated_mastodon_post(article_id):
 
 def _post_carousel_vk_worker(article_id, caption, component):
     """Background thread: compose carousel images and post to VK wall."""
+    # UTM tracking: replace plain article URL with VK-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'vk'))
     import requests as _req
     import time as _time_mod
 
@@ -11395,6 +11894,10 @@ def _post_carousel_vk_worker(article_id, caption, component):
 
 def _post_narrated_vk_worker(article_id, video_url, caption, run_ts):
     """Background thread: upload narrated video to VK."""
+    # UTM tracking: replace plain article URL with VK-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'vk'))
     import requests as _req
     import time as _time_mod
 
@@ -11676,6 +12179,10 @@ def admin_delete_narrated_vk_post(article_id):
 
 def _post_carousel_tumblr_worker(article_id, caption, component):
     """Background thread: compose carousel images and post to Tumblr via NPF."""
+    # UTM tracking: replace plain article URL with Tumblr-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'tumblr'))
     import requests as _req
     import time as _time_mod
 
@@ -11786,6 +12293,10 @@ def _post_carousel_tumblr_worker(article_id, caption, component):
 
 def _post_narrated_tumblr_worker(article_id, video_url, caption, run_ts):
     """Background thread: post narrated video to Tumblr via NPF."""
+    # UTM tracking: replace plain article URL with Tumblr-tagged version
+    _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    if _art_row and _art_row[0] and SITE_URL:
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'tumblr'))
     import requests as _req
     import time as _time_mod
 
@@ -12052,6 +12563,130 @@ def admin_delete_narrated_tumblr_post(article_id):
     for k in (post_key, result_key, status_key):
         execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
     return jsonify({"ok": True, "history": history})
+
+
+# ------------------------------------------------------------
+# ENGAGEMENT & ANALYTICS
+# ------------------------------------------------------------
+
+@app.route("/admin/articles/<int:article_id>/refresh-engagement", methods=["POST"])
+@login_required
+@admin_required
+def admin_refresh_engagement(article_id):
+    """Fetch latest engagement metrics from all platform APIs."""
+    results = fetch_all_engagement(article_id)
+    totals = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0}
+    platforms = {}
+    for r in results:
+        for k in totals:
+            totals[k] += r.get(k, 0)
+        p = r['platform']
+        if p not in platforms:
+            platforms[p] = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0, 'content_types': []}
+        for k in totals:
+            platforms[p][k] += r.get(k, 0)
+        platforms[p]['content_types'].append(r.get('content_type', ''))
+    return jsonify({'ok': True, 'totals': totals, 'platforms': platforms, 'details': results,
+                    'fetched_at': datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+
+
+@app.route("/admin/articles/<int:article_id>/engagement")
+@login_required
+@admin_required
+def admin_get_engagement(article_id):
+    """Get latest engagement snapshot for an article."""
+    rows = query_all("""
+        SELECT e1.* FROM article_engagement e1
+        INNER JOIN (
+            SELECT platform, content_type, MAX(fetched_at) as max_fetched
+            FROM article_engagement WHERE article_id = %s
+            GROUP BY platform, content_type
+        ) e2 ON e1.platform = e2.platform AND e1.content_type = e2.content_type
+            AND e1.fetched_at = e2.max_fetched
+        WHERE e1.article_id = %s
+        ORDER BY e1.platform, e1.content_type
+    """, (article_id, article_id))
+
+    if not rows:
+        return jsonify({'totals': {}, 'platforms': {}, 'details': [], 'fetched_at': None})
+
+    totals = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0}
+    platforms = {}
+    details = []
+    fetched_at = None
+    for r in rows:
+        d = dict(r)
+        details.append(d)
+        for k in totals:
+            totals[k] += d.get(k, 0)
+        p = d['platform']
+        if p not in platforms:
+            platforms[p] = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0}
+        for k in totals:
+            platforms[p][k] += d.get(k, 0)
+        if d.get('fetched_at'):
+            fa = d['fetched_at']
+            fetched_at = fa.strftime("%Y-%m-%dT%H:%M:%SZ") if hasattr(fa, 'strftime') else str(fa)
+
+    return jsonify({'totals': totals, 'platforms': platforms, 'details': details, 'fetched_at': fetched_at})
+
+
+@app.route("/admin/engagement/poll-all", methods=["POST"])
+@login_required
+@admin_required
+def admin_engagement_poll_all():
+    """Fetch engagement for all published articles."""
+    articles = query_all("SELECT id, title FROM articles WHERE status = 'published'")
+    results = {}
+    for art in (articles or []):
+        try:
+            data = fetch_all_engagement(art['id'])
+            results[art['id']] = {'title': art['title'], 'metrics_count': len(data)}
+        except Exception as e:
+            results[art['id']] = {'title': art['title'], 'error': str(e)}
+    return jsonify({'ok': True, 'articles': results})
+
+
+@app.route("/admin/analytics")
+@login_required
+@admin_required
+def admin_analytics():
+    """Analytics dashboard page."""
+    articles = query_all("""
+        SELECT a.id, a.title, a.slug, a.status, a.created_at,
+            COALESCE(e.total_likes, 0) as total_likes,
+            COALESCE(e.total_views, 0) as total_views,
+            COALESCE(e.total_shares, 0) as total_shares,
+            COALESCE(e.total_comments, 0) as total_comments,
+            e.last_fetched
+        FROM articles a
+        LEFT JOIN (
+            SELECT article_id,
+                SUM(likes) as total_likes, SUM(views) as total_views,
+                SUM(shares) as total_shares, SUM(comments) as total_comments,
+                MAX(fetched_at) as last_fetched
+            FROM article_engagement e1
+            WHERE fetched_at = (SELECT MAX(fetched_at) FROM article_engagement WHERE article_id = e1.article_id)
+            GROUP BY article_id
+        ) e ON a.id = e.article_id
+        WHERE a.status = 'published'
+        ORDER BY COALESCE(e.total_views, 0) DESC
+    """)
+
+    platform_totals = query_all("""
+        SELECT platform,
+            SUM(likes) as total_likes, SUM(views) as total_views,
+            SUM(shares) as total_shares, SUM(comments) as total_comments
+        FROM article_engagement e1
+        WHERE fetched_at = (SELECT MAX(fetched_at) FROM article_engagement WHERE article_id = e1.article_id AND platform = e1.platform)
+        GROUP BY platform
+        ORDER BY total_views DESC
+    """)
+
+    return render_template("admin_analytics.html",
+                           articles=articles or [],
+                           platform_totals=platform_totals or [],
+                           ga_measurement_id=GA_MEASUREMENT_ID)
 
 
 # ------------------------------------------------------------
