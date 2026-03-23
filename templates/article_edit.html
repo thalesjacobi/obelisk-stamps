@@ -2716,7 +2716,7 @@ function _igId(mode, suffix) { return mode + '-ig-' + suffix; }
 
 var _extLinkSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-1" style="vertical-align:-1px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
 // ── Social Media Content — Network Visibility Prefs ─────────────────────
-var _SMC_DEFAULTS = {ig:true, fb:true, yt:true, x:true, threads:true, pinterest:true, tiktok:false, linkedin:true, bluesky:false, reddit:false, telegram:false, vimeo:false, mastodon:false, vk:false, tumblr:false};
+var _SMC_DEFAULTS = {ig:true, fb:true, yt:true, x:true, threads:true, pinterest:true, tiktok:false, linkedin:true, bluesky:true, reddit:true, telegram:false, vimeo:false, mastodon:false, vk:false, tumblr:false};
 var _SMC_PREFS_KEY = 'smcNetworkPrefs';
 function _getSmcPrefs() { try { return JSON.parse(localStorage.getItem(_SMC_PREFS_KEY)) || {}; } catch(e) { return {}; } }
 function _smcEnabled(key) { var p=_getSmcPrefs(); return p.hasOwnProperty(key) ? p[key] : (_SMC_DEFAULTS.hasOwnProperty(key) ? _SMC_DEFAULTS[key] : true); }
@@ -3753,6 +3753,12 @@ function showThreadsDone(mode, permalink) {
         checkBtn.textContent = 'Check if post is still live';
         checkBtn.onclick = function() { threadsCheckPostLive(m); };
         btnRow.appendChild(checkBtn);
+        var archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-outline-danger btn-sm threads-done-btn';
+        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.onclick = function() { threadsDeleteAndArchive(m); };
+        btnRow.appendChild(archiveBtn);
     }
     if (result) {
         result.classList.remove('d-none');
@@ -3832,6 +3838,33 @@ function threadsArchivePost(mode) {
         if (d.history && d.history.length) renderThreadsHistory(mode, d.history);
     })
     .catch(function(e) { if (status) status.innerHTML = '<span class="text-danger">Archive failed: ' + e + '</span>'; });
+}
+
+function threadsDeleteAndArchive(mode) {
+    if (!ARTICLE_ID) return;
+    if (!confirm('Delete this post from Threads and archive it?')) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-carousel-threads-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: mode})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { alert('Error: ' + d.error); return; }
+        _clearThreadsIconLive(mode);
+        var ta = document.getElementById(mode + '-threads-caption');
+        if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
+        var copyLink = document.getElementById(mode + '-threads-copy-link');
+        if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+        var postBtn = document.getElementById(_threadsId(mode, 'post-btn'));
+        _restorePostBtn(postBtn);
+        var btnRow = document.getElementById(_threadsId(mode, 'btn-row'));
+        if (btnRow) btnRow.querySelectorAll('.threads-done-btn').forEach(function(b) { b.remove(); });
+        var area = document.getElementById(_threadsId(mode, 'status-area'));
+        if (area) area.classList.add('d-none');
+        if (d.history && d.history.length) renderThreadsHistory(mode, d.history);
+    })
+    .catch(function(e) { alert('Archive failed: ' + e); });
 }
 
 function renderThreadsHistory(mode, history) {
@@ -3990,7 +4023,7 @@ function showPinterestDone(mode, permalink) {
         delBtn.type = 'button';
         delBtn.className = 'btn btn-outline-danger btn-sm pinterest-done-btn';
         delBtn.id = _pinterestId(mode, 'delete-btn');
-        delBtn.textContent = 'Delete from Pinterest';
+        delBtn.textContent = 'Delete and archive post';
         delBtn.onclick = function() { pinterestDeleteAndArchive(m); };
         btnRow.appendChild(delBtn);
     }
@@ -4283,7 +4316,7 @@ function showLinkedinDone(type, permalink) {
         delBtn.type = 'button';
         delBtn.className = 'btn btn-outline-danger btn-sm linkedin-done-btn';
         delBtn.id = _linkedinId(type, 'delete-btn');
-        delBtn.textContent = 'Delete from LinkedIn';
+        delBtn.textContent = 'Delete and archive post';
         delBtn.onclick = function() { linkedinDeletePost(m); };
         btnRow.appendChild(delBtn);
     }
@@ -6183,6 +6216,12 @@ function showNvThreadsDone(ts, permalink) {
         checkBtn.textContent = 'Check if post is still live';
         checkBtn.onclick = function() { nvThreadsCheckPostLive(ts); };
         btnRow.appendChild(checkBtn);
+        var archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-outline-danger btn-sm nv-threads-done-btn';
+        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.onclick = (function(t) { return function() { nvThreadsDeleteAndArchive(t); }; })(ts);
+        btnRow.appendChild(archiveBtn);
     }
     if (result) {
         result.classList.remove('d-none');
@@ -6251,6 +6290,31 @@ function nvThreadsArchivePost(ts) {
     .catch(function() {});
 }
 
+function nvThreadsDeleteAndArchive(ts) {
+    if (!ARTICLE_ID) return;
+    if (!confirm('Delete this post from Threads and archive it?')) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-threads-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { alert('Error: ' + d.error); return; }
+        if (d.ok) {
+            _clearNvThreadsIconLive(ts);
+            var postBtn = document.getElementById(_nvThreadsId(ts, 'post-btn'));
+            _restorePostBtn(postBtn);
+            var btnRow = document.getElementById(_nvThreadsId(ts, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.nv-threads-done-btn').forEach(function(b) { b.remove(); });
+            var area = document.getElementById(_nvThreadsId(ts, 'status-area'));
+            if (area) area.classList.add('d-none');
+            if (d.history && d.history.length) renderNvThreadsHistory(ts, d.history);
+        }
+    })
+    .catch(function(e) { alert('Archive failed: ' + e); });
+}
+
 function renderNvThreadsHistory(ts, history) {
     var wrap = document.getElementById(_nvThreadsId(ts, 'history'));
     var list = document.getElementById(_nvThreadsId(ts, 'history-list'));
@@ -6261,12 +6325,7 @@ function renderNvThreadsHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -6406,7 +6465,7 @@ function showNvPinterestDone(ts, permalink) {
         var delBtn = document.createElement('button');
         delBtn.type = 'button';
         delBtn.className = 'btn btn-outline-danger btn-sm nv-pinterest-done-btn';
-        delBtn.textContent = 'Delete from Pinterest';
+        delBtn.textContent = 'Delete and archive post';
         delBtn.onclick = function() { nvPinterestDeleteAndArchive(ts); };
         btnRow.appendChild(delBtn);
     }
@@ -6514,12 +6573,7 @@ function renderNvPinterestHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -6723,12 +6777,7 @@ function renderNvTiktokHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -6967,7 +7016,7 @@ function showNvLinkedinDone(ts, permalink) {
         var delBtn = document.createElement('button');
         delBtn.type = 'button';
         delBtn.className = 'btn btn-outline-danger btn-sm nv-linkedin-done-btn';
-        delBtn.textContent = 'Delete from LinkedIn';
+        delBtn.textContent = 'Delete and archive post';
         delBtn.onclick = function() { nvLinkedinDeletePost(ts); };
         btnRow.appendChild(delBtn);
     }
@@ -7076,12 +7125,7 @@ function renderNvLinkedinHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -7295,12 +7339,7 @@ function renderNvBlueskyHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '• Video post' + (date ? ' — ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -7515,12 +7554,7 @@ function renderNvRedditHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '• Video post' + (date ? ' — ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -7733,12 +7767,7 @@ function renderNvTelegramHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '• Video post' + (date ? ' — ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -7951,12 +7980,7 @@ function renderNvMastodonHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '• Video post' + (date ? ' — ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -8169,12 +8193,7 @@ function renderNvVkHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '• Video post' + (date ? ' — ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -8387,12 +8406,7 @@ function renderNvTumblrHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '• Video post' + (date ? ' — ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -8609,12 +8623,7 @@ function renderNvVimeoHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '• Video post' + (date ? ' — ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
@@ -8879,6 +8888,12 @@ function showIgDone(mode, permalink) {
         checkBtn.textContent = 'Check if post is still live';
         checkBtn.onclick = function() { igCheckPostLive(m); };
         btnRow.appendChild(checkBtn);
+        const archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-outline-danger btn-sm ig-done-btn';
+        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.onclick = function() { igDeleteAndArchive(m); };
+        btnRow.appendChild(archiveBtn);
     }
 
     const m = mode;
@@ -9066,6 +9081,34 @@ function igArchivePost(mode) {
     .catch(err => { if (status) status.innerHTML = '<span class="text-danger">Network error: ' + err + '</span>'; });
 }
 
+function igDeleteAndArchive(mode) {
+    if (!ARTICLE_ID) return;
+    if (!confirm('Delete this post from Instagram and archive it?')) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-instagram-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: mode}),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) { alert('Error: ' + d.error); return; }
+        if (d.ok) {
+            _clearIgIconLive(mode);
+            _ig[mode].mediaId = null;
+            const postBtn = document.getElementById(_igId(mode, 'post-btn'));
+            _restorePostBtn(postBtn);
+            const btnRow = document.getElementById(_igId(mode, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.ig-done-btn').forEach(function(b) { b.remove(); });
+            var genLink = document.getElementById(mode + '-ig-generate-caption-link');
+            if (genLink) genLink.classList.remove('d-none');
+            const area = document.getElementById(_igId(mode, 'status-area'));
+            if (area) area.classList.add('d-none');
+            if (d.history && d.history.length) renderIgHistory(mode, d.history);
+        }
+    })
+    .catch(err => { alert('Archive failed: ' + err); });
+}
+
 function renderIgHistory(mode, history) {
     const wrap = document.getElementById(_igId(mode, 'history'));
     const list = document.getElementById(_igId(mode, 'history-list'));
@@ -9144,7 +9187,7 @@ function showIgArchiveModal(entry) {
     if (entry.post_type) lines.push('Type: ' + (entry.post_type === 'car' ? 'Carousel Images' : 'Cinemagraph Videos'));
     if (entry.posted_at)   lines.push('Posted: ' + entry.posted_at.replace('T', ' ').replace('Z', ' UTC'));
     if (entry.archived_at) lines.push('Archived: ' + entry.archived_at.replace('T', ' ').replace('Z', ' UTC'));
-    if (entry.permalink)   lines.push('Permalink: ' + entry.permalink);
+    // permalink omitted — post has been deleted
     metaEl.innerHTML = lines.join('<br>');
 
     // Show modal
@@ -9841,37 +9884,21 @@ function buildRunItem(run, expandIt) {
                 <span class="small text-muted ms-1">${run.ts_label}</span>
                 <span style="flex:1"></span>
                 <span class="d-flex align-items-center gap-2 me-3" onclick="event.stopPropagation()" style="pointer-events:none">
-                    <svg id="nv-ig-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Instagram">
-                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
-                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-                        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
-                    </svg>
-                    <svg id="nv-yt-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="YouTube">
-                        <path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.54C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/>
-                        <polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/>
-                    </svg>
-                    <svg id="nv-fb-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Facebook">
-                        <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
-                    </svg>
-                    <svg id="nv-x-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-                         fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="X">
-                        <path d="M4 4l11.733 16H20L8.267 4z"/>
-                        <path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/>
-                    </svg>
-                    <i id="nv-threads-icon-${run.ts}" class="fa-brands fa-threads" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Threads"></i>
-                    <i id="nv-pinterest-icon-${run.ts}" class="fa-brands fa-pinterest" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Pinterest"></i>
-                    <i id="nv-tiktok-icon-${run.ts}" class="fa-brands fa-tiktok" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="TikTok"></i>
-                    <i id="nv-linkedin-icon-${run.ts}" class="fa-brands fa-linkedin" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="LinkedIn"></i>
-                    <i id="nv-bluesky-icon-${run.ts}" class="fa-brands fa-bluesky" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Bluesky"></i>
-                    <i id="nv-reddit-icon-${run.ts}" class="fa-brands fa-reddit" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Reddit"></i>
-                    <i id="nv-telegram-icon-${run.ts}" class="fa-brands fa-telegram" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Telegram"></i>
-                    <i id="nv-vimeo-icon-${run.ts}" class="fa-brands fa-vimeo" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Vimeo"></i>
-                    <i id="nv-mastodon-icon-${run.ts}" class="fa-brands fa-mastodon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Mastodon"></i>
-                    <i id="nv-vk-icon-${run.ts}" class="fa-brands fa-vk" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="VK"></i>
-                    <i id="nv-tumblr-icon-${run.ts}" class="fa-brands fa-tumblr" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Tumblr"></i>
+                    ${_smcEnabled('ig') ? `<svg id="nv-ig-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Instagram"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>` : ''}
+                    ${_smcEnabled('yt') ? `<svg id="nv-yt-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="YouTube"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.54C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/></svg>` : ''}
+                    ${_smcEnabled('fb') ? `<svg id="nv-fb-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="Facebook"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>` : ''}
+                    ${_smcEnabled('x') ? `<svg id="nv-x-icon-${run.ts}" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0" title="X"><path d="M4 4l11.733 16H20L8.267 4z"/><path d="M4 20l6.768-6.768M20 4l-6.768 6.768"/></svg>` : ''}
+                    ${_smcEnabled('threads') ? `<i id="nv-threads-icon-${run.ts}" class="fa-brands fa-threads" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Threads"></i>` : ''}
+                    ${_smcEnabled('pinterest') ? `<i id="nv-pinterest-icon-${run.ts}" class="fa-brands fa-pinterest" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Pinterest"></i>` : ''}
+                    ${_smcEnabled('tiktok') ? `<i id="nv-tiktok-icon-${run.ts}" class="fa-brands fa-tiktok" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="TikTok"></i>` : ''}
+                    ${_smcEnabled('linkedin') ? `<i id="nv-linkedin-icon-${run.ts}" class="fa-brands fa-linkedin" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="LinkedIn"></i>` : ''}
+                    ${_smcEnabled('bluesky') ? `<i id="nv-bluesky-icon-${run.ts}" class="fa-brands fa-bluesky" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Bluesky"></i>` : ''}
+                    ${_smcEnabled('reddit') ? `<i id="nv-reddit-icon-${run.ts}" class="fa-brands fa-reddit" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Reddit"></i>` : ''}
+                    ${_smcEnabled('telegram') ? `<i id="nv-telegram-icon-${run.ts}" class="fa-brands fa-telegram" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Telegram"></i>` : ''}
+                    ${_smcEnabled('vimeo') ? `<i id="nv-vimeo-icon-${run.ts}" class="fa-brands fa-vimeo" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Vimeo"></i>` : ''}
+                    ${_smcEnabled('mastodon') ? `<i id="nv-mastodon-icon-${run.ts}" class="fa-brands fa-mastodon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Mastodon"></i>` : ''}
+                    ${_smcEnabled('vk') ? `<i id="nv-vk-icon-${run.ts}" class="fa-brands fa-vk" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="VK"></i>` : ''}
+                    ${_smcEnabled('tumblr') ? `<i id="nv-tumblr-icon-${run.ts}" class="fa-brands fa-tumblr" style="font-size:15px;width:15px;text-align:center;flex-shrink:0;color:#ccc" title="Tumblr"></i>` : ''}
                 </span>
             </button>
         </h2>
@@ -10343,6 +10370,12 @@ function showNvIgDone(ts, permalink) {
         checkBtn.textContent = 'Check if post is still live';
         checkBtn.onclick = function() { nvIgCheckPostLive(ts); };
         btnRow.appendChild(checkBtn);
+        var archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-outline-danger btn-sm nv-ig-done-btn';
+        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.onclick = (function(t) { return function() { nvIgDeleteAndArchive(t); }; })(ts);
+        btnRow.appendChild(archiveBtn);
     }
     if (resultEl) {
         resultEl.classList.remove('d-none');
@@ -10489,6 +10522,33 @@ function nvIgArchivePost(ts) {
     });
 }
 
+function nvIgDeleteAndArchive(ts) {
+    if (!ARTICLE_ID) return;
+    if (!confirm('Delete this post from Instagram and archive it?')) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-ig-post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({run_ts: ts})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { alert('Error: ' + d.error); return; }
+        if (d.ok) {
+            _clearNvIgIconLive(ts);
+            var postBtn = document.getElementById(_nvIgId(ts, 'post-btn'));
+            _restorePostBtn(postBtn);
+            var btnRow = document.getElementById(_nvIgId(ts, 'btn-row'));
+            if (btnRow) btnRow.querySelectorAll('.nv-ig-done-btn').forEach(function(b) { b.remove(); });
+            var genLink = document.getElementById('nv-ig-' + ts + '-gen-link');
+            if (genLink) genLink.classList.remove('d-none');
+            var area = document.getElementById(_nvIgId(ts, 'status-area'));
+            if (area) area.classList.add('d-none');
+            if (d.history && d.history.length) renderNvIgHistory(ts, d.history);
+        }
+    })
+    .catch(function(e) { alert('Archive failed: ' + e); });
+}
+
 function renderNvIgHistory(ts, history) {
     var wrap = document.getElementById(_nvIgId(ts, 'history'));
     var list = document.getElementById(_nvIgId(ts, 'history-list'));
@@ -10499,12 +10559,7 @@ function renderNvIgHistory(ts, history) {
         div.className = 'mb-1 small text-muted';
         var date = entry.archived_at ? entry.archived_at.replace('T', ' ').replace('Z', ' UTC') : '';
         div.textContent = '\u2022 Video post' + (date ? ' \u2014 ' + date : '');
-        if (entry.permalink) {
-            var a = document.createElement('a');
-            a.href = entry.permalink; a.target = '_blank'; a.rel = 'noopener';
-            a.className = 'ig-section-link ms-1'; a.textContent = 'View';
-            div.appendChild(a);
-        }
+        /* permalink link omitted — post deleted */
         list.appendChild(div);
     });
     wrap.classList.remove('d-none');
