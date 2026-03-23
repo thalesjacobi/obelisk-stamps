@@ -12521,13 +12521,24 @@ function smcWfPoll(url, checkFn, intervalMs, maxPolls) {
 async function smcWfPhase1() {
     if (!_smcWfStepEnabled('caption')) { setSmcWfStepState('caption', 'skipped', 'Skipped (no platforms enabled)'); return; }
     setSmcWfStepState('caption', 'running', 'Generating caption via OpenAI...');
-    var r = await fetch(_smcWfBase() + '/generate-ig-caption', {
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
-    });
-    var d = await r.json();
-    if (d.error) throw new Error('Caption: ' + d.error);
-    _smcWfCaption = d.caption;
-    setSmcWfStepState('caption', 'done', 'Caption ready (' + _smcWfCaption.length + ' chars)');
+    try {
+        var r = await fetch(_smcWfBase() + '/generate-ig-caption', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+        });
+        var d = await r.json();
+        if (d.error) throw new Error(d.error);
+        _smcWfCaption = d.caption;
+        setSmcWfStepState('caption', 'done', 'Caption ready (' + _smcWfCaption.length + ' chars)');
+    } catch(err) {
+        // Try to use existing IG caption as fallback
+        var igCaptionEl = document.getElementById('ig-caption');
+        if (igCaptionEl && igCaptionEl.value && igCaptionEl.value.trim().length > 0) {
+            _smcWfCaption = igCaptionEl.value.trim();
+            setSmcWfStepState('caption', 'done', 'Using existing caption (' + _smcWfCaption.length + ' chars)');
+        } else {
+            throw new Error('Caption generation failed: ' + err.message);
+        }
+    }
 }
 
 async function smcWfPhase2() {
@@ -12648,8 +12659,8 @@ async function smcWfPhase5() {
 
 async function smcWfPhase6() {
     if (!_smcWfNarratedRun || !_smcWfNarratedRun.url) {
-        setSmcWfStepState('nv-post', 'failed', 'No narrated video available');
-        throw new Error('No narrated video run found');
+        setSmcWfStepState('nv-post', 'skipped', 'Skipped (no narrated video generated)');
+        return;
     }
     var enabledPlatforms = _NV_PLATFORMS.filter(function(p) { return _smcEnabled(p.key) && window[p.cfg]; });
     if (enabledPlatforms.length === 0) { setSmcWfStepState('nv-post', 'skipped', 'No platforms enabled'); return; }
@@ -12745,7 +12756,8 @@ async function runSmcWorkflow(startFromStep) {
         }
         smcWfFinish(true);
     } catch(e) {
-        var failedStep = startFromStep;
+        var failedStep = i < phases.length ? i : startFromStep;
+        // Also check for spinner icon as fallback
         for (var j = startFromStep; j < stepIds.length; j++) {
             var iconEl = document.getElementById('smc-wf-icon-' + stepIds[j]);
             if (iconEl && iconEl.querySelector('.fa-spinner')) { failedStep = j; break; }
