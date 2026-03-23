@@ -2716,7 +2716,7 @@ function _igId(mode, suffix) { return mode + '-ig-' + suffix; }
 
 var _extLinkSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ms-1" style="vertical-align:-1px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
 // ── Social Media Content — Network Visibility Prefs ─────────────────────
-var _SMC_DEFAULTS = {ig:true, fb:true, yt:true, x:true, threads:true, pinterest:true, tiktok:false, linkedin:true, bluesky:false, reddit:false};
+var _SMC_DEFAULTS = {ig:true, fb:true, yt:true, x:true, threads:true, pinterest:true, tiktok:false, linkedin:true, bluesky:false, reddit:false, telegram:false, vimeo:false, mastodon:false, vk:false, tumblr:false};
 var _SMC_PREFS_KEY = 'smcNetworkPrefs';
 function _getSmcPrefs() { try { return JSON.parse(localStorage.getItem(_SMC_PREFS_KEY)) || {}; } catch(e) { return {}; } }
 function _smcEnabled(key) { var p=_getSmcPrefs(); return p.hasOwnProperty(key) ? p[key] : (_SMC_DEFAULTS.hasOwnProperty(key) ? _SMC_DEFAULTS[key] : true); }
