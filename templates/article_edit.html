@@ -12538,6 +12538,17 @@ function _smcWfPopulateCaption(caption) {
 
 async function smcWfPhase1() {
     if (!_smcWfStepEnabled('caption')) { setSmcWfStepState('caption', 'skipped', 'Skipped (no platforms enabled)'); return; }
+
+    // If the IG caption textarea already has content, use it — skip OpenAI generation
+    var igCaptionEl = document.getElementById('car-ig-caption') || document.getElementById('ig-caption');
+    if (igCaptionEl && igCaptionEl.value && igCaptionEl.value.trim().length > 10) {
+        _smcWfCaption = igCaptionEl.value.trim();
+        _smcWfPopulateCaption(_smcWfCaption);
+        setSmcWfStepState('caption', 'done', 'Using existing caption (' + _smcWfCaption.length + ' chars)');
+        return;
+    }
+
+    // No existing caption — generate via OpenAI
     setSmcWfStepState('caption', 'running', 'Generating caption via OpenAI...');
     try {
         var r = await fetch(_smcWfBase() + '/generate-ig-caption', {
@@ -12547,17 +12558,9 @@ async function smcWfPhase1() {
         if (d.error) throw new Error(d.error);
         _smcWfCaption = d.caption;
         _smcWfPopulateCaption(_smcWfCaption);
-        setSmcWfStepState('caption', 'done', 'Caption ready (' + _smcWfCaption.length + ' chars)');
+        setSmcWfStepState('caption', 'done', 'Caption generated (' + _smcWfCaption.length + ' chars)');
     } catch(err) {
-        // Try to use existing IG caption as fallback
-        var igCaptionEl = document.getElementById('ig-caption');
-        if (igCaptionEl && igCaptionEl.value && igCaptionEl.value.trim().length > 0) {
-            _smcWfCaption = igCaptionEl.value.trim();
-            _smcWfPopulateCaption(_smcWfCaption);
-            setSmcWfStepState('caption', 'done', 'Using existing caption (' + _smcWfCaption.length + ' chars)');
-        } else {
-            throw new Error('Caption generation failed: ' + err.message);
-        }
+        throw new Error('Caption generation failed: ' + err.message);
     }
 }
 
