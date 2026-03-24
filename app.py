@@ -1062,6 +1062,77 @@ def init_site_settings():
         INDEX idx_platform (platform),
         INDEX idx_fetched (fetched_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS post_metrics_history (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        article_id INT NOT NULL,
+        platform VARCHAR(20) NOT NULL,
+        content_type VARCHAR(20) NOT NULL,
+        post_id VARCHAR(255),
+        likes INT DEFAULT 0,
+        views INT DEFAULT 0,
+        shares INT DEFAULT 0,
+        comments_count INT DEFAULT 0,
+        saves INT DEFAULT 0,
+        clicks INT DEFAULT 0,
+        impressions INT DEFAULT 0,
+        reach INT DEFAULT 0,
+        fetched_at DATETIME NOT NULL,
+        hours_since_post INT DEFAULT 0,
+        INDEX idx_article_platform (article_id, platform),
+        INDEX idx_fetched (fetched_at),
+        INDEX idx_hours (hours_since_post)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS post_comments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        article_id INT NOT NULL,
+        platform VARCHAR(20) NOT NULL,
+        content_type VARCHAR(20) NOT NULL,
+        post_id VARCHAR(255),
+        comment_id VARCHAR(255),
+        comment_text TEXT,
+        comment_author VARCHAR(255),
+        comment_timestamp DATETIME,
+        sentiment_score FLOAT DEFAULT NULL,
+        fetched_at DATETIME NOT NULL,
+        INDEX idx_article (article_id),
+        INDEX idx_platform_post (platform, post_id),
+        UNIQUE KEY uk_comment (platform, comment_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS posting_log (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        article_id INT NOT NULL,
+        platform VARCHAR(20) NOT NULL,
+        content_type VARCHAR(20) NOT NULL,
+        post_id VARCHAR(255),
+        permalink VARCHAR(500),
+        caption TEXT,
+        hashtags TEXT,
+        posted_at DATETIME NOT NULL,
+        posted_day_of_week TINYINT,
+        posted_hour TINYINT,
+        posted_is_weekend BOOLEAN DEFAULT FALSE,
+        article_title VARCHAR(500),
+        article_word_count INT DEFAULT 0,
+        article_slug VARCHAR(255),
+        image_count INT DEFAULT 0,
+        video_duration_seconds INT DEFAULT 0,
+        INDEX idx_article (article_id),
+        INDEX idx_platform (platform),
+        INDEX idx_posted (posted_at),
+        INDEX idx_timing (posted_day_of_week, posted_hour)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS follower_snapshots (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        platform VARCHAR(20) NOT NULL,
+        follower_count INT DEFAULT 0,
+        following_count INT DEFAULT 0,
+        post_count INT DEFAULT 0,
+        snapshot_date DATE NOT NULL,
+        fetched_at DATETIME NOT NULL,
+        UNIQUE KEY uk_platform_date (platform, snapshot_date),
+        INDEX idx_platform (platform)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    conn.commit()
     # Add UTM attribution columns to orders table if not present
     try:
         cur.execute("""
@@ -1361,6 +1432,43 @@ def make_utm_url(article_slug, platform_key):
     source = _UTM_PLATFORM_MAP.get(platform_key, platform_key)
     base = f"{SITE_URL}/articles/{article_slug}"
     return f"{base}?utm_source={source}&utm_medium=social&utm_campaign={article_slug}"
+
+
+def log_social_post(article_id, platform, content_type, post_id, permalink, caption):
+    """Log a social media post with full metadata for ML training."""
+    import re as _re
+    from datetime import datetime as _dt_cls
+
+    now = _dt_cls.utcnow()
+
+    # Extract hashtags from caption
+    hashtags = ' '.join(_re.findall(r'#\w+', caption or ''))
+
+    # Get article metadata
+    row = query_one("SELECT title, content, slug FROM articles WHERE id = %s", (article_id,))
+    title = row[0] if row else ''
+    content = row[1] if row else ''
+    slug = row[2] if row else ''
+
+    # Count words in article content (strip HTML)
+    plain = _re.sub(r'<[^>]+>', ' ', content or '')
+    word_count = len(plain.split())
+
+    # Count images for carousel posts
+    image_count = 0
+    if content_type in ('carousel', 'car', 'cinemagraph', 'cine'):
+        imgs = query_all("SELECT COUNT(*) FROM site_settings WHERE `key` LIKE %s AND value LIKE '%%http%%'",
+                         (f'carousel_image_%_{article_id}',))
+        image_count = imgs[0][0] if imgs else 0
+
+    execute("""INSERT INTO posting_log
+        (article_id, platform, content_type, post_id, permalink, caption, hashtags,
+         posted_at, posted_day_of_week, posted_hour, posted_is_weekend,
+         article_title, article_word_count, article_slug, image_count)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        (article_id, platform, content_type, post_id, permalink, caption, hashtags,
+         now, now.weekday(), now.hour, now.weekday() >= 5,
+         title, word_count, slug, image_count))
 
 
 @app.context_processor
@@ -1675,6 +1783,197 @@ def _fetch_bluesky_engagement(article_id):
     return results
 
 
+# ── Comment fetchers for ML/NLP training data ──────────────────────
+
+def _fetch_ig_comments(article_id):
+    """Fetch comments from Instagram posts for this article."""
+    import requests as _req
+    for content_type in ('car', 'cine'):
+        post_id = get_setting(f"ig_{content_type}_post_id_{article_id}")
+        if not post_id:
+            continue
+        try:
+            resp = _req.get(f"https://graph.instagram.com/v21.0/{post_id}/comments",
+                           params={"fields": "id,text,username,timestamp", "access_token": IG_ACCESS_TOKEN},
+                           timeout=15)
+            data = resp.json()
+            for c in data.get('data', []):
+                execute("""INSERT IGNORE INTO post_comments
+                    (article_id, platform, content_type, post_id, comment_id, comment_text,
+                     comment_author, comment_timestamp, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
+                    (article_id, 'ig', content_type, post_id, c.get('id',''),
+                     c.get('text',''), c.get('username',''), c.get('timestamp','')))
+        except Exception:
+            pass
+    # Also narrated video posts
+    for key_prefix in ('narrated_ig_media_id_',):
+        rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s",
+                         (f"{key_prefix}{article_id}%",))
+        for row in (rows or []):
+            post_id = row[1]
+            if not post_id:
+                continue
+            try:
+                resp = _req.get(f"https://graph.instagram.com/v21.0/{post_id}/comments",
+                               params={"fields": "id,text,username,timestamp", "access_token": IG_ACCESS_TOKEN},
+                               timeout=15)
+                data = resp.json()
+                for c in data.get('data', []):
+                    execute("""INSERT IGNORE INTO post_comments
+                        (article_id, platform, content_type, post_id, comment_id, comment_text,
+                         comment_author, comment_timestamp, fetched_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
+                        (article_id, 'ig', 'narrated', post_id, c.get('id',''),
+                         c.get('text',''), c.get('username',''), c.get('timestamp','')))
+            except Exception:
+                pass
+
+
+def _fetch_fb_comments(article_id):
+    """Fetch comments from Facebook posts for this article."""
+    import requests as _req
+    for content_type in ('car', 'cine'):
+        post_id = get_setting(f"fb_{content_type}_media_id_{article_id}")
+        if not post_id:
+            continue
+        try:
+            resp = _req.get(f"https://graph.facebook.com/v21.0/{post_id}/comments",
+                           params={"fields": "id,message,from,created_time", "access_token": FB_PAGE_ACCESS_TOKEN},
+                           timeout=15)
+            data = resp.json()
+            for c in data.get('data', []):
+                author = (c.get('from') or {}).get('name', '')
+                execute("""INSERT IGNORE INTO post_comments
+                    (article_id, platform, content_type, post_id, comment_id, comment_text,
+                     comment_author, comment_timestamp, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
+                    (article_id, 'fb', content_type, post_id, c.get('id',''),
+                     c.get('message',''), author, c.get('created_time','')))
+        except Exception:
+            pass
+    # Narrated video posts
+    rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s",
+                     (f"narrated_fb_media_id_{article_id}%",))
+    for row in (rows or []):
+        post_id = row[1]
+        if not post_id:
+            continue
+        try:
+            resp = _req.get(f"https://graph.facebook.com/v21.0/{post_id}/comments",
+                           params={"fields": "id,message,from,created_time", "access_token": FB_PAGE_ACCESS_TOKEN},
+                           timeout=15)
+            data = resp.json()
+            for c in data.get('data', []):
+                author = (c.get('from') or {}).get('name', '')
+                execute("""INSERT IGNORE INTO post_comments
+                    (article_id, platform, content_type, post_id, comment_id, comment_text,
+                     comment_author, comment_timestamp, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
+                    (article_id, 'fb', 'narrated', post_id, c.get('id',''),
+                     c.get('message',''), author, c.get('created_time','')))
+        except Exception:
+            pass
+
+
+def _fetch_threads_comments(article_id):
+    """Fetch comments (replies) from Threads posts for this article."""
+    import requests as _req
+    for content_type in ('car', 'cine'):
+        post_id = get_setting(f"threads_{content_type}_post_id_{article_id}")
+        if not post_id:
+            continue
+        try:
+            resp = _req.get(f"{_THREADS_API_URL}/{post_id}/replies",
+                           params={"fields": "id,text,username,timestamp", "access_token": THREADS_ACCESS_TOKEN},
+                           timeout=15)
+            data = resp.json()
+            for c in data.get('data', []):
+                execute("""INSERT IGNORE INTO post_comments
+                    (article_id, platform, content_type, post_id, comment_id, comment_text,
+                     comment_author, comment_timestamp, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
+                    (article_id, 'threads', content_type, post_id, c.get('id',''),
+                     c.get('text',''), c.get('username',''), c.get('timestamp','')))
+        except Exception:
+            pass
+    # Narrated video posts
+    rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s",
+                     (f"threads_narrated_post_id_{article_id}%",))
+    for row in (rows or []):
+        post_id = row[1]
+        if not post_id:
+            continue
+        try:
+            resp = _req.get(f"{_THREADS_API_URL}/{post_id}/replies",
+                           params={"fields": "id,text,username,timestamp", "access_token": THREADS_ACCESS_TOKEN},
+                           timeout=15)
+            data = resp.json()
+            for c in data.get('data', []):
+                execute("""INSERT IGNORE INTO post_comments
+                    (article_id, platform, content_type, post_id, comment_id, comment_text,
+                     comment_author, comment_timestamp, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
+                    (article_id, 'threads', 'narrated', post_id, c.get('id',''),
+                     c.get('text',''), c.get('username',''), c.get('timestamp','')))
+        except Exception:
+            pass
+
+
+def _fetch_bluesky_comments(article_id):
+    """Fetch replies from Bluesky posts for this article."""
+    import requests as _req
+    for content_type in ('car', 'cine'):
+        rkey = get_setting(f"bluesky_{content_type}_post_id_{article_id}")
+        if not rkey:
+            continue
+        uri = f"at://{BLUESKY_HANDLE}/app.bsky.feed.post/{rkey}"
+        try:
+            resp = _req.get("https://bsky.social/xrpc/app.bsky.feed.getPostThread",
+                           params={"uri": uri, "depth": 1}, timeout=15)
+            data = resp.json()
+            thread = data.get('thread', {})
+            for reply in thread.get('replies', []):
+                post = reply.get('post', {})
+                record = post.get('record', {})
+                author = post.get('author', {})
+                comment_id = post.get('uri', '')
+                execute("""INSERT IGNORE INTO post_comments
+                    (article_id, platform, content_type, post_id, comment_id, comment_text,
+                     comment_author, comment_timestamp, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
+                    (article_id, 'bluesky', content_type, rkey, comment_id,
+                     record.get('text',''), author.get('handle',''), record.get('createdAt','')))
+        except Exception:
+            pass
+    # Narrated video posts
+    rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s",
+                     (f"bluesky_narrated_post_id_{article_id}%",))
+    for row in (rows or []):
+        rkey = row[1]
+        if not rkey:
+            continue
+        uri = f"at://{BLUESKY_HANDLE}/app.bsky.feed.post/{rkey}"
+        try:
+            resp = _req.get("https://bsky.social/xrpc/app.bsky.feed.getPostThread",
+                           params={"uri": uri, "depth": 1}, timeout=15)
+            data = resp.json()
+            thread = data.get('thread', {})
+            for reply in thread.get('replies', []):
+                post = reply.get('post', {})
+                record = post.get('record', {})
+                author = post.get('author', {})
+                comment_id = post.get('uri', '')
+                execute("""INSERT IGNORE INTO post_comments
+                    (article_id, platform, content_type, post_id, comment_id, comment_text,
+                     comment_author, comment_timestamp, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
+                    (article_id, 'bluesky', 'narrated', rkey, comment_id,
+                     record.get('text',''), author.get('handle',''), record.get('createdAt','')))
+        except Exception:
+            pass
+
+
 def fetch_all_engagement(article_id):
     """Fetch engagement metrics from all configured platforms and store snapshots."""
     from datetime import datetime as _dt_now
@@ -1705,7 +2004,108 @@ def fetch_all_engagement(article_id):
              r.get('likes',0), r.get('views',0), r.get('shares',0), r.get('comments',0),
              r.get('saves',0), r.get('clicks',0), r.get('impressions',0), r.get('reach',0), now))
 
+    # Also store time-series snapshot for growth curve analysis
+    for r in all_results:
+        post_id = r.get('post_id', '')
+        if not post_id:
+            continue
+        try:
+            # Get posting time to calculate hours_since_post
+            posted_row = query_one(
+                "SELECT posted_at FROM posting_log WHERE post_id = %s AND platform = %s ORDER BY posted_at DESC LIMIT 1",
+                (post_id, r.get('platform', '')))
+            hours_since = 0
+            if posted_row and posted_row[0]:
+                from datetime import datetime as _dt_cls2
+                delta = _dt_cls2.utcnow() - posted_row[0]
+                hours_since = int(delta.total_seconds() / 3600)
+            execute("""INSERT INTO post_metrics_history
+                (article_id, platform, content_type, post_id, likes, views, shares, comments_count,
+                 saves, clicks, impressions, reach, fetched_at, hours_since_post)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (article_id, r.get('platform',''), r.get('content_type',''), post_id,
+                 r.get('likes',0), r.get('views',0), r.get('shares',0), r.get('comments',0),
+                 r.get('saves',0), r.get('clicks',0), r.get('impressions',0), r.get('reach',0),
+                 now, hours_since))
+        except Exception:
+            pass  # Don't fail engagement fetch if history insert fails
+
     return all_results
+
+
+def fetch_follower_counts():
+    """Snapshot current follower counts across all platforms."""
+    import requests as _req
+    from datetime import date as _date_cls, datetime as _dt_cls
+    today = _date_cls.today()
+    now = _dt_cls.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    platforms = []
+
+    # Instagram
+    if IG_USER_ID and IG_ACCESS_TOKEN:
+        try:
+            r = _req.get(f"https://graph.instagram.com/v21.0/{IG_USER_ID}",
+                        params={"fields": "followers_count,follows_count,media_count", "access_token": IG_ACCESS_TOKEN},
+                        timeout=15).json()
+            platforms.append(('ig', r.get('followers_count',0), r.get('follows_count',0), r.get('media_count',0)))
+        except Exception:
+            pass
+
+    # Facebook
+    if FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN:
+        try:
+            r = _req.get(f"https://graph.facebook.com/v21.0/{FB_PAGE_ID}",
+                        params={"fields": "fan_count,followers_count", "access_token": FB_PAGE_ACCESS_TOKEN},
+                        timeout=15).json()
+            platforms.append(('fb', r.get('followers_count', r.get('fan_count',0)), 0, 0))
+        except Exception:
+            pass
+
+    # YouTube
+    yt_token = get_setting("youtube_refresh_token")
+    if yt_token:
+        try:
+            # Would need to refresh access token first, then call channels.list
+            pass  # TODO: implement when YouTube OAuth is fully set up
+        except Exception:
+            pass
+
+    # X — requires user lookup endpoint
+    if X_CONFIGURED:
+        try:
+            # OAuth1 signed request to GET /2/users/me?user.fields=public_metrics
+            pass  # X free tier may not support this
+        except Exception:
+            pass
+
+    # Threads
+    if THREADS_CONFIGURED:
+        try:
+            r = _req.get(f"https://graph.threads.net/v1.0/{THREADS_USER_ID}",
+                        params={"fields": "followers_count", "access_token": THREADS_ACCESS_TOKEN},
+                        timeout=15).json()
+            platforms.append(('threads', r.get('followers_count',0), 0, 0))
+        except Exception:
+            pass
+
+    # Bluesky
+    if BLUESKY_CONFIGURED:
+        try:
+            r = _req.get("https://bsky.social/xrpc/app.bsky.actor.getProfile",
+                        params={"actor": BLUESKY_HANDLE}, timeout=15).json()
+            platforms.append(('bluesky', r.get('followersCount',0), r.get('followsCount',0), r.get('postsCount',0)))
+        except Exception:
+            pass
+
+    for plat, followers, following, posts in platforms:
+        execute("""INSERT INTO follower_snapshots
+            (platform, follower_count, following_count, post_count, snapshot_date, fetched_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE follower_count=%s, following_count=%s, post_count=%s, fetched_at=%s""",
+            (plat, followers, following, posts, today, now, followers, following, posts, now))
+
+    return platforms
 
 
 # ------------------------------------------------------------
@@ -5317,6 +5717,10 @@ def _upload_to_youtube_worker(article_id, video_url, title, desc, run_ts, refres
         _add_activity_log(article_id, "Posted to YouTube Shorts",
                           f"video_id={video_id}\nurl={yt_url}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'yt', 'narrated', video_id, yt_url, desc)
+        except Exception:
+            pass
 
     except Exception as e:
         import traceback
@@ -6091,6 +6495,10 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
         _add_activity_log(article_id, f"Posted to Instagram ({post_type})",
                           f"post_id={post_id}\npermalink={permalink}\nSlides: {len(images)}",
                           component=_log_component)
+        try:
+            log_social_post(article_id, 'ig', post_type, str(post_id), permalink, caption)
+        except Exception:
+            pass
         _clear_status()
 
     except Exception as e:
@@ -6433,6 +6841,10 @@ def _post_narrated_reel_worker(article_id, video_url, caption, run_ts):
         _set_result(f"done:{permalink}")
         _add_activity_log(article_id, "Posted Narrated Video to Instagram",
                           f"post_id={post_id}\npermalink={permalink}", component="narrated")
+        try:
+            log_social_post(article_id, 'ig', 'narrated', str(post_id), permalink, caption)
+        except Exception:
+            pass
         _clear_status()
 
     except Exception as e:
@@ -6977,6 +7389,10 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
             f"post_id={post_id}\n{slides_info}\ncaption length={len(caption)}",
             component=component_label,
         )
+        try:
+            log_social_post(article_id, 'fb', post_type, str(post_id), permalink, caption)
+        except Exception:
+            pass
 
     except Exception as e:
         import traceback
@@ -7078,6 +7494,10 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
             f"video_id={video_id}\nrun_ts={run_ts}\ncaption length={len(caption)}",
             component="narrated",
         )
+        try:
+            log_social_post(article_id, 'fb', 'narrated', str(video_id), permalink, caption)
+        except Exception:
+            pass
         print(f"[FB] Narrated video posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -7634,6 +8054,10 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"tweet_id={tweet_id}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'x', 'narrated', tweet_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[X] Narrated video posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -7772,6 +8196,10 @@ def _post_carousel_x_worker(article_id, caption, run_ts, component):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"tweet_id={first_tweet_id}\nimages={n}\nthreads={len(chunks)}",
                           component=component)
+        try:
+            log_social_post(article_id, 'x', component, first_tweet_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[X] Carousel posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -8226,6 +8654,10 @@ def _post_carousel_threads_worker(article_id, caption, component):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"post_id={post_id}\nimages={n}",
                           component=component)
+        try:
+            log_social_post(article_id, 'threads', component, post_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[Threads] Carousel posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -8324,6 +8756,10 @@ def _post_narrated_threads_worker(article_id, video_url, caption, run_ts):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"post_id={post_id}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'threads', 'narrated', post_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[Threads] Narrated video posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -8685,6 +9121,10 @@ def _post_carousel_pinterest_worker(article_id, caption, component):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"pin_id={first_pin_id}\nimages={n}",
                           component=component)
+        try:
+            log_social_post(article_id, 'pinterest', component, first_pin_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[Pinterest] Carousel posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -8810,6 +9250,10 @@ def _post_narrated_pinterest_worker(article_id, video_url, caption, run_ts):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"pin_id={pin_id}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'pinterest', 'narrated', pin_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[Pinterest] Narrated video posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -9198,6 +9642,10 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"video_id={video_id}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'tiktok', 'narrated', video_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[TikTok] Video posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -9412,6 +9860,10 @@ def _post_carousel_linkedin_worker(article_id, caption, component):
         _add_activity_log(article_id, f"LinkedIn {component.title()} Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\npost_id={post_id}\nimages={n}",
                           component=component)
+        try:
+            log_social_post(article_id, 'linkedin', component, post_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[LinkedIn] Post created: {permalink}", flush=True)
 
     except Exception as e:
@@ -9540,6 +9992,10 @@ def _post_narrated_linkedin_worker(article_id, video_url, caption, run_ts):
         _add_activity_log(article_id, "LinkedIn Narrated Video Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\npost_id={post_id}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'linkedin', 'narrated', post_id, permalink, caption)
+        except Exception:
+            pass
 
     except Exception as e:
         import traceback
@@ -9975,6 +10431,10 @@ def _post_carousel_bluesky_worker(article_id, caption, component):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"rkey={first_rkey}\nimages={n}",
                           component=component)
+        try:
+            log_social_post(article_id, 'bluesky', component, first_rkey, permalink, caption)
+        except Exception:
+            pass
         print(f"[Bluesky] Carousel posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -10092,6 +10552,10 @@ def _post_narrated_bluesky_worker(article_id, video_url, caption, run_ts):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"rkey={rkey}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'bluesky', 'narrated', rkey, permalink, caption)
+        except Exception:
+            pass
         print(f"[Bluesky] Narrated video posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -10434,6 +10898,10 @@ def _post_carousel_reddit_worker(article_id, caption, component):
                           f"<a href=\"{post_url}\" target=\"_blank\">{post_url}</a>\n"
                           f"fullname={post_name}\nimages={n}",
                           component=component)
+        try:
+            log_social_post(article_id, 'reddit', component, post_name, post_url, caption)
+        except Exception:
+            pass
         print(f"[Reddit] Carousel posted: {post_url}", flush=True)
 
     except Exception as e:
@@ -10493,6 +10961,10 @@ def _post_narrated_reddit_worker(article_id, video_url, caption, run_ts):
                           f"<a href=\"{post_url}\" target=\"_blank\">{post_url}</a>\n"
                           f"fullname={post_name}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'reddit', 'narrated', post_name, post_url, caption)
+        except Exception:
+            pass
         print(f"[Reddit] Narrated video posted: {post_url}", flush=True)
 
     except Exception as e:
@@ -10825,6 +11297,10 @@ def _post_carousel_telegram_worker(article_id, caption, component):
         _add_activity_log(article_id, f"Telegram {component.title()} Posted",
                           f"chat_id={TELEGRAM_CHAT_ID}\nmessage_ids={msg_ids_str}\nimages={n}",
                           component=component)
+        try:
+            log_social_post(article_id, 'telegram', component, first_msg_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[Telegram] Media group posted: {msg_ids_str}", flush=True)
 
     except Exception as e:
@@ -10880,6 +11356,10 @@ def _post_narrated_telegram_worker(article_id, video_url, caption, run_ts):
         _add_activity_log(article_id, "Telegram Narrated Video Posted",
                           f"chat_id={TELEGRAM_CHAT_ID}\nmessage_id={msg_id}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'telegram', 'narrated', msg_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[Telegram] Narrated video posted: msg_id={msg_id}", flush=True)
 
     except Exception as e:
@@ -11196,6 +11676,10 @@ def _post_narrated_vimeo_worker(article_id, video_url, caption, run_ts):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"video_id={video_id}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'vimeo', 'narrated', video_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[Vimeo] Narrated video posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -11436,6 +11920,10 @@ def _post_carousel_mastodon_worker(article_id, caption, component):
                           f"<a href=\"{first_status_url}\" target=\"_blank\">{first_status_url}</a>\n"
                           f"status_id={first_status_id}\nimages={n}",
                           component=component)
+        try:
+            log_social_post(article_id, 'mastodon', component, first_status_id, first_status_url, caption)
+        except Exception:
+            pass
         print(f"[Mastodon] Carousel posted: {first_status_url}", flush=True)
 
     except Exception as e:
@@ -11529,6 +12017,10 @@ def _post_narrated_mastodon_worker(article_id, video_url, caption, run_ts):
                           f"<a href=\"{status_url}\" target=\"_blank\">{status_url}</a>\n"
                           f"status_id={status_id}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'mastodon', 'narrated', status_id, status_url, caption)
+        except Exception:
+            pass
         print(f"[Mastodon] Narrated video posted: {status_url}", flush=True)
 
     except Exception as e:
@@ -11881,6 +12373,10 @@ def _post_carousel_vk_worker(article_id, caption, component):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"post_id={post_id}\nimages={n}",
                           component=component)
+        try:
+            log_social_post(article_id, 'vk', component, post_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[VK] Carousel posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -11958,6 +12454,10 @@ def _post_narrated_vk_worker(article_id, video_url, caption, run_ts):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"video_id={video_id}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'vk', 'narrated', video_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[VK] Narrated video posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -12280,6 +12780,10 @@ def _post_carousel_tumblr_worker(article_id, caption, component):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"post_id={post_id}\nimages={n}",
                           component=component)
+        try:
+            log_social_post(article_id, 'tumblr', component, post_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[Tumblr] Carousel posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -12345,6 +12849,10 @@ def _post_narrated_tumblr_worker(article_id, video_url, caption, run_ts):
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"post_id={post_id}\nrun_ts={run_ts}",
                           component="narrated")
+        try:
+            log_social_post(article_id, 'tumblr', 'narrated', post_id, permalink, caption)
+        except Exception:
+            pass
         print(f"[Tumblr] Narrated video posted: {permalink}", flush=True)
 
     except Exception as e:
@@ -12575,6 +13083,18 @@ def admin_delete_narrated_tumblr_post(article_id):
 def admin_refresh_engagement(article_id):
     """Fetch latest engagement metrics from all platform APIs."""
     results = fetch_all_engagement(article_id)
+    # Also fetch comments for ML/NLP
+    try:
+        if IG_USER_ID and IG_ACCESS_TOKEN:
+            _fetch_ig_comments(article_id)
+        if FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN:
+            _fetch_fb_comments(article_id)
+        if THREADS_CONFIGURED:
+            _fetch_threads_comments(article_id)
+        if BLUESKY_CONFIGURED:
+            _fetch_bluesky_comments(article_id)
+    except Exception:
+        pass  # Don't fail the main refresh if comment fetch fails
     totals = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0}
     platforms = {}
     for r in results:
@@ -12588,6 +13108,18 @@ def admin_refresh_engagement(article_id):
         platforms[p]['content_types'].append(r.get('content_type', ''))
     return jsonify({'ok': True, 'totals': totals, 'platforms': platforms, 'details': results,
                     'fetched_at': datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
+
+
+@app.route("/admin/fetch-follower-counts", methods=["POST"])
+@login_required
+@admin_required
+def admin_fetch_follower_counts():
+    """Snapshot current follower counts across all platforms."""
+    try:
+        results = fetch_follower_counts()
+        return jsonify({"ok": True, "platforms": [{"platform": p, "followers": f, "following": fo, "posts": po} for p, f, fo, po in results]})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/admin/articles/<int:article_id>/engagement")
