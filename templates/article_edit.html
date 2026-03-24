@@ -3016,7 +3016,7 @@ function generateIgCaption(mode) {
     var origText = link.textContent;
     link.textContent = 'Generating…';
     link.style.pointerEvents = 'none';
-    fetch('/admin/articles/' + ARTICLE_ID + '/generate-ig-caption', {method: 'POST'})
+    fetch('/admin/articles/' + ARTICLE_ID + '/generate-ig-caption', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})})
         .then(function(r) {
             var ct = r.headers.get('content-type') || '';
             if (!r.ok && ct.indexOf('json') === -1) {
