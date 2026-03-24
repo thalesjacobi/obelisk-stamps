@@ -84,7 +84,7 @@
                                 {{ a.last_fetched.strftime("%d %b %Y, %H:%M") if a.last_fetched else '—' }}
                                 {% else %}—{% endif %}
                             </td>
-                            <td><a href="{{ url_for('admin_edit_article', article_id=a.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a></td>
+                            <td><a href="{{ url_for('admin_article_edit', article_id=a.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a></td>
                         </tr>
                         {% endfor %}
                     </tbody>

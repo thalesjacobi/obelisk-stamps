@@ -13173,7 +13173,7 @@ def admin_get_engagement(article_id):
 @admin_required
 def admin_engagement_poll_all():
     """Fetch engagement for all published articles."""
-    articles = query_all("SELECT id, title FROM articles WHERE status = 'published'")
+    articles = query_all("SELECT id, title FROM articles WHERE is_published = 1")
     results = {}
     for art in (articles or []):
         art_id, art_title = art[0], art[1]
@@ -13195,39 +13195,43 @@ def admin_analytics():
         def __init__(self, **kw):
             self.__dict__.update(kw)
 
-    raw_articles = query_all("""
-        SELECT a.id, a.title, a.slug, a.status, a.created_at,
-            COALESCE(e.total_likes, 0) as total_likes,
-            COALESCE(e.total_views, 0) as total_views,
-            COALESCE(e.total_shares, 0) as total_shares,
-            COALESCE(e.total_comments, 0) as total_comments,
-            e.last_fetched
-        FROM articles a
-        LEFT JOIN (
-            SELECT article_id,
-                SUM(likes) as total_likes, SUM(views) as total_views,
-                SUM(shares) as total_shares, SUM(comments) as total_comments,
-                MAX(fetched_at) as last_fetched
-            FROM article_engagement e1
-            WHERE fetched_at = (SELECT MAX(fetched_at) FROM article_engagement WHERE article_id = e1.article_id)
-            GROUP BY article_id
-        ) e ON a.id = e.article_id
-        WHERE a.status = 'published'
-        ORDER BY COALESCE(e.total_views, 0) DESC
-    """)
+    try:
+        raw_articles = query_all("""
+            SELECT a.id, a.title, a.slug, a.is_published, a.created_at,
+                COALESCE(e.total_likes, 0) as total_likes,
+                COALESCE(e.total_views, 0) as total_views,
+                COALESCE(e.total_shares, 0) as total_shares,
+                COALESCE(e.total_comments, 0) as total_comments,
+                e.last_fetched
+            FROM articles a
+            LEFT JOIN (
+                SELECT article_id,
+                    SUM(likes) as total_likes, SUM(views) as total_views,
+                    SUM(shares) as total_shares, SUM(comments) as total_comments,
+                    MAX(fetched_at) as last_fetched
+                FROM article_engagement
+                GROUP BY article_id
+            ) e ON a.id = e.article_id
+            WHERE a.is_published = 1
+            ORDER BY COALESCE(e.total_views, 0) DESC
+        """)
+    except Exception:
+        raw_articles = query_all("SELECT id, title, slug, is_published, created_at, 0,0,0,0, NULL FROM articles WHERE is_published = 1 ORDER BY id DESC")
     articles = [_Row(id=r[0], title=r[1], slug=r[2], status=r[3], created_at=r[4],
                      total_likes=r[5], total_views=r[6], total_shares=r[7],
-                     total_comments=r[8], last_fetched=r[9]) for r in (raw_articles or [])]
+                     total_comments=r[8], last_fetched=r[9]) for r in (raw_articles or []) if r]
 
-    raw_platform = query_all("""
-        SELECT platform,
-            SUM(likes) as total_likes, SUM(views) as total_views,
-            SUM(shares) as total_shares, SUM(comments) as total_comments
-        FROM article_engagement e1
-        WHERE fetched_at = (SELECT MAX(fetched_at) FROM article_engagement WHERE article_id = e1.article_id AND platform = e1.platform)
-        GROUP BY platform
-        ORDER BY total_views DESC
-    """)
+    try:
+        raw_platform = query_all("""
+            SELECT platform,
+                SUM(likes) as total_likes, SUM(views) as total_views,
+                SUM(shares) as total_shares, SUM(comments) as total_comments
+            FROM article_engagement
+            GROUP BY platform
+            ORDER BY total_views DESC
+        """)
+    except Exception:
+        raw_platform = []
     platform_totals = [_Row(platform=r[0], total_likes=r[1], total_views=r[2],
                             total_shares=r[3], total_comments=r[4]) for r in (raw_platform or [])]
 
