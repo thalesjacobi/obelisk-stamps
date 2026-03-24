@@ -12610,20 +12610,25 @@ def admin_get_engagement(article_id):
     if not rows:
         return jsonify({'totals': {}, 'platforms': {}, 'details': [], 'fetched_at': None})
 
+    # Map tuples to dicts: id, article_id, platform, content_type, post_id, permalink,
+    # likes, views, shares, comments, saves, clicks, impressions, reach, fetched_at, created_at
+    _eng_cols = ['id','article_id','platform','content_type','post_id','permalink',
+                 'likes','views','shares','comments','saves','clicks','impressions','reach',
+                 'fetched_at','created_at']
     totals = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0}
     platforms = {}
     details = []
     fetched_at = None
     for r in rows:
-        d = dict(r)
+        d = {_eng_cols[i]: r[i] for i in range(min(len(_eng_cols), len(r)))}
         details.append(d)
         for k in totals:
-            totals[k] += d.get(k, 0)
+            totals[k] += d.get(k, 0) or 0
         p = d['platform']
         if p not in platforms:
             platforms[p] = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0}
         for k in totals:
-            platforms[p][k] += d.get(k, 0)
+            platforms[p][k] += d.get(k, 0) or 0
         if d.get('fetched_at'):
             fa = d['fetched_at']
             fetched_at = fa.strftime("%Y-%m-%dT%H:%M:%SZ") if hasattr(fa, 'strftime') else str(fa)
@@ -12639,11 +12644,12 @@ def admin_engagement_poll_all():
     articles = query_all("SELECT id, title FROM articles WHERE status = 'published'")
     results = {}
     for art in (articles or []):
+        art_id, art_title = art[0], art[1]
         try:
-            data = fetch_all_engagement(art['id'])
-            results[art['id']] = {'title': art['title'], 'metrics_count': len(data)}
+            data = fetch_all_engagement(art_id)
+            results[art_id] = {'title': art_title, 'metrics_count': len(data)}
         except Exception as e:
-            results[art['id']] = {'title': art['title'], 'error': str(e)}
+            results[art_id] = {'title': art_title, 'error': str(e)}
     return jsonify({'ok': True, 'articles': results})
 
 
@@ -12652,7 +12658,12 @@ def admin_engagement_poll_all():
 @admin_required
 def admin_analytics():
     """Analytics dashboard page."""
-    articles = query_all("""
+    class _Row:
+        """Simple wrapper to allow attribute access on query tuples."""
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
+    raw_articles = query_all("""
         SELECT a.id, a.title, a.slug, a.status, a.created_at,
             COALESCE(e.total_likes, 0) as total_likes,
             COALESCE(e.total_views, 0) as total_views,
@@ -12672,8 +12683,11 @@ def admin_analytics():
         WHERE a.status = 'published'
         ORDER BY COALESCE(e.total_views, 0) DESC
     """)
+    articles = [_Row(id=r[0], title=r[1], slug=r[2], status=r[3], created_at=r[4],
+                     total_likes=r[5], total_views=r[6], total_shares=r[7],
+                     total_comments=r[8], last_fetched=r[9]) for r in (raw_articles or [])]
 
-    platform_totals = query_all("""
+    raw_platform = query_all("""
         SELECT platform,
             SUM(likes) as total_likes, SUM(views) as total_views,
             SUM(shares) as total_shares, SUM(comments) as total_comments
@@ -12682,10 +12696,12 @@ def admin_analytics():
         GROUP BY platform
         ORDER BY total_views DESC
     """)
+    platform_totals = [_Row(platform=r[0], total_likes=r[1], total_views=r[2],
+                            total_shares=r[3], total_comments=r[4]) for r in (raw_platform or [])]
 
     return render_template("admin_analytics.html",
-                           articles=articles or [],
-                           platform_totals=platform_totals or [],
+                           articles=articles,
+                           platform_totals=platform_totals,
                            ga_measurement_id=GA_MEASUREMENT_ID)
 
 
