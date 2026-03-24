@@ -1132,6 +1132,17 @@ def init_site_settings():
         UNIQUE KEY uk_platform_date (platform, snapshot_date),
         INDEX idx_platform (platform)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS short_links (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        code VARCHAR(8) UNIQUE NOT NULL,
+        article_id INT NOT NULL,
+        platform VARCHAR(20) NOT NULL,
+        target_url VARCHAR(1000) NOT NULL,
+        click_count INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_code (code),
+        UNIQUE KEY uk_article_platform (article_id, platform)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     conn.commit()
     # Add UTM attribution columns to orders table if not present
     try:
@@ -1427,8 +1438,40 @@ _UTM_PLATFORM_MAP = {
     'vk': 'vk', 'tumblr': 'tumblr',
 }
 
-def make_utm_url(article_slug, platform_key):
-    """Build article URL with UTM tracking parameters."""
+def make_short_url(article_id, platform_key):
+    """Get or create a short URL for article+platform combo."""
+    import hashlib as _hl, string as _str
+    existing = query_one(
+        "SELECT code FROM short_links WHERE article_id = %s AND platform = %s",
+        (article_id, platform_key))
+    if existing:
+        return f"{SITE_URL}/a/{existing[0]}"
+    slug_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+    slug = slug_row[0] if slug_row else str(article_id)
+    source = _UTM_PLATFORM_MAP.get(platform_key, platform_key)
+    target = f"{SITE_URL}/articles/{slug}?utm_source={source}&utm_medium=social&utm_campaign={slug}"
+    chars = _str.ascii_letters + _str.digits
+    h = _hl.sha256(f"{article_id}:{platform_key}".encode()).hexdigest()
+    code = ''.join(chars[int(h[i:i+2], 16) % len(chars)] for i in range(0, 12, 2))
+    try:
+        execute("INSERT INTO short_links (code, article_id, platform, target_url) VALUES (%s,%s,%s,%s)",
+                (code, article_id, platform_key, target))
+    except Exception:
+        pass  # Duplicate key race condition — re-query
+        existing = query_one("SELECT code FROM short_links WHERE article_id = %s AND platform = %s",
+                             (article_id, platform_key))
+        if existing:
+            return f"{SITE_URL}/a/{existing[0]}"
+    return f"{SITE_URL}/a/{code}"
+
+
+def make_utm_url(article_slug, platform_key, article_id=None):
+    """Build article URL with UTM tracking. Uses short URL when article_id is provided."""
+    if article_id and SITE_URL:
+        try:
+            return make_short_url(article_id, platform_key)
+        except Exception:
+            pass
     source = _UTM_PLATFORM_MAP.get(platform_key, platform_key)
     base = f"{SITE_URL}/articles/{article_slug}"
     return f"{base}?utm_source={source}&utm_medium=social&utm_campaign={article_slug}"
@@ -2138,6 +2181,22 @@ def articles():
         for r in rows
     ]
     return render_template("articles.html", articles=article_list)
+
+
+@app.route("/a/<code>")
+def short_link_redirect(code):
+    """301 redirect from short URL to full article with UTM params."""
+    row = query_one("SELECT target_url FROM short_links WHERE code = %s", (code,))
+    if not row:
+        return render_template("404.html"), 404
+    execute("UPDATE short_links SET click_count = click_count + 1 WHERE code = %s", (code,))
+    from urllib.parse import urlparse, parse_qs
+    params = parse_qs(urlparse(row[0]).query)
+    if params.get('utm_source'):
+        session['utm_source'] = params['utm_source'][0]
+        session['utm_campaign'] = params.get('utm_campaign', [''])[0]
+        session['utm_medium'] = params.get('utm_medium', [''])[0]
+    return redirect(row[0], 301)
 
 
 @app.route("/articles/<slug>")
@@ -3644,6 +3703,21 @@ def admin_article_delete(article_id):
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/admin/articles/<int:article_id>/short-urls")
+@login_required
+@admin_required
+def admin_article_short_urls(article_id):
+    """Get or generate short URLs for all platforms for this article."""
+    platforms = ['ig', 'fb', 'yt', 'x', 'threads', 'pinterest', 'tiktok', 'linkedin', 'bluesky', 'reddit']
+    result = {}
+    for p in platforms:
+        try:
+            result[p] = make_short_url(article_id, p)
+        except Exception:
+            result[p] = ''
+    return jsonify(result)
 
 
 @app.route("/admin/articles/<int:article_id>/carousel-images")
@@ -5590,7 +5664,7 @@ def _upload_to_youtube_worker(article_id, video_url, title, desc, run_ts, refres
     # UTM tracking: replace plain article URL with YouTube-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        desc = desc.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'yt'))
+        desc = desc.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'yt', article_id))
     import requests as _req
     import tempfile as _tmp
     import os as _os
@@ -6112,7 +6186,7 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
         # UTM tracking: replace plain article URL with IG-tagged version
         _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
         if _art and _art[0] and SITE_URL:
-            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'ig'))
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'ig', article_id))
 
         # ── 1. Load carousel data ──────────────────────────────────────────
         row = query_one(
@@ -6724,7 +6798,7 @@ def _post_narrated_reel_worker(article_id, video_url, caption, run_ts):
         # UTM tracking: replace plain article URL with IG-tagged version
         _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
         if _art and _art[0] and SITE_URL:
-            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'ig'))
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'ig', article_id))
 
         # ── 1. Create Reel container ──────────────────────────────────────
         _set_status("running:container")
@@ -7217,7 +7291,7 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
         # UTM tracking: replace plain article URL with FB-tagged version
         _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
         if _art and _art[0] and SITE_URL:
-            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'fb'))
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'fb', article_id))
 
         _set_status("running:0")
 
@@ -7428,7 +7502,7 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
         # UTM tracking: replace plain article URL with FB-tagged version
         _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
         if _art and _art[0] and SITE_URL:
-            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'fb'))
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'fb', article_id))
 
         _set_status("running:upload")
 
@@ -7955,7 +8029,7 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
         # UTM tracking: replace plain article URL with X-tagged version
         _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
         if _art and _art[0] and SITE_URL:
-            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'x'))
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'x', article_id))
 
         auth = _x_auth()
 
@@ -8093,7 +8167,7 @@ def _post_carousel_x_worker(article_id, caption, run_ts, component):
         # UTM tracking: replace plain article URL with X-tagged version
         _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
         if _art and _art[0] and SITE_URL:
-            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'x'))
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'x', article_id))
 
         auth = _x_auth()
 
@@ -8526,7 +8600,7 @@ def _post_carousel_threads_worker(article_id, caption, component):
         # UTM tracking: replace plain article URL with Threads-tagged version
         _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
         if _art and _art[0] and SITE_URL:
-            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'threads'))
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'threads', article_id))
 
         row = query_one(
             "SELECT carousel_images, carousel_punchlines FROM articles WHERE id = %s",
@@ -8690,7 +8764,7 @@ def _post_narrated_threads_worker(article_id, video_url, caption, run_ts):
         # UTM tracking: replace plain article URL with Threads-tagged version
         _art = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
         if _art and _art[0] and SITE_URL:
-            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'threads'))
+            caption = caption.replace(f"{SITE_URL}/articles/{_art[0]}", make_utm_url(_art[0], 'threads', article_id))
 
         # 1. Create video container
         _set_status("running:container")
@@ -8987,7 +9061,7 @@ def _post_carousel_pinterest_worker(article_id, caption, component):
     # UTM tracking: replace plain article URL with Pinterest-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'pinterest'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'pinterest', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -9141,7 +9215,7 @@ def _post_narrated_pinterest_worker(article_id, video_url, caption, run_ts):
     # UTM tracking: replace plain article URL with Pinterest-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'pinterest'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'pinterest', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -9560,7 +9634,7 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
     # UTM tracking: replace plain article URL with TikTok-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'tiktok'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'tiktok', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -9730,7 +9804,7 @@ def _post_carousel_linkedin_worker(article_id, caption, component):
     # UTM tracking: replace plain article URL with LinkedIn-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'linkedin'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'linkedin', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -9880,7 +9954,7 @@ def _post_narrated_linkedin_worker(article_id, video_url, caption, run_ts):
     # UTM tracking: replace plain article URL with LinkedIn-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'linkedin'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'linkedin', article_id))
     import requests as _req
     import time as _time_mod
     import tempfile as _tmp
@@ -10297,7 +10371,7 @@ def _post_carousel_bluesky_worker(article_id, caption, component):
     # UTM tracking: replace plain article URL with Bluesky-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'bluesky'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'bluesky', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -10451,7 +10525,7 @@ def _post_narrated_bluesky_worker(article_id, video_url, caption, run_ts):
     # UTM tracking: replace plain article URL with Bluesky-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'bluesky'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'bluesky', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -10803,7 +10877,7 @@ def _post_carousel_reddit_worker(article_id, caption, component):
     # UTM tracking: replace plain article URL with Reddit-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'reddit'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'reddit', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -10918,7 +10992,7 @@ def _post_narrated_reddit_worker(article_id, video_url, caption, run_ts):
     # UTM tracking: replace plain article URL with Reddit-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'reddit'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'reddit', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -11198,7 +11272,7 @@ def _post_carousel_telegram_worker(article_id, caption, component):
     # UTM tracking: replace plain article URL with Telegram-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'telegram'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'telegram', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -11317,7 +11391,7 @@ def _post_narrated_telegram_worker(article_id, video_url, caption, run_ts):
     # UTM tracking: replace plain article URL with Telegram-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'telegram'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'telegram', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -11585,7 +11659,7 @@ def _post_narrated_vimeo_worker(article_id, video_url, caption, run_ts):
     # UTM tracking: replace plain article URL with Vimeo-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'vimeo'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'vimeo', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -11806,7 +11880,7 @@ def _post_carousel_mastodon_worker(article_id, caption, component):
     # UTM tracking: replace plain article URL with Mastodon-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'mastodon'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'mastodon', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -11940,7 +12014,7 @@ def _post_narrated_mastodon_worker(article_id, video_url, caption, run_ts):
     # UTM tracking: replace plain article URL with Mastodon-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'mastodon'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'mastodon', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -12250,7 +12324,7 @@ def _post_carousel_vk_worker(article_id, caption, component):
     # UTM tracking: replace plain article URL with VK-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'vk'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'vk', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -12393,7 +12467,7 @@ def _post_narrated_vk_worker(article_id, video_url, caption, run_ts):
     # UTM tracking: replace plain article URL with VK-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'vk'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'vk', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -12682,7 +12756,7 @@ def _post_carousel_tumblr_worker(article_id, caption, component):
     # UTM tracking: replace plain article URL with Tumblr-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'tumblr'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'tumblr', article_id))
     import requests as _req
     import time as _time_mod
 
@@ -12800,7 +12874,7 @@ def _post_narrated_tumblr_worker(article_id, video_url, caption, run_ts):
     # UTM tracking: replace plain article URL with Tumblr-tagged version
     _art_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
     if _art_row and _art_row[0] and SITE_URL:
-        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'tumblr'))
+        caption = caption.replace(f"{SITE_URL}/articles/{_art_row[0]}", make_utm_url(_art_row[0], 'tumblr', article_id))
     import requests as _req
     import time as _time_mod
 
