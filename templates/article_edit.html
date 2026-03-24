@@ -12642,90 +12642,101 @@ async function smcWfPhase3() {
     setSmcWfStepState('cine-ig', 'done', 'Posted to Instagram');
 }
 
+// Helper: open a carousel section by platform key and close others
+function _smcWfToggleCarSection(key) {
+    var sectionMap = {fb:'car-fb-body', linkedin:'car-linkedin-body', bluesky:'car-bluesky-body', reddit:'car-reddit-body',
+                      x:'car-x-body', threads:'car-threads-body', pinterest:'car-pinterest-body'};
+    Object.keys(sectionMap).forEach(function(k) {
+        var el = document.getElementById(sectionMap[k]);
+        if (el) { if (k === key) el.classList.remove('d-none'); else el.classList.add('d-none'); }
+    });
+    // Scroll section into view
+    var target = document.getElementById(sectionMap[key]);
+    if (target) target.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
 async function smcWfPhase4() {
     if (!_smcWfStepEnabled('car-fb-li')) { setSmcWfStepState('car-fb-li', 'skipped', 'Skipped'); return; }
-    setSmcWfStepState('car-fb-li', 'running', 'Posting carousel images...');
-    var promises = [], platforms = [];
-    if (_smcEnabled('fb') && FB_CONFIGURED) {
-        var fbExisting = await fetch(_smcWfBase() + '/fb-post-status?type=car').then(function(r){return r.json();});
-        if (fbExisting.result && fbExisting.result.startsWith('done')) {
-            platforms.push('Facebook (already posted)');
-        } else {
-            platforms.push('Facebook');
-            promises.push((async function() {
-                var r = await fetch(_smcWfBase() + '/post-to-facebook', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({caption: _smcWfGetPlatformCaption('fb', 63206), type: 'car'})
-                });
-                var d = await r.json(); if (d.error) throw new Error('Facebook: ' + d.error);
-                return smcWfPoll(_smcWfBase() + '/fb-post-status?type=car', function(data) {
-                    var s = data.status || '';
-                    if (s.startsWith('running')) return 'continue';
-                    if (s.startsWith('done')) return data;
-                    if (s.startsWith('error') || s.startsWith('fail')) return {error: 'Facebook: ' + s};
-                    return 'continue';
-                }, 5000, 120);
-            })());
-        }
-    }
-    if (_smcEnabled('linkedin') && LINKEDIN_CONFIGURED) {
-        var liExisting = await fetch(_smcWfBase() + '/carousel-linkedin-status?type=car').then(function(r){return r.json();});
-        if (liExisting.result && liExisting.result.startsWith('done')) {
-            platforms.push('LinkedIn (already posted)');
-        } else {
-            platforms.push('LinkedIn');
-            promises.push((async function() {
-                var r = await fetch(_smcWfBase() + '/post-carousel-to-linkedin', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({caption: _smcWfGetPlatformCaption('linkedin', 3000), type: 'car'})
-                });
-                var d = await r.json(); if (d.error) throw new Error('LinkedIn: ' + d.error);
-                return smcWfPoll(_smcWfBase() + '/carousel-linkedin-status?type=car', function(data) {
-                    var s = data.status || '';
-                    if (s.startsWith('running')) return 'continue';
-                    if (s.startsWith('done')) return data;
-                    if (s.startsWith('error') || s.startsWith('fail')) return {error: 'LinkedIn: ' + s};
-                    return 'continue';
-                }, 5000, 120);
-            })());
-        }
-    }
-    // Add other carousel platforms (Bluesky, Reddit, etc.)
-    var extraCarousel = [
-        {key:'bluesky', cfg:BLUESKY_CONFIGURED, name:'Bluesky', postRoute:'post-carousel-to-bluesky', pollRoute:'carousel-bluesky-status?type=car'},
-        {key:'reddit',  cfg:REDDIT_CONFIGURED,  name:'Reddit',  postRoute:'post-carousel-to-reddit',  pollRoute:'carousel-reddit-status?type=car'},
+
+    // Build sequential list of carousel platforms to post
+    var allCarousel = [
+        {key:'fb',       cfg:FB_CONFIGURED,      name:'Facebook',  postRoute:'post-to-facebook',          pollRoute:'fb-post-status?type=car',             limit:63206},
+        {key:'linkedin', cfg:LINKEDIN_CONFIGURED, name:'LinkedIn',  postRoute:'post-carousel-to-linkedin', pollRoute:'carousel-linkedin-status?type=car',   limit:3000},
+        {key:'bluesky',  cfg:BLUESKY_CONFIGURED,  name:'Bluesky',   postRoute:'post-carousel-to-bluesky',  pollRoute:'carousel-bluesky-status?type=car',    limit:300},
+        {key:'reddit',   cfg:REDDIT_CONFIGURED,   name:'Reddit',    postRoute:'post-carousel-to-reddit',   pollRoute:'carousel-reddit-status?type=car',     limit:300},
     ];
-    for (var ei = 0; ei < extraCarousel.length; ei++) {
-        var plat = extraCarousel[ei];
-        if (!_smcEnabled(plat.key) || !plat.cfg) continue;
-        var ecExisting = await fetch(_smcWfBase() + '/' + plat.pollRoute).then(function(r){return r.json();});
-        if (ecExisting.result && ecExisting.result.startsWith('done')) {
-            platforms.push(plat.name + ' (already posted)');
+    var enabledCarousel = allCarousel.filter(function(p) { return _smcEnabled(p.key) && p.cfg; });
+    if (enabledCarousel.length === 0) { setSmcWfStepState('car-fb-li', 'skipped', 'No platforms configured'); return; }
+
+    var posted = [], skipped = [], failed = [];
+
+    // Post SEQUENTIALLY — one at a time so abort stops the next one
+    for (var ci = 0; ci < enabledCarousel.length; ci++) {
+        var cp = enabledCarousel[ci];
+
+        // Check abort/pause between platforms
+        if (_smcWfAborted) {
+            skipped.push(cp.name + ' (aborted)');
             continue;
         }
-        platforms.push(plat.name);
-        promises.push((async function(p) {
-            var r = await fetch(_smcWfBase() + '/' + p.postRoute, {
+        if (_smcWfPaused) {
+            await new Promise(function(resolve) { _smcWfPauseResolve = resolve; });
+            _smcWfPauseResolve = null;
+            if (_smcWfAborted) { skipped.push(cp.name + ' (aborted)'); continue; }
+        }
+
+        // Check if already posted
+        try {
+            var cpExisting = await fetch(_smcWfBase() + '/' + cp.pollRoute).then(function(r){return r.json();});
+            if (cpExisting.result && cpExisting.result.startsWith('done')) {
+                skipped.push(cp.name + ' (already posted)');
+                continue;
+            }
+        } catch(e) { /* ignore check errors */ }
+
+        // Open this platform's section
+        _smcWfToggleCarSection(cp.key);
+        setSmcWfStepState('car-fb-li', 'running', 'Posting to ' + cp.name + '...');
+
+        try {
+            var r = await fetch(_smcWfBase() + '/' + cp.postRoute, {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({caption: _smcWfGetPlatformCaption(p.key, 300), type: 'car'})
+                body: JSON.stringify({caption: _smcWfGetPlatformCaption(cp.key, cp.limit), type: 'car'})
             });
-            var d = await r.json(); if (d.error) throw new Error(p.name + ': ' + d.error);
-            return smcWfPoll(_smcWfBase() + '/' + p.pollRoute, function(data) {
+            var d = await r.json();
+            if (d.error) throw new Error(cp.name + ': ' + d.error);
+            await smcWfPoll(_smcWfBase() + '/' + cp.pollRoute, function(data) {
                 var s = data.status || '';
-                if (s.startsWith('running')) return 'continue';
+                if (s.startsWith('running')) {
+                    setSmcWfStepState('car-fb-li', 'running', cp.name + ': ' + s.replace('running:', ''));
+                    return 'continue';
+                }
                 if (s.startsWith('done')) return data;
-                if (s.startsWith('error') || s.startsWith('fail')) return {error: p.name + ': ' + s};
+                if (s.startsWith('error') || s.startsWith('fail')) return {error: cp.name + ': ' + s};
                 return 'continue';
             }, 5000, 120);
-        })(plat));
+            posted.push(cp.name);
+        } catch(err) {
+            failed.push(cp.name + ': ' + err.message);
+        }
+
+        // Check abort after posting — warn that current post finished but next won't start
+        if (_smcWfAborted && ci < enabledCarousel.length - 1) {
+            var remaining = enabledCarousel.slice(ci + 1).map(function(p){return p.name;}).join(', ');
+            setSmcWfStepState('car-fb-li', 'done',
+                cp.name + ' finished posting but workflow is aborted. Skipped: ' + remaining);
+            return;
+        }
     }
-    if (promises.length === 0 && platforms.length > 0) { setSmcWfStepState('car-fb-li', 'done', 'All already posted'); return; }
-    if (promises.length === 0) { setSmcWfStepState('car-fb-li', 'skipped', 'No platforms configured'); return; }
-    var results = await Promise.allSettled(promises);
-    var failed = []; results.forEach(function(r,i){ if (r.status==='rejected') failed.push(platforms[i]+': '+r.reason.message); });
-    if (failed.length > 0 && failed.length === results.length) throw new Error(failed.join('; '));
-    if (failed.length > 0) setSmcWfStepState('car-fb-li', 'done', 'Partial: ' + failed.join('; '));
-    else setSmcWfStepState('car-fb-li', 'done', 'Posted to ' + platforms.join(' & '));
+
+    // Summary
+    var summary = [];
+    if (posted.length > 0) summary.push('Posted to ' + posted.join(', '));
+    if (skipped.length > 0) summary.push(skipped.join(', '));
+    if (failed.length > 0) summary.push('Failed: ' + failed.join('; '));
+
+    if (failed.length > 0 && posted.length === 0 && skipped.length === 0) throw new Error(failed.join('; '));
+    setSmcWfStepState('car-fb-li', 'done', summary.join(' | '));
 }
 
 async function smcWfPhase5() {
@@ -12806,35 +12817,90 @@ async function smcWfPhase6() {
         return;
     }
 
-    var promises = toPost.map(function(plat) {
-        return (async function() {
-            statuses[plat.key] = 'running'; updateBadges();
-            var nvCharLimits = {ig:2200,fb:63206,yt:5000,x:280,threads:500,pinterest:800,tiktok:2200,linkedin:3000,bluesky:300,reddit:40000,telegram:1024,vimeo:5000,mastodon:500,vk:16384,tumblr:4096};
-            var platformCaption = _smcWfGetPlatformCaption(plat.key, nvCharLimits[plat.key] || 2200);
-            var body = plat.bodyFn(_smcWfNarratedRun, platformCaption);
-            var r = await fetch(_smcWfBase() + '/' + plat.route, {
+    // Helper: open NV platform section by key
+    var nvSectionMap = {ig:'nv-ig', fb:'nv-fb', yt:'nv-yt', x:'nv-x', threads:'nv-threads',
+                        pinterest:'nv-pinterest', tiktok:'nv-tiktok', linkedin:'nv-linkedin',
+                        bluesky:'nv-bluesky', reddit:'nv-reddit'};
+    function toggleNvSection(key) {
+        // Toggle open the matching NV section in the current run
+        var ts = _smcWfNarratedRun.ts;
+        Object.keys(nvSectionMap).forEach(function(k) {
+            var bodyId = nvSectionMap[k] + '-' + ts + '-body';
+            var el = document.getElementById(bodyId);
+            if (el) { if (k === key) el.classList.remove('d-none'); else el.classList.add('d-none'); }
+        });
+    }
+
+    var nvCharLimits = {ig:2200,fb:63206,yt:5000,x:280,threads:500,pinterest:800,tiktok:2200,linkedin:3000,bluesky:300,reddit:40000,telegram:1024,vimeo:5000,mastodon:500,vk:16384,tumblr:4096};
+    var nvPosted = 0, nvFailed = 0;
+    var alreadyPosted = enabledPlatforms.length - toPost.length;
+
+    // Post SEQUENTIALLY — one at a time
+    for (var ni = 0; ni < toPost.length; ni++) {
+        var np = toPost[ni];
+
+        // Check abort/pause between platforms
+        if (_smcWfAborted) {
+            statuses[np.key] = 'failed'; updateBadges();
+            if (ni < toPost.length - 1) {
+                var nvRemaining = toPost.slice(ni).map(function(p){return p.name;}).join(', ');
+                setSmcWfStepState('nv-post', 'done',
+                    nvPosted + ' posted, workflow aborted. Skipped: ' + nvRemaining);
+                return;
+            }
+            continue;
+        }
+        if (_smcWfPaused) {
+            await new Promise(function(resolve) { _smcWfPauseResolve = resolve; });
+            _smcWfPauseResolve = null;
+            if (_smcWfAborted) {
+                var nvRemaining2 = toPost.slice(ni).map(function(p){return p.name;}).join(', ');
+                setSmcWfStepState('nv-post', 'done',
+                    nvPosted + ' posted, workflow aborted. Skipped: ' + nvRemaining2);
+                return;
+            }
+        }
+
+        statuses[np.key] = 'running'; updateBadges();
+        toggleNvSection(np.key);
+
+        try {
+            var platformCaption = _smcWfGetPlatformCaption(np.key, nvCharLimits[np.key] || 2200);
+            var body = np.bodyFn(_smcWfNarratedRun, platformCaption);
+            var r = await fetch(_smcWfBase() + '/' + np.route, {
                 method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
             });
             var d = await r.json();
-            if (d.error) throw new Error(plat.name + ': ' + d.error);
-            await smcWfPoll(_smcWfBase() + '/' + plat.poll + '?ts=' + _smcWfNarratedRun.ts, function(data) {
+            if (d.error) throw new Error(np.name + ': ' + d.error);
+            await smcWfPoll(_smcWfBase() + '/' + np.poll + '?ts=' + _smcWfNarratedRun.ts, function(data) {
                 var s = data.status || '';
-                if (s.startsWith('running')) return 'continue';
+                if (s.startsWith('running')) {
+                    setSmcWfStepState('nv-post', 'running', np.name + ': ' + s.replace('running:', ''));
+                    return 'continue';
+                }
                 if (s.startsWith('done')) return data;
-                if (s.startsWith('error') || s.startsWith('fail')) return {error: plat.name + ': ' + s};
+                if (s.startsWith('error') || s.startsWith('fail')) return {error: np.name + ': ' + s};
                 return 'continue';
             }, 5000, 120);
-            statuses[plat.key] = 'done'; updateBadges();
-        })().catch(function(err) { statuses[plat.key] = 'failed'; updateBadges(); throw err; });
-    });
+            statuses[np.key] = 'done'; updateBadges();
+            nvPosted++;
+        } catch(err) {
+            statuses[np.key] = 'failed'; updateBadges();
+            nvFailed++;
+        }
 
-    var results = await Promise.allSettled(promises);
-    var newPosted = results.filter(function(r){return r.status==='fulfilled';}).length;
-    var alreadyPosted = enabledPlatforms.length - toPost.length;
-    var totalDone = newPosted + alreadyPosted;
-    var failures = results.filter(function(r){return r.status==='rejected';});
-    if (failures.length === 0) setSmcWfStepState('nv-post', 'done', totalDone + '/' + enabledPlatforms.length + ' platforms posted' + (alreadyPosted > 0 ? ' (' + alreadyPosted + ' already posted)' : ''));
-    else if (newPosted > 0) setSmcWfStepState('nv-post', 'done', totalDone + '/' + enabledPlatforms.length + ' posted. Some failed.');
+        // Check abort after posting
+        if (_smcWfAborted && ni < toPost.length - 1) {
+            var nvRemaining3 = toPost.slice(ni + 1).map(function(p){return p.name;}).join(', ');
+            setSmcWfStepState('nv-post', 'done',
+                np.name + ' finished posting but workflow is aborted. Skipped: ' + nvRemaining3);
+            return;
+        }
+    }
+
+    var totalDone = nvPosted + alreadyPosted;
+    if (nvFailed === 0) setSmcWfStepState('nv-post', 'done', totalDone + '/' + enabledPlatforms.length + ' platforms posted' + (alreadyPosted > 0 ? ' (' + alreadyPosted + ' already posted)' : ''));
+    else if (nvPosted > 0) setSmcWfStepState('nv-post', 'done', totalDone + '/' + enabledPlatforms.length + ' posted. ' + nvFailed + ' failed.');
     else throw new Error('All NV posts failed');
 }
 
