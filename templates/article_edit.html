@@ -12433,28 +12433,28 @@ function _smcWfStepById(id) {
 function _smcWfStepEnabled(step) {
     if (typeof step === 'string') step = _smcWfStepById(step);
     if (!step || !step.nets) return true;
-    var cfgMap = {ig:'IG_CONFIGURED',fb:'FB_CONFIGURED',yt:'YT_CONFIGURED',x:'X_CONFIGURED',
-                  threads:'THREADS_CONFIGURED',pinterest:'PINTEREST_CONFIGURED',
-                  tiktok:'TIKTOK_CONFIGURED',linkedin:'LINKEDIN_CONFIGURED',
-                  bluesky:'BLUESKY_CONFIGURED',reddit:'REDDIT_CONFIGURED',telegram:'TELEGRAM_CONFIGURED',
-                  vimeo:'VIMEO_CONFIGURED',mastodon:'MASTODON_CONFIGURED',vk:'VK_CONFIGURED',tumblr:'TUMBLR_CONFIGURED'};
+    var cfgVal = {ig:IG_CONFIGURED,fb:FB_CONFIGURED,yt:YT_CONFIGURED,x:X_CONFIGURED,
+                  threads:THREADS_CONFIGURED,pinterest:PINTEREST_CONFIGURED,
+                  tiktok:TIKTOK_CONFIGURED,linkedin:LINKEDIN_CONFIGURED,
+                  bluesky:BLUESKY_CONFIGURED,reddit:REDDIT_CONFIGURED,telegram:TELEGRAM_CONFIGURED,
+                  vimeo:VIMEO_CONFIGURED,mastodon:MASTODON_CONFIGURED,vk:VK_CONFIGURED,tumblr:TUMBLR_CONFIGURED};
     return step.nets.some(function(n) {
-        return _smcEnabled(n) && window[cfgMap[n]];
+        return _smcEnabled(n) && cfgVal[n];
     });
 }
 
 function _smcWfDynamicLabel(step) {
-    var cfgMap = {ig:'IG_CONFIGURED',fb:'FB_CONFIGURED',yt:'YT_CONFIGURED',x:'X_CONFIGURED',
-                  threads:'THREADS_CONFIGURED',pinterest:'PINTEREST_CONFIGURED',
-                  tiktok:'TIKTOK_CONFIGURED',linkedin:'LINKEDIN_CONFIGURED',
-                  bluesky:'BLUESKY_CONFIGURED',reddit:'REDDIT_CONFIGURED',telegram:'TELEGRAM_CONFIGURED',
-                  vimeo:'VIMEO_CONFIGURED',mastodon:'MASTODON_CONFIGURED',vk:'VK_CONFIGURED',tumblr:'TUMBLR_CONFIGURED'};
+    var cfgVal = {ig:IG_CONFIGURED,fb:FB_CONFIGURED,yt:YT_CONFIGURED,x:X_CONFIGURED,
+                  threads:THREADS_CONFIGURED,pinterest:PINTEREST_CONFIGURED,
+                  tiktok:TIKTOK_CONFIGURED,linkedin:LINKEDIN_CONFIGURED,
+                  bluesky:BLUESKY_CONFIGURED,reddit:REDDIT_CONFIGURED,telegram:TELEGRAM_CONFIGURED,
+                  vimeo:VIMEO_CONFIGURED,mastodon:MASTODON_CONFIGURED,vk:VK_CONFIGURED,tumblr:TUMBLR_CONFIGURED};
     var nameMap = {ig:'Instagram',fb:'Facebook',yt:'YouTube',x:'X',
                    threads:'Threads',pinterest:'Pinterest',tiktok:'TikTok',linkedin:'LinkedIn',
                    bluesky:'Bluesky',reddit:'Reddit',telegram:'Telegram',vimeo:'Vimeo',
                    mastodon:'Mastodon',vk:'VK',tumblr:'Tumblr'};
     if (!step.nets) return step.label;
-    var active = step.nets.filter(function(n){ return _smcEnabled(n) && window[cfgMap[n]]; });
+    var active = step.nets.filter(function(n){ return _smcEnabled(n) && cfgVal[n]; });
     if (active.length === 0) return step.label;
     // For posting steps, show which platforms are active
     if (step.id === 'car-fb-li') return 'Post Carousel to ' + active.map(function(n){return nameMap[n];}).join(' & ');
@@ -12662,7 +12662,12 @@ async function smcWfPhase6() {
         setSmcWfStepState('nv-post', 'skipped', 'Skipped (no narrated video generated)');
         return;
     }
-    var enabledPlatforms = _NV_PLATFORMS.filter(function(p) { return _smcEnabled(p.key) && window[p.cfg]; });
+    var _cfgVals = {IG_CONFIGURED:IG_CONFIGURED,FB_CONFIGURED:FB_CONFIGURED,YT_CONFIGURED:YT_CONFIGURED,X_CONFIGURED:X_CONFIGURED,
+                    THREADS_CONFIGURED:THREADS_CONFIGURED,PINTEREST_CONFIGURED:PINTEREST_CONFIGURED,TIKTOK_CONFIGURED:TIKTOK_CONFIGURED,
+                    LINKEDIN_CONFIGURED:LINKEDIN_CONFIGURED,BLUESKY_CONFIGURED:BLUESKY_CONFIGURED,REDDIT_CONFIGURED:REDDIT_CONFIGURED,
+                    TELEGRAM_CONFIGURED:TELEGRAM_CONFIGURED,VIMEO_CONFIGURED:VIMEO_CONFIGURED,MASTODON_CONFIGURED:MASTODON_CONFIGURED,
+                    VK_CONFIGURED:VK_CONFIGURED,TUMBLR_CONFIGURED:TUMBLR_CONFIGURED};
+    var enabledPlatforms = _NV_PLATFORMS.filter(function(p) { return _smcEnabled(p.key) && _cfgVals[p.cfg]; });
     if (enabledPlatforms.length === 0) { setSmcWfStepState('nv-post', 'skipped', 'No platforms enabled'); return; }
 
     var statuses = {};
