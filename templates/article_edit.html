@@ -9388,6 +9388,22 @@ document.addEventListener('DOMContentLoaded', function() {
         cine: {{ ig_cine_caption | tojson }},
         car:  {{ ig_car_caption | tojson }}
     };
+    // Saved captions for other platforms (carousel mode only)
+    var savedPlatformCaptions = {
+        fb:       {{ fb_car_caption | tojson }},
+        x:        {{ x_car_caption | tojson }},
+        threads:  {{ threads_car_caption | tojson }},
+        pinterest:{{ pinterest_car_caption | tojson }},
+        linkedin: {{ linkedin_car_caption | tojson }},
+        bluesky:  {{ bluesky_car_caption | tojson }},
+        reddit:   {{ reddit_car_caption | tojson }},
+        telegram: {{ telegram_car_caption | tojson }},
+        mastodon: {{ mastodon_car_caption | tojson }},
+        vk:       {{ vk_car_caption | tojson }},
+        tumblr:   {{ tumblr_car_caption | tojson }}
+    };
+    // Also store fb cine caption separately
+    var fbCineSavedCaption = {{ fb_cine_caption | tojson }};
     var defaultLines = [];
     if (typeof ARTICLE_TITLE !== 'undefined' && ARTICLE_TITLE) defaultLines.push(ARTICLE_TITLE);
     if (typeof ARTICLE_URL !== 'undefined' && ARTICLE_URL) defaultLines.push('\n' + ARTICLE_URL);
@@ -9403,10 +9419,13 @@ document.addEventListener('DOMContentLoaded', function() {
             checkIgRunning(mode);
             if (mode === 'car') checkFbRunning(mode);
         }
-        // Pre-populate other social captions with article title + URL (if empty)
-        ['threads', 'pinterest', 'linkedin', 'x'].forEach(function(net) {
+        // Pre-populate other social captions with saved caption or article title + URL (if empty)
+        ['fb', 'threads', 'pinterest', 'linkedin', 'x', 'bluesky', 'reddit', 'telegram', 'mastodon', 'vk', 'tumblr'].forEach(function(net) {
             var el = document.getElementById(mode + '-' + net + '-caption');
-            if (el && !el.value.trim()) { el.value = defaultCaption; }
+            if (el && !el.value.trim()) {
+                var saved = (mode === 'car') ? (savedPlatformCaptions[net] || '') : (net === 'fb' ? fbCineSavedCaption : '');
+                el.value = saved || defaultCaption;
+            }
         });
     });
 });

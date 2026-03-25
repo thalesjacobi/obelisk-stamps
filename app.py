@@ -3622,6 +3622,22 @@ def admin_article_edit(article_id):
     car_snap_raw  = get_setting(f"ig_car_post_snapshot_{article_id}")
     cine_caption  = json.loads(cine_snap_raw).get("caption", "") if cine_snap_raw else ""
     car_caption   = json.loads(car_snap_raw).get("caption", "") if car_snap_raw else ""
+    # Override with directly-stored captions if available
+    cine_caption  = get_setting(f"ig_cine_caption_{article_id}") or cine_caption
+    car_caption   = get_setting(f"ig_car_caption_{article_id}") or car_caption
+    # Load platform carousel captions
+    fb_car_caption        = get_setting(f"fb_car_caption_{article_id}") or ""
+    fb_cine_caption       = get_setting(f"fb_cine_caption_{article_id}") or ""
+    x_car_caption         = get_setting(f"x_car_caption_{article_id}") or ""
+    threads_car_caption   = get_setting(f"threads_car_caption_{article_id}") or ""
+    pinterest_car_caption = get_setting(f"pinterest_car_caption_{article_id}") or ""
+    linkedin_car_caption  = get_setting(f"linkedin_car_caption_{article_id}") or ""
+    bluesky_car_caption   = get_setting(f"bluesky_car_caption_{article_id}") or ""
+    reddit_car_caption    = get_setting(f"reddit_car_caption_{article_id}") or ""
+    telegram_car_caption  = get_setting(f"telegram_car_caption_{article_id}") or ""
+    mastodon_car_caption  = get_setting(f"mastodon_car_caption_{article_id}") or ""
+    vk_car_caption        = get_setting(f"vk_car_caption_{article_id}") or ""
+    tumblr_car_caption    = get_setting(f"tumblr_car_caption_{article_id}") or ""
 
     return render_template("article_edit.html", article=article,
                            carousel_style=article_carousel_style,
@@ -3645,7 +3661,19 @@ def admin_article_edit(article_id):
                            vk_configured=VK_CONFIGURED,
                            tumblr_configured=TUMBLR_CONFIGURED,
                            ig_cine_caption=cine_caption,
-                           ig_car_caption=car_caption)
+                           ig_car_caption=car_caption,
+                           fb_car_caption=fb_car_caption,
+                           fb_cine_caption=fb_cine_caption,
+                           x_car_caption=x_car_caption,
+                           threads_car_caption=threads_car_caption,
+                           pinterest_car_caption=pinterest_car_caption,
+                           linkedin_car_caption=linkedin_car_caption,
+                           bluesky_car_caption=bluesky_car_caption,
+                           reddit_car_caption=reddit_car_caption,
+                           telegram_car_caption=telegram_car_caption,
+                           mastodon_car_caption=mastodon_car_caption,
+                           vk_car_caption=vk_car_caption,
+                           tumblr_car_caption=tumblr_car_caption)
 
 
 @app.route("/admin/articles/<int:article_id>/toggle-slideshow", methods=["POST"])
@@ -5788,6 +5816,14 @@ def _upload_to_youtube_worker(article_id, video_url, title, desc, run_ts, refres
         video_id = up_resp.json().get("id", "")
         yt_url   = f"https://www.youtube.com/shorts/{video_id}" if video_id else "https://youtube.com"
         _set_result(f"done:{yt_url}")
+        # Store published caption (title + description) for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"yt_narrated_title_{article_id}_{run_ts}", title, title))
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"yt_narrated_caption_{article_id}_{run_ts}", desc, desc))
+        except Exception:
+            pass
         _add_activity_log(article_id, "Posted to YouTube Shorts",
                           f"video_id={video_id}\nurl={yt_url}",
                           component="narrated")
@@ -6549,6 +6585,12 @@ def _post_to_instagram_worker(article_id, caption, post_type="cine"):
             permalink = f"https://www.instagram.com/p/{post_id}/"
         print(f"IG worker: SUCCESS post_id={post_id} permalink={permalink}", flush=True)
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"ig_{post_type}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
         # Store media_id for later caption editing / archive
         media_id_key = keys["media_id"]
         execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
@@ -6913,6 +6955,12 @@ def _post_narrated_reel_worker(article_id, video_url, caption, run_ts):
 
         print(f"IG Reel: SUCCESS post_id={post_id} permalink={permalink}", flush=True)
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"ig_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "Posted Narrated Video to Instagram",
                           f"post_id={post_id}\npermalink={permalink}", component="narrated")
         try:
@@ -7454,6 +7502,12 @@ def _post_to_facebook_worker(article_id, caption, post_type="cine"):
         }
         _set_kv(keys["snapshot"], json.dumps(snapshot))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"fb_{post_type}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
 
         slides_info = f"{len(valid_urls)} photos"
         _add_activity_log(
@@ -7560,6 +7614,12 @@ def _post_narrated_fb_worker(article_id, video_url, caption, run_ts):
 
         _set_kv(f"narrated_fb_media_id_{article_id}_{run_ts}", str(video_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"fb_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
 
         _add_activity_log(
             article_id,
@@ -8124,6 +8184,12 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"x_narrated_tweet_id_{article_id}_{run_ts}", tweet_id, tweet_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"x_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "X Narrated Video Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"tweet_id={tweet_id}\nrun_ts={run_ts}",
@@ -8266,6 +8332,12 @@ def _post_carousel_x_worker(article_id, caption, run_ts, component):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"x_{component}_tweet_id_{article_id}", first_tweet_id, first_tweet_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"x_{component}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, f"X {component.title()} Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"tweet_id={first_tweet_id}\nimages={n}\nthreads={len(chunks)}",
@@ -8724,6 +8796,12 @@ def _post_carousel_threads_worker(article_id, caption, component):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"threads_{component}_post_id_{article_id}", post_id, post_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"threads_{component}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, f"Threads {component.title()} Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"post_id={post_id}\nimages={n}",
@@ -8826,6 +8904,12 @@ def _post_narrated_threads_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"threads_narrated_post_id_{article_id}_{run_ts}", post_id, post_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"threads_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "Threads Narrated Video Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"post_id={post_id}\nrun_ts={run_ts}",
@@ -9191,6 +9275,12 @@ def _post_carousel_pinterest_worker(article_id, caption, component):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"pinterest_{component}_pin_id_{article_id}", first_pin_id, first_pin_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"pinterest_{component}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, f"Pinterest {component.title()} Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"pin_id={first_pin_id}\nimages={n}",
@@ -9320,6 +9410,12 @@ def _post_narrated_pinterest_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"pinterest_narrated_pin_id_{article_id}_{run_ts}", pin_id, pin_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"pinterest_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "Pinterest Narrated Video Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"pin_id={pin_id}\nrun_ts={run_ts}",
@@ -9712,6 +9808,12 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"tiktok_narrated_video_id_{article_id}_{run_ts}", video_id, video_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"tiktok_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "TikTok Narrated Video Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"video_id={video_id}\nrun_ts={run_ts}",
@@ -9931,6 +10033,12 @@ def _post_carousel_linkedin_worker(article_id, caption, component):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"linkedin_{component}_post_id_{article_id}", post_id, post_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"linkedin_{component}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, f"LinkedIn {component.title()} Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\npost_id={post_id}\nimages={n}",
                           component=component)
@@ -10063,6 +10171,12 @@ def _post_narrated_linkedin_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"linkedin_narrated_post_id_{article_id}_{run_ts}", post_id, post_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"linkedin_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "LinkedIn Narrated Video Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\npost_id={post_id}\nrun_ts={run_ts}",
                           component="narrated")
@@ -10501,6 +10615,12 @@ def _post_carousel_bluesky_worker(article_id, caption, component):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"bluesky_{component}_post_id_{article_id}", first_rkey, first_rkey))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"bluesky_{component}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, f"Bluesky {component.title()} Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"rkey={first_rkey}\nimages={n}",
@@ -10622,6 +10742,12 @@ def _post_narrated_bluesky_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"bluesky_narrated_post_id_{article_id}_{run_ts}", rkey, rkey))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"bluesky_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "Bluesky Narrated Video Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"rkey={rkey}\nrun_ts={run_ts}",
@@ -10968,6 +11094,12 @@ def _post_carousel_reddit_worker(article_id, caption, component):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"reddit_{component}_post_id_{article_id}", post_name, post_name))
         _set_result(f"done:{post_url}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"reddit_{component}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, f"Reddit {component.title()} Posted",
                           f"<a href=\"{post_url}\" target=\"_blank\">{post_url}</a>\n"
                           f"fullname={post_name}\nimages={n}",
@@ -11031,6 +11163,12 @@ def _post_narrated_reddit_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"reddit_narrated_post_id_{article_id}_{run_ts}", post_name, post_name))
         _set_result(f"done:{post_url}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"reddit_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "Reddit Narrated Video Posted",
                           f"<a href=\"{post_url}\" target=\"_blank\">{post_url}</a>\n"
                           f"fullname={post_name}\nrun_ts={run_ts}",
@@ -11368,6 +11506,12 @@ def _post_carousel_telegram_worker(article_id, caption, component):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"telegram_{component}_post_id_{article_id}", msg_ids_str, msg_ids_str))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"telegram_{component}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, f"Telegram {component.title()} Posted",
                           f"chat_id={TELEGRAM_CHAT_ID}\nmessage_ids={msg_ids_str}\nimages={n}",
                           component=component)
@@ -11427,6 +11571,12 @@ def _post_narrated_telegram_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"telegram_narrated_post_id_{article_id}_{run_ts}", msg_id, msg_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"telegram_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "Telegram Narrated Video Posted",
                           f"chat_id={TELEGRAM_CHAT_ID}\nmessage_id={msg_id}\nrun_ts={run_ts}",
                           component="narrated")
@@ -11990,6 +12140,12 @@ def _post_carousel_mastodon_worker(article_id, caption, component):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"mastodon_{component}_post_id_{article_id}", first_status_id, first_status_id))
         _set_result(f"done:{first_status_url}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"mastodon_{component}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, f"Mastodon {component.title()} Posted",
                           f"<a href=\"{first_status_url}\" target=\"_blank\">{first_status_url}</a>\n"
                           f"status_id={first_status_id}\nimages={n}",
@@ -12087,6 +12243,12 @@ def _post_narrated_mastodon_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"mastodon_narrated_post_id_{article_id}_{run_ts}", status_id, status_id))
         _set_result(f"done:{status_url}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"mastodon_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "Mastodon Narrated Video Posted",
                           f"<a href=\"{status_url}\" target=\"_blank\">{status_url}</a>\n"
                           f"status_id={status_id}\nrun_ts={run_ts}",
@@ -12443,6 +12605,12 @@ def _post_carousel_vk_worker(article_id, caption, component):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"vk_{component}_post_id_{article_id}", post_id, post_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"vk_{component}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, f"VK {component.title()} Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"post_id={post_id}\nimages={n}",
@@ -12524,6 +12692,12 @@ def _post_narrated_vk_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"vk_narrated_post_id_{article_id}_{run_ts}", video_id, video_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"vk_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "VK Narrated Video Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"video_id={video_id}\nrun_ts={run_ts}",
@@ -12850,6 +13024,12 @@ def _post_carousel_tumblr_worker(article_id, caption, component):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"tumblr_{component}_post_id_{article_id}", post_id, post_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"tumblr_{component}_caption_{article_id}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, f"Tumblr {component.title()} Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"post_id={post_id}\nimages={n}",
@@ -12919,6 +13099,12 @@ def _post_narrated_tumblr_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s",
                 (f"tumblr_narrated_post_id_{article_id}_{run_ts}", post_id, post_id))
         _set_result(f"done:{permalink}")
+        # Store published caption for page reload
+        try:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (f"tumblr_narrated_caption_{article_id}_{run_ts}", caption, caption))
+        except Exception:
+            pass
         _add_activity_log(article_id, "Tumblr Narrated Video Posted",
                           f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
                           f"post_id={post_id}\nrun_ts={run_ts}",
