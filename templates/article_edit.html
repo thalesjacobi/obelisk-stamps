@@ -805,7 +805,7 @@
                 {% else %}
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-threads-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Threads. It will be saved below in Past Posts for your records.">?</span></label>
+                        <label class="small text-muted mb-0" for="car-threads-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Archive post&#39; to archive it from Threads. It will be saved below in Past Posts for your records.">?</span></label>
                         <a href="#" class="small ms-auto ig-section-link" id="car-threads-copy-link"
                            onclick="event.preventDefault(); copyIgCaptionToThreads('car')">Copy from Instagram</a>
                     </div>
@@ -3542,6 +3542,7 @@ function renderFbHistory(mode, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function checkFbRunning(mode) {
@@ -3796,6 +3797,7 @@ function renderXHistory(mode, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function checkXRunning(mode) {
@@ -3937,7 +3939,7 @@ function showThreadsDone(mode, permalink) {
         var archiveBtn = document.createElement('button');
         archiveBtn.type = 'button';
         archiveBtn.className = 'btn btn-outline-danger btn-sm threads-done-btn';
-        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.textContent = 'Archive post';
         archiveBtn.onclick = function() { threadsDeleteAndArchive(m); };
         btnRow.appendChild(archiveBtn);
     }
@@ -4023,7 +4025,7 @@ function threadsArchivePost(mode) {
 
 function threadsDeleteAndArchive(mode) {
     if (!ARTICLE_ID) return;
-    if (!confirm('Delete this post from Threads and archive it?')) return;
+    if (!confirm('Archive this Threads post?')) return;
     fetch('/admin/articles/' + ARTICLE_ID + '/archive-carousel-threads-post', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -4061,6 +4063,7 @@ function renderThreadsHistory(mode, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function checkThreadsRunning(mode) {
@@ -4335,6 +4338,7 @@ function renderPinterestHistory(mode, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function checkPinterestRunning(mode) {
@@ -4629,6 +4633,7 @@ function renderLinkedinHistory(type, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function checkLinkedinRunning(type) {
@@ -4857,6 +4862,7 @@ function renderBlueskyHistory(mode, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function checkBlueskyRunning(mode) {
@@ -5085,6 +5091,7 @@ function renderRedditHistory(mode, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function checkRedditRunning(mode) {
@@ -5313,6 +5320,7 @@ function renderTelegramHistory(mode, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function checkTelegramRunning(mode) {
@@ -5541,6 +5549,7 @@ function renderMastodonHistory(mode, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function checkMastodonRunning(mode) {
@@ -5769,6 +5778,7 @@ function renderVkHistory(mode, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function checkVkRunning(mode) {
@@ -5997,6 +6007,7 @@ function renderTumblrHistory(mode, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function checkTumblrRunning(mode) {
@@ -6273,6 +6284,7 @@ function renderNvXHistory(ts, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function restoreNvXState(ts) {
@@ -6400,7 +6412,7 @@ function showNvThreadsDone(ts, permalink) {
         var archiveBtn = document.createElement('button');
         archiveBtn.type = 'button';
         archiveBtn.className = 'btn btn-outline-danger btn-sm nv-threads-done-btn';
-        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.textContent = 'Archive post';
         archiveBtn.onclick = (function(t) { return function() { nvThreadsDeleteAndArchive(t); }; })(ts);
         btnRow.appendChild(archiveBtn);
     }
@@ -6473,7 +6485,7 @@ function nvThreadsArchivePost(ts) {
 
 function nvThreadsDeleteAndArchive(ts) {
     if (!ARTICLE_ID) return;
-    if (!confirm('Delete this post from Threads and archive it?')) return;
+    if (!confirm('Archive this Threads post?')) return;
     fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-threads-post', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -9011,6 +9023,7 @@ function renderNvFbHistory(ts, history) {
         list.appendChild(row);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function restoreNvFbState(ts) {
@@ -9072,7 +9085,7 @@ function showIgDone(mode, permalink) {
         const archiveBtn = document.createElement('button');
         archiveBtn.type = 'button';
         archiveBtn.className = 'btn btn-outline-danger btn-sm ig-done-btn';
-        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.textContent = 'Archive post';
         archiveBtn.onclick = function() { igDeleteAndArchive(m); };
         btnRow.appendChild(archiveBtn);
     }
@@ -9264,7 +9277,7 @@ function igArchivePost(mode) {
 
 function igDeleteAndArchive(mode) {
     if (!ARTICLE_ID) return;
-    if (!confirm('Delete this post from Instagram and archive it?')) return;
+    if (!confirm('Archive this Instagram post?')) return;
     fetch('/admin/articles/' + ARTICLE_ID + '/archive-instagram-post', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -10278,7 +10291,7 @@ function buildRunItem(run, expandIt) {
                 </div>
                 <div id="nv-threads-${run.ts}-body" class="nv-social-body d-none pt-1">
                     ${!THREADS_CONFIGURED ? '<div class="alert alert-warning py-1 small mb-2">Threads not configured. See <a href="/admin/settings" target="_blank">Settings</a>.</div>' : ''}
-                    ${THREADS_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Threads. It will be saved below in Past Posts for your records.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToThreads(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-threads-' + run.ts + '-caption" rows="3" maxlength="500" placeholder="Write your Threads caption…" oninput="document.getElementById(\'nv-threads-' + run.ts + '-count\').textContent=this.value.length+\' / 500\'"></textarea><div class="text-end text-muted small mb-2" id="nv-threads-' + run.ts + '-count">0 / 500</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-threads-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-threads-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToThreads(' + run.ts + ', this.dataset.videoUrl)"><i class=\'fa-brands fa-threads me-1\' style=\'vertical-align:-2px\'></i>Post to Threads</button></div><div id="nv-threads-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-threads-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-threads-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-threads-' + run.ts + '-progress-wrap"><div id="nv-threads-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-threads-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-threads-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-threads-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-threads-' + run.ts + '-history-list"></div></div></div>' : ''}
+                    ${THREADS_CONFIGURED ? '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><label class="small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Archive post&#39; to archive it from Threads. It will be saved below in Past Posts for your records.">?</span></label><a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyNvIgCaptionToThreads(' + run.ts + ')">Copy from Instagram</a></div><textarea class="form-control form-control-sm mb-1" id="nv-threads-' + run.ts + '-caption" rows="3" maxlength="500" placeholder="Write your Threads caption…" oninput="document.getElementById(\'nv-threads-' + run.ts + '-count\').textContent=this.value.length+\' / 500\'"></textarea><div class="text-end text-muted small mb-2" id="nv-threads-' + run.ts + '-count">0 / 500</div><div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="nv-threads-' + run.ts + '-btn-row"><button type="button" class="btn btn-sm btn-dark" id="nv-threads-' + run.ts + '-post-btn" data-video-url="' + (run.url || '') + '" onclick="postNarratedToThreads(' + run.ts + ', this.dataset.videoUrl)"><i class=\'fa-brands fa-threads me-1\' style=\'vertical-align:-2px\'></i>Post to Threads</button></div><div id="nv-threads-' + run.ts + '-status-area" class="d-none"><div class="d-flex align-items-center gap-2 mb-1" id="nv-threads-' + run.ts + '-status-running"><div class="spinner-border spinner-border-sm text-secondary" style="width:.9rem;height:.9rem;border-width:.12em"></div><span id="nv-threads-' + run.ts + '-status-text" class="text-muted small">Starting…</span></div><div class="progress mb-2" style="height:4px" id="nv-threads-' + run.ts + '-progress-wrap"><div id="nv-threads-' + run.ts + '-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:10%"></div></div></div><div id="nv-threads-' + run.ts + '-result" class="d-none mt-2"></div><div id="nv-threads-' + run.ts + '-history" class="d-none mt-3"><a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#nv-threads-' + run.ts + '-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">&#9660;</span></a><div class="collapse" id="nv-threads-' + run.ts + '-history-list"></div></div></div>' : ''}
                 </div>
                 </div><!-- /smc-threads -->
                 <div data-smc-net="pinterest">
@@ -10573,7 +10586,7 @@ function showNvIgDone(ts, permalink) {
         var archiveBtn = document.createElement('button');
         archiveBtn.type = 'button';
         archiveBtn.className = 'btn btn-outline-danger btn-sm nv-ig-done-btn';
-        archiveBtn.textContent = 'Delete and archive post';
+        archiveBtn.textContent = 'Archive post';
         archiveBtn.onclick = (function(t) { return function() { nvIgDeleteAndArchive(t); }; })(ts);
         btnRow.appendChild(archiveBtn);
     }
@@ -10724,7 +10737,7 @@ function nvIgArchivePost(ts) {
 
 function nvIgDeleteAndArchive(ts) {
     if (!ARTICLE_ID) return;
-    if (!confirm('Delete this post from Instagram and archive it?')) return;
+    if (!confirm('Archive this Instagram post?')) return;
     fetch('/admin/articles/' + ARTICLE_ID + '/archive-narrated-ig-post', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -11043,6 +11056,7 @@ function renderNvYtHistory(runTs, history) {
         list.appendChild(d);
     });
     wrap.classList.remove('d-none');
+    if (list) list.classList.add('show');
 }
 
 function restoreNvYtState(runTs) {
