@@ -3034,6 +3034,22 @@ function generateIgCaption(mode) {
                 captionEl.value += '\n\nWant to read the full article? Access the following link:\n' + ARTICLE_URL;
             }
             updateIgCharCount(mode);
+            // Auto-fill other IG textareas if they're empty
+            var generatedCaption = captionEl.value;
+            ['car', 'cine'].forEach(function(otherMode) {
+                if (otherMode === mode) return;
+                var otherEl = document.getElementById(_igId(otherMode, 'caption'));
+                if (otherEl && !otherEl.value.trim()) {
+                    otherEl.value = generatedCaption;
+                    updateIgCharCount(otherMode);
+                }
+            });
+            // Also fill NV IG textareas if empty (across all runs)
+            document.querySelectorAll('[id^="nv-ig-"][id$="-caption"]').forEach(function(nvEl) {
+                if (!nvEl.value.trim()) {
+                    nvEl.value = generatedCaption;
+                }
+            });
         })
         .catch(function(err) {
             link.textContent = origText;
@@ -3327,11 +3343,43 @@ function toggleXSection(mode) {
     if (chevron) chevron.style.transform = body.classList.contains('d-none') ? '' : 'rotate(180deg)';
 }
 
+// Cached short URLs per platform — loaded once on page init
+var _shortUrls = {};
+function _loadShortUrls() {
+    if (!ARTICLE_ID) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/short-urls')
+        .then(function(r){ return r.json(); })
+        .then(function(d){ _shortUrls = d; })
+        .catch(function(){});
+}
+if (typeof ARTICLE_ID !== 'undefined' && ARTICLE_ID) _loadShortUrls();
+
+// Swap article URL in caption text to target platform's short URL
+function _swapUrlForPlatform(captionText, targetPlatform) {
+    if (!captionText || !_shortUrls[targetPlatform]) return captionText;
+    var shortUrl = _shortUrls[targetPlatform];
+    // Replace any existing short URL (from another platform)
+    var shortUrlPattern = SITE_URL ? SITE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/a/[A-Za-z0-9]{4,8}' : '';
+    if (shortUrlPattern) {
+        captionText = captionText.replace(new RegExp(shortUrlPattern, 'g'), shortUrl);
+    }
+    // Replace full article URL with UTM params
+    if (ARTICLE_URL) {
+        var fullUrlPattern = ARTICLE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\?[^\\s]*)?';
+        captionText = captionText.replace(new RegExp(fullUrlPattern, 'g'), shortUrl);
+    }
+    // Replace plain article URL without UTM
+    if (ARTICLE_URL) {
+        captionText = captionText.replace(new RegExp(ARTICLE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), shortUrl);
+    }
+    return captionText;
+}
+
 function copyIgCaptionToFb(mode) {
     var igCaption = document.getElementById(mode + '-ig-caption');
     var fbCaption = document.getElementById(_fbId(mode, 'caption'));
     if (igCaption && fbCaption) {
-        fbCaption.value = igCaption.value;
+        fbCaption.value = _swapUrlForPlatform(igCaption.value, 'fb');
         var countEl = document.getElementById(_fbId(mode, 'char-count'));
         if (countEl) countEl.textContent = fbCaption.value.length + ' / 2200';
     }
@@ -3569,7 +3617,7 @@ function copyIgCaptionToX(mode) {
     var igCaption = document.getElementById(mode + '-ig-caption');
     var xCaption  = document.getElementById(_xId(mode, 'caption'));
     if (igCaption && xCaption) {
-        xCaption.value = igCaption.value.slice(0, 280);
+        xCaption.value = _swapUrlForPlatform(igCaption.value, 'x').slice(0, 280);
         var countEl = document.getElementById(_xId(mode, 'char-count'));
         if (countEl) countEl.textContent = xCaption.value.length + ' / 280';
     }
@@ -3841,7 +3889,7 @@ function copyIgCaptionToThreads(mode) {
     var igCaption      = document.getElementById(mode + '-ig-caption');
     var threadsCaption = document.getElementById(_threadsId(mode, 'caption'));
     if (igCaption && threadsCaption) {
-        threadsCaption.value = igCaption.value.slice(0, 500);
+        threadsCaption.value = _swapUrlForPlatform(igCaption.value, 'threads').slice(0, 500);
         var countEl = document.getElementById(_threadsId(mode, 'char-count'));
         if (countEl) countEl.textContent = threadsCaption.value.length + ' / 500';
     }
@@ -4107,7 +4155,7 @@ function copyIgCaptionToPinterest(mode) {
     var igCaption        = document.getElementById(mode + '-ig-caption');
     var pinterestCaption = document.getElementById(_pinterestId(mode, 'caption'));
     if (igCaption && pinterestCaption) {
-        pinterestCaption.value = igCaption.value.slice(0, 800);
+        pinterestCaption.value = _swapUrlForPlatform(igCaption.value, 'pinterest').slice(0, 800);
         var countEl = document.getElementById(_pinterestId(mode, 'char-count'));
         if (countEl) countEl.textContent = pinterestCaption.value.length + ' / 800';
     }
@@ -4382,7 +4430,7 @@ function copyIgCaptionToLinkedin(mode) {
     var igCaption       = document.getElementById(mode + '-ig-caption');
     var linkedinCaption = document.getElementById(_linkedinId(mode, 'caption'));
     if (igCaption && linkedinCaption) {
-        linkedinCaption.value = igCaption.value.slice(0, 3000);
+        linkedinCaption.value = _swapUrlForPlatform(igCaption.value, 'linkedin').slice(0, 3000);
         var countEl = document.getElementById(_linkedinId(mode, 'char-count'));
         if (countEl) countEl.textContent = linkedinCaption.value.length + ' / 3000';
     }
@@ -4675,7 +4723,7 @@ function copyIgCaptionToBluesky(mode) {
     var igCaption = document.getElementById(mode + '-ig-caption');
     var caption   = document.getElementById(_blueskyId(mode, 'caption'));
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 300);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'bluesky').slice(0, 300);
         var countEl = document.getElementById(_blueskyId(mode, 'char-count'));
         if (countEl) countEl.textContent = caption.value.length + ' / 300';
     }
@@ -4904,7 +4952,7 @@ function copyIgCaptionToReddit(mode) {
     var igCaption = document.getElementById(mode + '-ig-caption');
     var caption   = document.getElementById(_redditId(mode, 'caption'));
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 300);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'reddit').slice(0, 40000);
         var countEl = document.getElementById(_redditId(mode, 'char-count'));
         if (countEl) countEl.textContent = caption.value.length + ' / 300';
     }
@@ -5133,7 +5181,7 @@ function copyIgCaptionToTelegram(mode) {
     var igCaption = document.getElementById(mode + '-ig-caption');
     var caption   = document.getElementById(_telegramId(mode, 'caption'));
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 1024);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'telegram').slice(0, 1024);
         var countEl = document.getElementById(_telegramId(mode, 'char-count'));
         if (countEl) countEl.textContent = caption.value.length + ' / 1024';
     }
@@ -5362,7 +5410,7 @@ function copyIgCaptionToMastodon(mode) {
     var igCaption = document.getElementById(mode + '-ig-caption');
     var caption   = document.getElementById(_mastodonId(mode, 'caption'));
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 500);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'mastodon').slice(0, 500);
         var countEl = document.getElementById(_mastodonId(mode, 'char-count'));
         if (countEl) countEl.textContent = caption.value.length + ' / 500';
     }
@@ -5591,7 +5639,7 @@ function copyIgCaptionToVk(mode) {
     var igCaption = document.getElementById(mode + '-ig-caption');
     var caption   = document.getElementById(_vkId(mode, 'caption'));
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 16384);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'vk').slice(0, 16384);
         var countEl = document.getElementById(_vkId(mode, 'char-count'));
         if (countEl) countEl.textContent = caption.value.length + ' / 16384';
     }
@@ -5820,7 +5868,7 @@ function copyIgCaptionToTumblr(mode) {
     var igCaption = document.getElementById(mode + '-ig-caption');
     var caption   = document.getElementById(_tumblrId(mode, 'caption'));
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 4096);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'tumblr').slice(0, 4096);
         var countEl = document.getElementById(_tumblrId(mode, 'char-count'));
         if (countEl) countEl.textContent = caption.value.length + ' / 4096';
     }
@@ -6044,7 +6092,7 @@ function copyNvIgCaptionToX(ts) {
     var igCaption = document.getElementById('nv-ig-' + ts + '-caption');
     var xCaption  = document.getElementById('nv-x-' + ts + '-caption');
     if (igCaption && xCaption) {
-        xCaption.value = igCaption.value.slice(0, 280);
+        xCaption.value = _swapUrlForPlatform(igCaption.value, 'x').slice(0, 280);
         var countEl = document.getElementById('nv-x-' + ts + '-count');
         if (countEl) countEl.textContent = xCaption.value.length + ' / 280';
     }
@@ -6325,7 +6373,7 @@ function copyNvIgCaptionToThreads(ts) {
     var igCaption      = document.getElementById('nv-ig-' + ts + '-caption');
     var threadsCaption = document.getElementById('nv-threads-' + ts + '-caption');
     if (igCaption && threadsCaption) {
-        threadsCaption.value = igCaption.value.slice(0, 500);
+        threadsCaption.value = _swapUrlForPlatform(igCaption.value, 'threads').slice(0, 500);
         var countEl = document.getElementById('nv-threads-' + ts + '-count');
         if (countEl) countEl.textContent = threadsCaption.value.length + ' / 500';
     }
@@ -6568,7 +6616,7 @@ function copyNvIgCaptionToPinterest(ts) {
     var igCaption        = document.getElementById('nv-ig-' + ts + '-caption');
     var pinterestCaption = document.getElementById('nv-pinterest-' + ts + '-caption');
     if (igCaption && pinterestCaption) {
-        pinterestCaption.value = igCaption.value.slice(0, 800);
+        pinterestCaption.value = _swapUrlForPlatform(igCaption.value, 'pinterest').slice(0, 800);
         var countEl = document.getElementById('nv-pinterest-' + ts + '-count');
         if (countEl) countEl.textContent = pinterestCaption.value.length + ' / 800';
     }
@@ -6814,7 +6862,7 @@ function copyNvIgCaptionToTiktok(ts) {
     var igCaption     = document.getElementById('nv-ig-' + ts + '-caption');
     var tiktokCaption = document.getElementById('nv-tiktok-' + ts + '-caption');
     if (igCaption && tiktokCaption) {
-        tiktokCaption.value = igCaption.value.slice(0, 2200);
+        tiktokCaption.value = _swapUrlForPlatform(igCaption.value, 'tiktok').slice(0, 2200);
         var countEl = document.getElementById('nv-tiktok-' + ts + '-count');
         if (countEl) countEl.textContent = tiktokCaption.value.length + ' / 2200';
     }
@@ -7119,7 +7167,7 @@ function copyNvIgCaptionToLinkedin(ts) {
     var igCaption       = document.getElementById('nv-ig-' + ts + '-caption');
     var linkedinCaption = document.getElementById('nv-linkedin-' + ts + '-caption');
     if (igCaption && linkedinCaption) {
-        linkedinCaption.value = igCaption.value.slice(0, 3000);
+        linkedinCaption.value = _swapUrlForPlatform(igCaption.value, 'linkedin').slice(0, 3000);
         var countEl = document.getElementById('nv-linkedin-' + ts + '-count');
         if (countEl) countEl.textContent = linkedinCaption.value.length + ' / 3000';
     }
@@ -7362,7 +7410,7 @@ function copyNvIgCaptionToBluesky(ts) {
     var igCaption = document.getElementById('nv-ig-' + ts + '-caption');
     var caption   = document.getElementById('nv-bluesky-' + ts + '-caption');
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 300);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'bluesky').slice(0, 300);
         var countEl = document.getElementById('nv-bluesky-' + ts + '-count');
         if (countEl) countEl.textContent = caption.value.length + ' / 300';
     }
@@ -7575,7 +7623,7 @@ function copyNvIgCaptionToReddit(ts) {
     var igCaption = document.getElementById('nv-ig-' + ts + '-caption');
     var caption   = document.getElementById('nv-reddit-' + ts + '-caption');
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 300);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'bluesky').slice(0, 300);
         var countEl = document.getElementById('nv-reddit-' + ts + '-count');
         if (countEl) countEl.textContent = caption.value.length + ' / 300';
     }
@@ -7790,7 +7838,7 @@ function copyNvIgCaptionToTelegram(ts) {
     var igCaption = document.getElementById('nv-ig-' + ts + '-caption');
     var caption   = document.getElementById('nv-telegram-' + ts + '-caption');
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 1024);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'telegram').slice(0, 1024);
         var countEl = document.getElementById('nv-telegram-' + ts + '-count');
         if (countEl) countEl.textContent = caption.value.length + ' / 1024';
     }
@@ -8003,7 +8051,7 @@ function copyNvIgCaptionToMastodon(ts) {
     var igCaption = document.getElementById('nv-ig-' + ts + '-caption');
     var caption   = document.getElementById('nv-mastodon-' + ts + '-caption');
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 500);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'mastodon').slice(0, 500);
         var countEl = document.getElementById('nv-mastodon-' + ts + '-count');
         if (countEl) countEl.textContent = caption.value.length + ' / 500';
     }
@@ -8216,7 +8264,7 @@ function copyNvIgCaptionToVk(ts) {
     var igCaption = document.getElementById('nv-ig-' + ts + '-caption');
     var caption   = document.getElementById('nv-vk-' + ts + '-caption');
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 16384);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'vk').slice(0, 16384);
         var countEl = document.getElementById('nv-vk-' + ts + '-count');
         if (countEl) countEl.textContent = caption.value.length + ' / 16384';
     }
@@ -8429,7 +8477,7 @@ function copyNvIgCaptionToTumblr(ts) {
     var igCaption = document.getElementById('nv-ig-' + ts + '-caption');
     var caption   = document.getElementById('nv-tumblr-' + ts + '-caption');
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 4096);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'tumblr').slice(0, 4096);
         var countEl = document.getElementById('nv-tumblr-' + ts + '-count');
         if (countEl) countEl.textContent = caption.value.length + ' / 4096';
     }
@@ -8642,7 +8690,7 @@ function copyNvIgCaptionToVimeo(ts) {
     var igCaption = document.getElementById('nv-ig-' + ts + '-caption');
     var caption   = document.getElementById('nv-vimeo-' + ts + '-caption');
     if (igCaption && caption) {
-        caption.value = igCaption.value.slice(0, 5000);
+        caption.value = _swapUrlForPlatform(igCaption.value, 'vimeo').slice(0, 5000);
         var countEl = document.getElementById('nv-vimeo-' + ts + '-count');
         if (countEl) countEl.textContent = caption.value.length + ' / 5000';
     }
@@ -8851,7 +8899,7 @@ function copyNvIgCaptionToFb(ts) {
     var igCaption = document.getElementById('nv-ig-' + ts + '-caption');
     var fbCaption = document.getElementById('nv-fb-' + ts + '-caption');
     if (igCaption && fbCaption) {
-        fbCaption.value = igCaption.value;
+        fbCaption.value = _swapUrlForPlatform(igCaption.value, 'fb');
         var countEl = document.getElementById('nv-fb-' + ts + '-count');
         if (countEl) countEl.textContent = fbCaption.value.length + ' / 2200';
     }
@@ -9437,7 +9485,9 @@ document.addEventListener('DOMContentLoaded', function() {
             var el = document.getElementById(mode + '-' + net + '-caption');
             if (el && !el.value.trim()) {
                 var saved = (mode === 'car') ? (savedPlatformCaptions[net] || '') : (net === 'fb' ? fbCineSavedCaption : '');
-                el.value = saved || defaultCaption;
+                // Only populate if there's an actual saved caption from a previous post
+                // Leave empty for platforms that were never posted to
+                if (saved) el.value = saved;
             }
         });
     });
