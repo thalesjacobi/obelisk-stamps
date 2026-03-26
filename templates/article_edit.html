@@ -12582,7 +12582,9 @@ function smcWfPoll(url, checkFn, intervalMs, maxPolls) {
 }
 
 function _smcWfGetPlatformCaption(platformKey, charLimit) {
-    // Check if this platform's carousel caption textarea has custom content
+    // Always use the workflow caption (_smcWfCaption) from IG carousel / OpenAI.
+    // The backend swaps the article URL to the platform-specific short URL.
+    // Only override if user explicitly typed a DIFFERENT caption in the platform textarea.
     var fieldMap = {
         'ig': 'car-ig-caption', 'fb': 'car-fb-caption', 'x': 'car-x-caption',
         'threads': 'car-threads-caption', 'pinterest': 'car-pinterest-caption',
@@ -12590,13 +12592,19 @@ function _smcWfGetPlatformCaption(platformKey, charLimit) {
         'reddit': 'car-reddit-caption'
     };
     var fieldId = fieldMap[platformKey];
-    if (fieldId) {
+    if (fieldId && _smcWfCaption) {
         var el = document.getElementById(fieldId);
         if (el && el.value.trim().length > 10) {
-            return el.value.trim().substring(0, charLimit || 99999);
+            var platformText = el.value.trim();
+            // Only use the platform's textarea if it's genuinely different content
+            // (not just an auto-restored caption from a previous post)
+            var wfStart = _smcWfCaption.substring(0, 50);
+            if (platformText.substring(0, 50) !== wfStart) {
+                return platformText.substring(0, charLimit || 99999);
+            }
         }
     }
-    // Fall back to _smcWfCaption (from IG carousel), truncated to platform limit
+    // Use the workflow-generated caption, truncated to platform limit
     return (_smcWfCaption || '').substring(0, charLimit || 99999);
 }
 
