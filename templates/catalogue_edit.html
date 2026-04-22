@@ -44,6 +44,37 @@
             <small class="text-muted">Prices are stored in GBP and converted for visitors using their selected currency.</small>
         </div>
 
+        <div class="row g-3 mb-1">
+            <div class="col-md-6">
+                <label class="form-label">Category</label>
+                <input type="text" name="category" id="field-category" class="form-control"
+                       value="{{ item.category if item else '' }}"
+                       placeholder="e.g. football, fishing, flowers"
+                       list="category-suggestions"
+                       autocomplete="off">
+                <datalist id="category-suggestions">
+                    {% for c in existing_categories %}
+                    <option value="{{ c }}">
+                    {% endfor %}
+                </datalist>
+                <small class="text-muted">Lowercase, single word or hyphenated. Used in the URL.</small>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">URL slug (frame name)</label>
+                <input type="text" name="slug" id="field-slug" class="form-control"
+                       value="{{ item.slug if item else '' }}"
+                       placeholder="auto-generated from title"
+                       autocomplete="off">
+                <small class="text-muted">Leave blank to auto-generate from the title when you save.</small>
+            </div>
+        </div>
+        <div class="mb-3">
+            <small class="text-muted">
+                URL preview:
+                <code id="url-preview" class="text-primary">/catalogue/&lt;category&gt;/&lt;slug&gt;</code>
+            </small>
+        </div>
+
         <hr>
 
         <div class="mb-3">
@@ -113,6 +144,47 @@
 </div>
 
 <script>
+// Slugify helper — mirror the Python slugify() so the preview matches what gets saved.
+function slugify(v) {
+    return (v || "").toString().trim().toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/-{2,}/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 200);
+}
+
+(function () {
+    const titleEl = document.querySelector('input[name="title"]');
+    const catEl = document.getElementById('field-category');
+    const slugEl = document.getElementById('field-slug');
+    const preview = document.getElementById('url-preview');
+    let slugEdited = slugEl && slugEl.value.trim().length > 0;
+
+    function updatePreview() {
+        const cat = slugify(catEl ? catEl.value : '');
+        const slug = slugify(slugEl ? slugEl.value : '') || slugify(titleEl ? titleEl.value : '');
+        if (cat && slug) {
+            preview.textContent = '/catalogue/' + cat + '/' + slug;
+        } else {
+            preview.textContent = '/catalogue/<category>/<slug>';
+        }
+    }
+
+    if (slugEl) {
+        slugEl.addEventListener('input', () => { slugEdited = slugEl.value.trim().length > 0; updatePreview(); });
+    }
+    if (catEl) catEl.addEventListener('input', updatePreview);
+    if (titleEl) {
+        titleEl.addEventListener('input', () => {
+            if (!slugEdited && slugEl) {
+                slugEl.value = slugify(titleEl.value);
+            }
+            updatePreview();
+        });
+    }
+    updatePreview();
+})();
+
 function deleteGalleryImage(imageId, btn) {
     if (!confirm('Remove this image from the gallery?')) return;
     fetch('/admin/catalogue/images/' + imageId + '/delete', {

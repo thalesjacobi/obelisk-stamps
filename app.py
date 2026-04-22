@@ -587,6 +587,18 @@ def save_catalogue_image(file_storage) -> Optional[str]:
     return f"uploads/catalogue/{fname}"
 
 
+def slugify(value: str) -> str:
+    """Turn an arbitrary string into a URL-safe slug (lowercase, a-z/0-9/hyphens)."""
+    if not value:
+        return ""
+    value = value.strip().lower()
+    # Replace anything that isn't alphanumeric with a hyphen
+    value = re.sub(r"[^a-z0-9]+", "-", value)
+    # Collapse runs and trim
+    value = re.sub(r"-{2,}", "-", value).strip("-")
+    return value[:200]
+
+
 def catalogue_img_url(url):
     """
     Resolve a catalogue image URL for the browser.
@@ -2237,7 +2249,8 @@ def fetch_follower_counts():
 @app.route("/")
 def home():
     catalogue_items = query_all(
-        "SELECT id, title, description, price, image_url, status FROM catalogue ORDER BY id DESC"
+        "SELECT id, title, description, price, image_url, status, category, slug "
+        "FROM catalogue ORDER BY id DESC"
     )
     currency = get_active_currency()
     return render_template("home.html", catalogue_items=catalogue_items, user_currency=currency)
@@ -2313,7 +2326,8 @@ def article_view(slug):
 @app.route("/catalogue")
 def catalogue():
     catalogue_items = query_all(
-        "SELECT id, title, description, price, image_url, status FROM catalogue ORDER BY id DESC"
+        "SELECT id, title, description, price, image_url, status, category, slug "
+        "FROM catalogue ORDER BY id DESC"
     )
     # Fetch gallery images for all items in one query
     galleries = {}
@@ -2334,6 +2348,47 @@ def catalogue():
                            catalogue_items=catalogue_items,
                            galleries=galleries,
                            user_currency=currency)
+
+
+@app.route("/catalogue/<category>/<slug>")
+def catalogue_item_detail(category, slug):
+    """SEO-friendly detail page for a single catalogue item."""
+    row = query_one(
+        "SELECT id, title, description, price, image_url, status, category, slug "
+        "FROM catalogue WHERE category = %s AND slug = %s",
+        (category, slug),
+    )
+    if not row:
+        if _template_exists("404.html"):
+            return render_template("404.html"), 404
+        return "Not found", 404
+    item = {
+        "id": row[0], "title": row[1], "description": row[2],
+        "price": float(row[3]) if row[3] is not None else 0.0,
+        "image_url": row[4],
+        "status": row[5] or "available",
+        "category": row[6] or "",
+        "slug": row[7] or "",
+    }
+    gallery = query_all(
+        "SELECT image_url FROM catalogue_images "
+        "WHERE catalogue_id = %s ORDER BY sort_order, id",
+        (item["id"],),
+    )
+    gallery_urls = [g[0] for g in gallery]
+    if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
+        log_activity(current_user.id, "page_view",
+                     f"Viewed catalogue item: {item['title']}",
+                     {"page": request.path, "catalogue_id": item["id"]})
+    return render_template("catalogue_item.html", item=item, gallery=gallery_urls)
+
+
+def _template_exists(name: str) -> bool:
+    try:
+        app.jinja_env.get_template(name)
+        return True
+    except Exception:
+        return False
 
 
 RECAPTCHA_SITE_KEY = "6LdO7nMsAAAAAFfZQbtr3vbztflfcyNA0uYL2opK"
@@ -3856,13 +3911,22 @@ def _fetch_catalogue_gallery(catalogue_id):
     return [{"id": r[0], "image_url": r[1]} for r in rows]
 
 
+def _existing_categories():
+    """List distinct non-empty categories, for the admin datalist."""
+    rows = query_all(
+        "SELECT DISTINCT category FROM catalogue "
+        "WHERE category IS NOT NULL AND category != '' ORDER BY category"
+    )
+    return [r[0] for r in rows if r[0]]
+
+
 @app.route("/admin/catalogue")
 @login_required
 @admin_required
 def admin_catalogue():
     """List all catalogue items with status and image."""
     rows = query_all(
-        "SELECT id, title, description, price, image_url, status "
+        "SELECT id, title, description, price, image_url, status, category, slug "
         "FROM catalogue ORDER BY id DESC"
     )
     items = [
@@ -3871,6 +3935,8 @@ def admin_catalogue():
             "price": float(r[3]) if r[3] is not None else 0.0,
             "image_url": r[4],
             "status": r[5] or "available",
+            "category": r[6] or "",
+            "slug": r[7] or "",
         }
         for r in rows
     ]
@@ -3881,7 +3947,8 @@ def admin_catalogue():
 @login_required
 @admin_required
 def admin_catalogue_new():
-    return render_template("catalogue_edit.html", item=None, gallery=[])
+    return render_template("catalogue_edit.html", item=None, gallery=[],
+                           existing_categories=_existing_categories())
 
 
 @app.route("/admin/catalogue/new", methods=["POST"])
@@ -3891,6 +3958,9 @@ def admin_catalogue_create():
     title = (request.form.get("title") or "").strip()
     description = (request.form.get("description") or "").strip()
     price_raw = (request.form.get("price") or "").strip()
+    category_raw = (request.form.get("category") or "").strip()
+    slug_raw = (request.form.get("slug") or "").strip()
+
     if not title:
         flash("Title is required.", "danger")
         return redirect(url_for("admin_catalogue_new"))
@@ -3900,6 +3970,19 @@ def admin_catalogue_create():
         flash("Price must be a number.", "danger")
         return redirect(url_for("admin_catalogue_new"))
 
+    category = slugify(category_raw) or None
+    slug = slugify(slug_raw) or (slugify(title) if category else None)
+
+    # If category is set, slug is required (make sure it's unique in that category)
+    if category and slug:
+        existing = query_one(
+            "SELECT id FROM catalogue WHERE category = %s AND slug = %s",
+            (category, slug),
+        )
+        if existing:
+            flash(f"The URL /catalogue/{category}/{slug} is already in use.", "danger")
+            return redirect(url_for("admin_catalogue_new"))
+
     # Primary image (optional)
     primary_url = None
     primary_file = request.files.get("primary_image")
@@ -3907,9 +3990,9 @@ def admin_catalogue_create():
         primary_url = save_catalogue_image(primary_file)
 
     new_id = execute(
-        "INSERT INTO catalogue (title, description, price, image_url, status) "
-        "VALUES (%s, %s, %s, %s, 'available')",
-        (title, description, price, primary_url),
+        "INSERT INTO catalogue (title, description, price, image_url, status, category, slug) "
+        "VALUES (%s, %s, %s, %s, 'available', %s, %s)",
+        (title, description, price, primary_url, category, slug),
     )
 
     # Gallery images (optional, multiple)
@@ -3933,7 +4016,7 @@ def admin_catalogue_create():
 @admin_required
 def admin_catalogue_edit(item_id):
     row = query_one(
-        "SELECT id, title, description, price, image_url, status "
+        "SELECT id, title, description, price, image_url, status, category, slug "
         "FROM catalogue WHERE id = %s",
         (item_id,),
     )
@@ -3945,9 +4028,12 @@ def admin_catalogue_edit(item_id):
         "price": float(row[3]) if row[3] is not None else 0.0,
         "image_url": row[4],
         "status": row[5] or "available",
+        "category": row[6] or "",
+        "slug": row[7] or "",
     }
     gallery = _fetch_catalogue_gallery(item_id)
-    return render_template("catalogue_edit.html", item=item, gallery=gallery)
+    return render_template("catalogue_edit.html", item=item, gallery=gallery,
+                           existing_categories=_existing_categories())
 
 
 @app.route("/admin/catalogue/<int:item_id>/save", methods=["POST"])
@@ -3962,6 +4048,9 @@ def admin_catalogue_save(item_id):
     title = (request.form.get("title") or "").strip()
     description = (request.form.get("description") or "").strip()
     price_raw = (request.form.get("price") or "").strip()
+    category_raw = (request.form.get("category") or "").strip()
+    slug_raw = (request.form.get("slug") or "").strip()
+
     if not title:
         flash("Title is required.", "danger")
         return redirect(url_for("admin_catalogue_edit", item_id=item_id))
@@ -3970,6 +4059,19 @@ def admin_catalogue_save(item_id):
     except ValueError:
         flash("Price must be a number.", "danger")
         return redirect(url_for("admin_catalogue_edit", item_id=item_id))
+
+    category = slugify(category_raw) or None
+    slug = slugify(slug_raw) or (slugify(title) if category else None)
+
+    # Uniqueness check (ignore the item itself)
+    if category and slug:
+        clash = query_one(
+            "SELECT id FROM catalogue WHERE category = %s AND slug = %s AND id != %s",
+            (category, slug, item_id),
+        )
+        if clash:
+            flash(f"The URL /catalogue/{category}/{slug} is already in use.", "danger")
+            return redirect(url_for("admin_catalogue_edit", item_id=item_id))
 
     # Optional replacement of primary image
     primary_url = existing[0]
@@ -3980,9 +4082,9 @@ def admin_catalogue_save(item_id):
             primary_url = new_url
 
     execute(
-        "UPDATE catalogue SET title = %s, description = %s, price = %s, image_url = %s "
-        "WHERE id = %s",
-        (title, description, price, primary_url, item_id),
+        "UPDATE catalogue SET title = %s, description = %s, price = %s, image_url = %s, "
+        "category = %s, slug = %s WHERE id = %s",
+        (title, description, price, primary_url, category, slug, item_id),
     )
 
     # Append any new gallery images

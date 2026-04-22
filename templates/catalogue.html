@@ -14,11 +14,15 @@
         {% for item in catalogue_items %}
             {% set is_sold = (item[5] or 'available') == 'sold' %}
             {% set item_gallery = galleries.get(item[0], []) if galleries is defined else [] %}
+            {% set item_category = item[6] if item|length > 6 else None %}
+            {% set item_slug = item[7] if item|length > 7 else None %}
+            {% set detail_url = url_for('catalogue_item_detail', category=item_category, slug=item_slug) if (item_category and item_slug) else None %}
             <div class="catalogue-item position-relative{% if is_sold %} opacity-75{% endif %}">
                 {% if is_sold %}
                 <span class="badge bg-danger position-absolute"
                       style="top:10px; right:10px; font-size:0.95rem; z-index:2;">SOLD</span>
                 {% endif %}
+                {% if detail_url %}<a href="{{ detail_url }}" class="text-decoration-none text-dark">{% endif %}
                 {% if item[4] %}
                 <img src="{{ catalogue_img_url(item[4]) }}" alt="{{ item[1] }}">
                 {% else %}
@@ -26,6 +30,7 @@
                     <span class="text-muted">No image</span>
                 </div>
                 {% endif %}
+                {% if detail_url %}</a>{% endif %}
                 {% if item_gallery %}
                 <div class="d-flex gap-1 mt-2 flex-wrap">
                     {% for g_url in item_gallery %}
@@ -35,7 +40,14 @@
                     {% endfor %}
                 </div>
                 {% endif %}
-                <h5 class="mt-3 mb-2">{{ item[1] }}</h5>
+                <h5 class="mt-3 mb-2">
+                    {% if detail_url %}
+                    <a href="{{ detail_url }}" class="text-decoration-none text-dark">{{ item[1] }}</a>
+                    {% else %}{{ item[1] }}{% endif %}
+                </h5>
+                {% if item_category %}
+                <p class="text-muted small text-uppercase mb-1">{{ item_category }}</p>
+                {% endif %}
                 <p class="text-primary fw-bold mb-2">{{ currency_symbol }}{{ "%.2f"|format(convert_catalogue_price(item[3] or 0, active_currency) or 0) }}</p>
                 {% if item[2] %}
                 <p class="small text-muted mb-3">{{ item[2][:100] }}{% if item[2]|length > 100 %}...{% endif %}</p>
