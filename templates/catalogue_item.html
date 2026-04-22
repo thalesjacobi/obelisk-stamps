@@ -6,8 +6,68 @@
 {% block og_description %}{{ (item.description or item.title)[:160] }}{% endblock %}
 {% block og_image %}{{ catalogue_img_url(item.image_url) }}{% endblock %}
 
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/photoswipe/photoswipe.css') }}">
+<style>
+  .product-hero {
+    background: #f8f9fa;
+    border-radius: 8px;
+    overflow: hidden;
+    display: block;
+    cursor: zoom-in;
+  }
+  .product-hero img { width: 100%; height: auto; max-height: 560px; object-fit: contain; display: block; }
+  .thumb-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .thumb-strip .thumb {
+    width: 78px; height: 78px; border: 2px solid #e9ecef; border-radius: 6px;
+    overflow: hidden; cursor: pointer; background: #f8f9fa; transition: border-color .15s;
+  }
+  .thumb-strip .thumb.active, .thumb-strip .thumb:hover { border-color: #0d6efd; }
+  .thumb-strip .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .buy-box {
+    border: 1px solid #e9ecef; border-radius: 8px; padding: 20px;
+    background: #fff;
+  }
+  .price-block { border-bottom: 1px solid #eee; padding-bottom: 14px; margin-bottom: 14px; }
+  .price-main { font-size: 1.9rem; font-weight: 700; color: #0d6efd; line-height: 1; }
+  .scarcity {
+    background: #fff4e5; color: #8a4b00; padding: 8px 12px; border-radius: 6px;
+    font-size: 0.875rem; border-left: 3px solid #ff9800; margin-bottom: 14px;
+  }
+  .key-features { list-style: none; padding-left: 0; margin-bottom: 16px; }
+  .key-features li { padding: 4px 0; font-size: 0.92rem; }
+  .key-features li::before { content: "✓"; color: #198754; font-weight: bold; margin-right: 8px; }
+  .delivery-block {
+    background: #e8f5e9; color: #1b5e20; padding: 10px 12px; border-radius: 6px;
+    font-size: 0.88rem; margin-bottom: 14px;
+  }
+  .delivery-block strong { color: #0d4a14; }
+  .specs-table { width: 100%; margin-top: 8px; }
+  .specs-table th {
+    background: #f8f9fa; color: #495057; font-weight: 600; font-size: 0.88rem;
+    padding: 10px 14px; width: 35%; border-top: 1px solid #dee2e6;
+  }
+  .specs-table td {
+    padding: 10px 14px; font-size: 0.92rem; border-top: 1px solid #dee2e6;
+  }
+  .related-card { transition: transform .15s; }
+  .related-card:hover { transform: translateY(-3px); }
+  @media (min-width: 992px) {
+    .sticky-buy-box { position: sticky; top: 90px; }
+  }
+</style>
+<script type="application/ld+json">{{ json_ld | safe }}</script>
+{% endblock %}
+
 {% block content %}
 <div class="container py-4">
+
+    {% if item.is_public is defined and not item.is_public %}
+    <div class="alert alert-warning py-2 small mb-3">
+        <strong>Preview:</strong> this item is <strong>private</strong> and not visible on the public catalogue.
+    </div>
+    {% endif %}
+
     <nav aria-label="breadcrumb" class="mb-3">
         <ol class="breadcrumb small">
             <li class="breadcrumb-item"><a href="{{ url_for('catalogue') }}">Catalogue</a></li>
@@ -19,80 +79,210 @@
     </nav>
 
     <div class="row g-4">
-        <div class="col-md-7">
-            <div class="position-relative">
+        <!-- GALLERY -->
+        <div class="col-lg-7">
+            {% set all_images = ([item.image_url] if item.image_url else []) + gallery %}
+            {% if all_images %}
+            <a id="hero-link" href="{{ catalogue_img_url(all_images[0]) }}"
+               class="product-hero d-block position-relative"
+               data-pswp-width="1600" data-pswp-height="1200">
                 {% if item.status == 'sold' %}
                 <span class="badge bg-danger position-absolute"
-                      style="top:12px; right:12px; font-size:1rem; z-index:2;">SOLD</span>
+                      style="top:14px; right:14px; font-size:1rem; z-index:2;">SOLD</span>
                 {% endif %}
-                {% if item.image_url %}
-                <img id="main-product-image"
-                     src="{{ catalogue_img_url(item.image_url) }}"
-                     alt="{{ item.title }}"
-                     class="img-fluid rounded border w-100"
-                     style="object-fit:contain; background:#f8f9fa; max-height:500px;">
-                {% else %}
-                <div class="bg-light d-flex align-items-center justify-content-center rounded border"
-                     style="height:400px;">
-                    <span class="text-muted">No image</span>
-                </div>
-                {% endif %}
-            </div>
-
-            {% if gallery %}
-            <div class="d-flex gap-2 mt-3 flex-wrap">
-                {% if item.image_url %}
-                <img src="{{ catalogue_img_url(item.image_url) }}" alt=""
-                     class="thumb-img border rounded"
-                     style="width:80px; height:80px; object-fit:cover; cursor:pointer;"
-                     onclick="document.getElementById('main-product-image').src = this.src;">
-                {% endif %}
-                {% for g in gallery %}
-                <img src="{{ catalogue_img_url(g) }}" alt=""
-                     class="thumb-img border rounded"
-                     style="width:80px; height:80px; object-fit:cover; cursor:pointer;"
-                     onclick="document.getElementById('main-product-image').src = this.src;">
+                <img id="hero-img" src="{{ catalogue_img_url(all_images[0]) }}" alt="{{ item.title }}">
+            </a>
+            <div class="thumb-strip" id="pswp-gallery">
+                {% for img in all_images %}
+                <a href="{{ catalogue_img_url(img) }}"
+                   class="thumb {% if loop.index0 == 0 %}active{% endif %}"
+                   data-pswp-width="1600" data-pswp-height="1200"
+                   data-index="{{ loop.index0 }}">
+                    <img src="{{ catalogue_img_url(img) }}" alt="">
+                </a>
                 {% endfor %}
+            </div>
+            {% else %}
+            <div class="product-hero">
+                <span class="text-muted">No image available</span>
             </div>
             {% endif %}
         </div>
 
-        <div class="col-md-5">
-            <h1 class="h3 mb-2">{{ item.title }}</h1>
-            {% if item.category %}
-            <p class="text-muted small text-uppercase mb-3">{{ item.category }}</p>
-            {% endif %}
-            <p class="h4 text-primary fw-bold mb-3">
-                {{ currency_symbol }}{{ "%.2f"|format(convert_catalogue_price(item.price or 0, active_currency) or 0) }}
-            </p>
+        <!-- BUY BOX -->
+        <div class="col-lg-5">
+            <div class="sticky-buy-box">
+                <div class="buy-box">
+                    <h1 class="h4 mb-1">{{ item.title }}</h1>
+                    {% if item.category %}
+                    <p class="text-muted small text-uppercase mb-3">{{ item.category }}</p>
+                    {% endif %}
 
-            {% if item.description %}
-            <div class="mb-4" style="white-space: pre-line;">{{ item.description }}</div>
-            {% endif %}
+                    <div class="price-block">
+                        <div class="price-main">
+                            {{ currency_symbol }}{{ "%.2f"|format(convert_catalogue_price(item.price or 0, active_currency) or 0) }}
+                        </div>
+                        {% if active_currency != 'GBP' %}
+                        <div class="text-muted small">&pound;{{ "%.2f"|format(item.price or 0) }} GBP</div>
+                        {% endif %}
+                        <div class="text-muted small mt-1">Includes VAT where applicable</div>
+                    </div>
 
-            <div class="d-grid gap-2 mb-4">
-                {% if item.status == 'sold' %}
-                <button class="btn btn-secondary btn-lg" disabled>Sold</button>
-                {% elif current_user.is_authenticated %}
-                <button class="btn btn-primary btn-lg add-to-cart-btn" data-catalogue-id="{{ item.id }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="me-2" viewBox="0 0 16 16">
-                        <path d="M.5 1a.5.5 0 0 0 0 1h1.11l.401 1.607 1.498 7.985A.5.5 0 0 0 4 12h1a2 2 0 1 0 0 4 2 2 0 0 0 0-4h7a2 2 0 1 0 0 4 2 2 0 0 0 0-4h1a.5.5 0 0 0 .491-.408l1.5-8A.5.5 0 0 0 14.5 3H2.89l-.405-1.621A.5.5 0 0 0 2 1H.5zm3.915 10L3.102 4h10.796l-1.313 7h-8.17zM6 14a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm7 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
-                    </svg>
-                    Add to Cart
-                </button>
-                {% else %}
-                <a href="{{ url_for('login', next=request.path) }}" class="btn btn-outline-primary btn-lg">Login to Purchase</a>
-                {% endif %}
-                <a href="{{ url_for('catalogue') }}" class="btn btn-outline-secondary">&larr; Back to catalogue</a>
+                    {% if item.status != 'sold' %}
+                    <div class="scarcity">
+                        <strong>One-of-a-kind piece.</strong>
+                        Once this frame is sold, it's gone forever — each Obelisk frame is unique.
+                    </div>
+                    {% endif %}
+
+                    {% if specs %}
+                    <ul class="key-features">
+                        {% for s in specs[:5] %}
+                        <li><strong>{{ s.label }}:</strong> {{ s.value }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+
+                    {% if item.status != 'sold' %}
+                    <div class="delivery-block">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16" style="margin-top:-2px;">
+                            <path d="M0 3.5A1.5 1.5 0 0 1 1.5 2h9A1.5 1.5 0 0 1 12 3.5V5h1.02a1.5 1.5 0 0 1 1.17.563l1.481 1.85a1.5 1.5 0 0 1 .329.938V10.5a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 1 1-4 0H5a2 2 0 1 1-3.998-.085A1.5 1.5 0 0 1 0 10.5v-7zm1.294 7.456A2 2 0 0 1 4.732 11h5.536a2 2 0 0 1 .732-.732V3.5a.5.5 0 0 0-.5-.5h-9a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .294.456zM12 10a2 2 0 0 1 1.732 1h.768a.5.5 0 0 0 .5-.5V8.35a.5.5 0 0 0-.11-.312l-1.48-1.85A.5.5 0 0 0 13.02 6H12v4zm-9 1a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm9 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/>
+                        </svg>
+                        Order today — estimated delivery by <strong>{{ delivery_eta }}</strong>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-grid gap-2 mb-3">
+                        {% if item.status == 'sold' %}
+                        <button class="btn btn-secondary btn-lg" disabled>Sold</button>
+                        {% elif current_user.is_authenticated %}
+                        <button class="btn btn-primary btn-lg add-to-cart-btn" data-catalogue-id="{{ item.id }}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="me-2" viewBox="0 0 16 16">
+                                <path d="M.5 1a.5.5 0 0 0 0 1h1.11l.401 1.607 1.498 7.985A.5.5 0 0 0 4 12h1a2 2 0 1 0 0 4 2 2 0 0 0 0-4h7a2 2 0 1 0 0 4 2 2 0 0 0 0-4h1a.5.5 0 0 0 .491-.408l1.5-8A.5.5 0 0 0 14.5 3H2.89l-.405-1.621A.5.5 0 0 0 2 1H.5zm3.915 10L3.102 4h10.796l-1.313 7h-8.17zM6 14a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm7 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+                            </svg>
+                            Add to Cart
+                        </button>
+                        {% else %}
+                        <a href="{{ url_for('login', next=request.path) }}" class="btn btn-outline-primary btn-lg">Login to Purchase</a>
+                        {% endif %}
+                    </div>
+
+                    <div class="d-flex justify-content-between small text-muted">
+                        <span>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="me-1" viewBox="0 0 16 16">
+                                <path d="M5.338 1.59a61.44 61.44 0 0 0-2.837.856.481.481 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.725 10.725 0 0 0 2.287 2.233c.346.244.652.42.893.533.12.057.218.095.293.118a.55.55 0 0 0 .101.025.615.615 0 0 0 .1-.025c.076-.023.174-.061.294-.118.24-.113.547-.29.893-.533a10.726 10.726 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524z"/>
+                            </svg>
+                            Secure checkout
+                        </span>
+                        <span>14-day returns</span>
+                        <span>Authentic stamps</span>
+                    </div>
+                </div>
             </div>
+        </div>
+    </div>
 
+    <!-- DESCRIPTION & SPECS -->
+    <div class="row g-4 mt-4">
+        <div class="col-lg-7">
+            {% if item.description %}
+            <h2 class="h5 mb-3">About this piece</h2>
+            <div style="white-space: pre-line; line-height: 1.7;">{{ item.description }}</div>
+            {% endif %}
+
+            {% if specs %}
+            <h2 class="h5 mt-4 mb-3">Item details</h2>
+            <table class="specs-table">
+                <tbody>
+                    {% for s in specs %}
+                    <tr>
+                        <th>{{ s.label }}</th>
+                        <td>{{ s.value }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+
+        <div class="col-lg-5">
             {% set trust_variant = "catalogue" %}
             {% include 'partials/_trust_info.html' ignore missing %}
         </div>
     </div>
+
+    <!-- RELATED ITEMS -->
+    {% if related %}
+    <div class="mt-5">
+        <h2 class="h5 mb-3">More from {{ item.category }}</h2>
+        <div class="row g-3">
+            {% for r in related %}
+            <div class="col-6 col-md-3">
+                <a href="{{ url_for('catalogue_item_detail', category=r.category, slug=r.slug) }}"
+                   class="text-decoration-none text-dark">
+                    <div class="card h-100 related-card">
+                        <div class="bg-light text-center" style="height:160px;">
+                            {% if r.image_url %}
+                            <img src="{{ catalogue_img_url(r.image_url) }}" alt="{{ r.title }}"
+                                 class="img-fluid h-100" style="object-fit: contain;">
+                            {% else %}
+                            <div class="d-flex align-items-center justify-content-center h-100">
+                                <span class="text-muted small">No image</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="card-body p-2">
+                            <div class="small fw-semibold text-truncate">{{ r.title }}</div>
+                            <div class="text-primary fw-bold small">
+                                {{ currency_symbol }}{{ "%.2f"|format(convert_catalogue_price(r.price or 0, active_currency) or 0) }}
+                            </div>
+                            {% if r.status == 'sold' %}
+                            <span class="badge bg-danger small">SOLD</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 
-{% block scripts %}
+<script type="module">
+    import PhotoSwipeLightbox from "{{ url_for('static', filename='vendor/photoswipe/photoswipe-lightbox.esm.min.js') }}";
+    const lightbox = new PhotoSwipeLightbox({
+        gallery: '#pswp-gallery',
+        children: 'a.thumb',
+        pswpModule: () => import("{{ url_for('static', filename='vendor/photoswipe/photoswipe.esm.min.js') }}"),
+        wheelToZoom: true,
+    });
+    lightbox.init();
+
+    // Also let the main hero image open the same lightbox at its current index
+    const hero = document.getElementById('hero-link');
+    const heroImg = document.getElementById('hero-img');
+    if (hero) {
+        hero.addEventListener('click', (e) => {
+            e.preventDefault();
+            const active = document.querySelector('#pswp-gallery .thumb.active');
+            const idx = active ? parseInt(active.dataset.index) || 0 : 0;
+            lightbox.loadAndOpen(idx);
+        });
+    }
+
+    // Thumbnail click swaps the hero image (preview), without opening the lightbox
+    document.querySelectorAll('#pswp-gallery .thumb').forEach((el) => {
+        el.addEventListener('click', (e) => {
+            // Let PhotoSwipe's own handler open the lightbox.
+            // Also swap the hero preview so closing lightbox lands on the chosen image.
+            document.querySelectorAll('#pswp-gallery .thumb').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+            if (heroImg) heroImg.src = el.querySelector('img').src;
+        });
+    });
+</script>
+
 <script>
 document.querySelectorAll('.add-to-cart-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
@@ -125,5 +315,4 @@ document.querySelectorAll('.add-to-cart-btn').forEach(function(btn) {
     });
 });
 </script>
-{% endblock %}
 {% endblock %}

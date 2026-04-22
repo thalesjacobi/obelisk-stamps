@@ -2250,7 +2250,7 @@ def fetch_follower_counts():
 def home():
     catalogue_items = query_all(
         "SELECT id, title, description, price, image_url, status, category, slug "
-        "FROM catalogue ORDER BY id DESC"
+        "FROM catalogue WHERE is_public = 1 ORDER BY id DESC"
     )
     currency = get_active_currency()
     return render_template("home.html", catalogue_items=catalogue_items, user_currency=currency)
@@ -2327,7 +2327,7 @@ def article_view(slug):
 def catalogue():
     catalogue_items = query_all(
         "SELECT id, title, description, price, image_url, status, category, slug "
-        "FROM catalogue ORDER BY id DESC"
+        "FROM catalogue WHERE is_public = 1 ORDER BY id DESC"
     )
     # Fetch gallery images for all items in one query
     galleries = {}
@@ -2353,9 +2353,12 @@ def catalogue():
 @app.route("/catalogue/<category>/<slug>")
 def catalogue_item_detail(category, slug):
     """SEO-friendly detail page for a single catalogue item."""
+    # Admins can preview private items; public visitors get 404
+    is_admin_user = hasattr(current_user, "is_authenticated") and current_user.is_authenticated and is_admin()
+    visibility_clause = "" if is_admin_user else " AND is_public = 1"
     row = query_one(
-        "SELECT id, title, description, price, image_url, status, category, slug "
-        "FROM catalogue WHERE category = %s AND slug = %s",
+        "SELECT id, title, description, price, image_url, status, category, slug, is_public "
+        "FROM catalogue WHERE category = %s AND slug = %s" + visibility_clause,
         (category, slug),
     )
     if not row:
@@ -2369,6 +2372,7 @@ def catalogue_item_detail(category, slug):
         "status": row[5] or "available",
         "category": row[6] or "",
         "slug": row[7] or "",
+        "is_public": bool(row[8]) if len(row) > 8 else True,
     }
     gallery = query_all(
         "SELECT image_url FROM catalogue_images "
@@ -2376,11 +2380,65 @@ def catalogue_item_detail(category, slug):
         (item["id"],),
     )
     gallery_urls = [g[0] for g in gallery]
+    specs = _fetch_catalogue_specs(item["id"])
+
+    # Related items: same category, public, not this one, not sold, up to 4
+    related = []
+    if item.get("category"):
+        related_rows = query_all(
+            "SELECT id, title, price, image_url, status, category, slug "
+            "FROM catalogue WHERE category = %s AND id != %s "
+            "AND is_public = 1 ORDER BY id DESC LIMIT 4",
+            (item["category"], item["id"]),
+        )
+        related = [
+            {
+                "id": r[0], "title": r[1],
+                "price": float(r[2]) if r[2] is not None else 0.0,
+                "image_url": r[3],
+                "status": r[4] or "available",
+                "category": r[5] or "",
+                "slug": r[6] or "",
+            }
+            for r in related_rows
+        ]
+
+    # Delivery ETA: ~3 business days from now
+    eta = _next_business_day(days=3)
+    delivery_eta = eta.strftime("%A, %d %B").replace(" 0", " ")
+
+    # JSON-LD Product schema for search engines
+    product_url = (SITE_URL or "") + request.path
+    json_ld = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": item["title"],
+        "description": (item["description"] or item["title"])[:500],
+        "sku": f"stamp-{item['id']}",
+        "category": item["category"] or "Framed stamps",
+        "image": [catalogue_img_url(item["image_url"])] + [catalogue_img_url(u) for u in gallery_urls] if item["image_url"] else [catalogue_img_url(u) for u in gallery_urls],
+        "brand": {"@type": "Brand", "name": "Obelisk Stamps"},
+        "offers": {
+            "@type": "Offer",
+            "url": product_url,
+            "priceCurrency": "GBP",
+            "price": f"{item['price']:.2f}",
+            "availability": "https://schema.org/InStock" if item["status"] != "sold" else "https://schema.org/SoldOut",
+            "itemCondition": "https://schema.org/NewCondition",
+        },
+    }
+
     if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
         log_activity(current_user.id, "page_view",
                      f"Viewed catalogue item: {item['title']}",
                      {"page": request.path, "catalogue_id": item["id"]})
-    return render_template("catalogue_item.html", item=item, gallery=gallery_urls)
+    return render_template("catalogue_item.html",
+                           item=item,
+                           gallery=gallery_urls,
+                           specs=specs,
+                           related=related,
+                           delivery_eta=delivery_eta,
+                           json_ld=json.dumps(json_ld))
 
 
 def _template_exists(name: str) -> bool:
@@ -3911,6 +3969,43 @@ def _fetch_catalogue_gallery(catalogue_id):
     return [{"id": r[0], "image_url": r[1]} for r in rows]
 
 
+def _fetch_catalogue_specs(catalogue_id):
+    """Return list of {label, value} specs for a catalogue item."""
+    rows = query_all(
+        "SELECT label, value FROM catalogue_specs "
+        "WHERE catalogue_id = %s ORDER BY sort_order, id",
+        (catalogue_id,),
+    )
+    return [{"label": r[0], "value": r[1]} for r in rows]
+
+
+def _replace_catalogue_specs(catalogue_id, labels, values):
+    """Replace all specs for a catalogue item with the provided (label, value) pairs."""
+    execute("DELETE FROM catalogue_specs WHERE catalogue_id = %s", (catalogue_id,))
+    order = 0
+    for lbl, val in zip(labels or [], values or []):
+        lbl = (lbl or "").strip()[:100]
+        val = (val or "").strip()[:500]
+        if lbl and val:
+            execute(
+                "INSERT INTO catalogue_specs (catalogue_id, label, value, sort_order) "
+                "VALUES (%s, %s, %s, %s)",
+                (catalogue_id, lbl, val, order),
+            )
+            order += 1
+
+
+def _next_business_day(start=None, days=3):
+    """Return a date `days` business days in the future (skipping Sat/Sun)."""
+    d = start or datetime.utcnow()
+    added = 0
+    while added < days:
+        d += timedelta(days=1)
+        if d.weekday() < 5:  # 0=Mon .. 4=Fri
+            added += 1
+    return d
+
+
 def _existing_categories():
     """List distinct non-empty categories, for the admin datalist."""
     rows = query_all(
@@ -3926,7 +4021,7 @@ def _existing_categories():
 def admin_catalogue():
     """List all catalogue items with status and image."""
     rows = query_all(
-        "SELECT id, title, description, price, image_url, status, category, slug "
+        "SELECT id, title, description, price, image_url, status, category, slug, is_public "
         "FROM catalogue ORDER BY id DESC"
     )
     items = [
@@ -3937,6 +4032,7 @@ def admin_catalogue():
             "status": r[5] or "available",
             "category": r[6] or "",
             "slug": r[7] or "",
+            "is_public": bool(r[8]) if len(r) > 8 else True,
         }
         for r in rows
     ]
@@ -3947,7 +4043,7 @@ def admin_catalogue():
 @login_required
 @admin_required
 def admin_catalogue_new():
-    return render_template("catalogue_edit.html", item=None, gallery=[],
+    return render_template("catalogue_edit.html", item=None, gallery=[], specs=[],
                            existing_categories=_existing_categories())
 
 
@@ -3989,10 +4085,12 @@ def admin_catalogue_create():
     if primary_file and primary_file.filename:
         primary_url = save_catalogue_image(primary_file)
 
+    is_public = 1 if request.form.get("is_public") in ("1", "on", "true") else 0
+
     new_id = execute(
-        "INSERT INTO catalogue (title, description, price, image_url, status, category, slug) "
-        "VALUES (%s, %s, %s, %s, 'available', %s, %s)",
-        (title, description, price, primary_url, category, slug),
+        "INSERT INTO catalogue (title, description, price, image_url, status, category, slug, is_public) "
+        "VALUES (%s, %s, %s, %s, 'available', %s, %s, %s)",
+        (title, description, price, primary_url, category, slug, is_public),
     )
 
     # Gallery images (optional, multiple)
@@ -4007,6 +4105,11 @@ def admin_catalogue_create():
                     (new_id, url, idx),
                 )
 
+    # Specs (key/value pairs)
+    spec_labels = request.form.getlist("spec_label[]")
+    spec_values = request.form.getlist("spec_value[]")
+    _replace_catalogue_specs(new_id, spec_labels, spec_values)
+
     flash("Catalogue item created.", "success")
     return redirect(url_for("admin_catalogue_edit", item_id=new_id))
 
@@ -4016,7 +4119,7 @@ def admin_catalogue_create():
 @admin_required
 def admin_catalogue_edit(item_id):
     row = query_one(
-        "SELECT id, title, description, price, image_url, status, category, slug "
+        "SELECT id, title, description, price, image_url, status, category, slug, is_public "
         "FROM catalogue WHERE id = %s",
         (item_id,),
     )
@@ -4030,9 +4133,11 @@ def admin_catalogue_edit(item_id):
         "status": row[5] or "available",
         "category": row[6] or "",
         "slug": row[7] or "",
+        "is_public": bool(row[8]) if len(row) > 8 else True,
     }
     gallery = _fetch_catalogue_gallery(item_id)
-    return render_template("catalogue_edit.html", item=item, gallery=gallery,
+    specs = _fetch_catalogue_specs(item_id)
+    return render_template("catalogue_edit.html", item=item, gallery=gallery, specs=specs,
                            existing_categories=_existing_categories())
 
 
@@ -4081,11 +4186,18 @@ def admin_catalogue_save(item_id):
         if new_url:
             primary_url = new_url
 
+    is_public = 1 if request.form.get("is_public") in ("1", "on", "true") else 0
+
     execute(
         "UPDATE catalogue SET title = %s, description = %s, price = %s, image_url = %s, "
-        "category = %s, slug = %s WHERE id = %s",
-        (title, description, price, primary_url, category, slug, item_id),
+        "category = %s, slug = %s, is_public = %s WHERE id = %s",
+        (title, description, price, primary_url, category, slug, is_public, item_id),
     )
+
+    # Replace specs with the submitted set (simple and atomic)
+    spec_labels = request.form.getlist("spec_label[]")
+    spec_values = request.form.getlist("spec_value[]")
+    _replace_catalogue_specs(item_id, spec_labels, spec_values)
 
     # Append any new gallery images
     gallery_files = request.files.getlist("gallery_images")
@@ -4120,6 +4232,24 @@ def admin_catalogue_delete(item_id):
     except Exception as e:
         flash(f"Could not delete: {e}", "danger")
     return redirect(url_for("admin_catalogue"))
+
+
+@app.route("/admin/catalogue/<int:item_id>/publish", methods=["POST"])
+@login_required
+@admin_required
+def admin_catalogue_publish(item_id):
+    execute("UPDATE catalogue SET is_public = 1 WHERE id = %s", (item_id,))
+    flash("Item is now public.", "success")
+    return redirect(request.referrer or url_for("admin_catalogue"))
+
+
+@app.route("/admin/catalogue/<int:item_id>/unpublish", methods=["POST"])
+@login_required
+@admin_required
+def admin_catalogue_unpublish(item_id):
+    execute("UPDATE catalogue SET is_public = 0 WHERE id = %s", (item_id,))
+    flash("Item is now private (hidden from the public catalogue).", "success")
+    return redirect(request.referrer or url_for("admin_catalogue"))
 
 
 @app.route("/admin/catalogue/<int:item_id>/mark-sold", methods=["POST"])

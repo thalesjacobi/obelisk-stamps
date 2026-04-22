@@ -524,9 +524,21 @@
                             {% else %}
                                 <span class="badge bg-success">Available</span>
                             {% endif %}
+                            {% if not item.is_public %}
+                                <span class="badge bg-secondary">Private</span>
+                            {% endif %}
                         </td>
                         <td class="text-end">
                             <a href="/admin/catalogue/{{ item.id }}/edit" class="btn btn-outline-secondary btn-sm">Edit</a>
+                            {% if item.is_public %}
+                            <form method="POST" action="/admin/catalogue/{{ item.id }}/unpublish" class="d-inline">
+                                <button type="submit" class="btn btn-outline-secondary btn-sm" title="Hide from public catalogue">Make Private</button>
+                            </form>
+                            {% else %}
+                            <form method="POST" action="/admin/catalogue/{{ item.id }}/publish" class="d-inline">
+                                <button type="submit" class="btn btn-outline-primary btn-sm" title="Show on public catalogue">Make Public</button>
+                            </form>
+                            {% endif %}
                             {% if item.status == 'sold' %}
                             <form method="POST" action="/admin/catalogue/{{ item.id }}/mark-available" class="d-inline">
                                 <button type="submit" class="btn btn-outline-success btn-sm">Mark Available</button>

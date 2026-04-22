@@ -29,6 +29,15 @@
                    value="{{ item.title if item else '' }}">
         </div>
 
+        <div class="mb-3 form-check">
+            <input type="checkbox" class="form-check-input" id="field-is-public" name="is_public" value="1"
+                   {% if item is none or item.is_public %}checked{% endif %}>
+            <label class="form-check-label" for="field-is-public">
+                Public — show this item on the public catalogue
+            </label>
+            <div class="small text-muted">Uncheck to keep it as a draft, hidden from visitors. Admins can still preview it.</div>
+        </div>
+
         <div class="mb-3">
             <label class="form-label">Description</label>
             <textarea name="description" class="form-control" rows="4">{{ item.description if item else '' }}</textarea>
@@ -73,6 +82,51 @@
                 URL preview:
                 <code id="url-preview" class="text-primary">/catalogue/&lt;category&gt;/&lt;slug&gt;</code>
             </small>
+        </div>
+
+        <hr>
+
+        <div class="mb-3">
+            <label class="form-label d-flex justify-content-between align-items-center">
+                <span>Item specs (key / value pairs)</span>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="addSpecRow()">+ Add row</button>
+            </label>
+            <small class="text-muted d-block mb-2">
+                Shown on the product page as a structured details table. Good examples:
+                <code>Dimensions</code>, <code>Stamps</code>, <code>Era</code>, <code>Origin</code>, <code>Frame</code>, <code>Theme</code>.
+            </small>
+            <div id="specs-list">
+                {% for s in specs %}
+                <div class="row g-2 mb-2 spec-row">
+                    <div class="col-md-4">
+                        <input type="text" name="spec_label[]" class="form-control form-control-sm"
+                               placeholder="Label (e.g. Dimensions)" value="{{ s.label }}">
+                    </div>
+                    <div class="col-md-7">
+                        <input type="text" name="spec_value[]" class="form-control form-control-sm"
+                               placeholder="Value (e.g. 23 × 6 cm)" value="{{ s.value }}">
+                    </div>
+                    <div class="col-md-1">
+                        <button type="button" class="btn btn-sm btn-outline-danger w-100"
+                                onclick="this.closest('.spec-row').remove()">&times;</button>
+                    </div>
+                </div>
+                {% endfor %}
+                {% if not specs %}
+                <div class="row g-2 mb-2 spec-row">
+                    <div class="col-md-4">
+                        <input type="text" name="spec_label[]" class="form-control form-control-sm" placeholder="Label">
+                    </div>
+                    <div class="col-md-7">
+                        <input type="text" name="spec_value[]" class="form-control form-control-sm" placeholder="Value">
+                    </div>
+                    <div class="col-md-1">
+                        <button type="button" class="btn btn-sm btn-outline-danger w-100"
+                                onclick="this.closest('.spec-row').remove()">&times;</button>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
         </div>
 
         <hr>
@@ -124,6 +178,15 @@
             </div>
             {% if item %}
             <div>
+                {% if item.is_public %}
+                <form method="POST" action="/admin/catalogue/{{ item.id }}/unpublish" class="d-inline">
+                    <button type="submit" class="btn btn-outline-secondary">Make Private</button>
+                </form>
+                {% else %}
+                <form method="POST" action="/admin/catalogue/{{ item.id }}/publish" class="d-inline">
+                    <button type="submit" class="btn btn-outline-primary">Make Public</button>
+                </form>
+                {% endif %}
                 {% if item.status == 'sold' %}
                 <form method="POST" action="/admin/catalogue/{{ item.id }}/mark-available" class="d-inline">
                     <button type="submit" class="btn btn-outline-success">Mark as Available</button>
@@ -184,6 +247,18 @@ function slugify(v) {
     }
     updatePreview();
 })();
+
+function addSpecRow() {
+    const list = document.getElementById('specs-list');
+    const row = document.createElement('div');
+    row.className = 'row g-2 mb-2 spec-row';
+    row.innerHTML = `
+        <div class="col-md-4"><input type="text" name="spec_label[]" class="form-control form-control-sm" placeholder="Label"></div>
+        <div class="col-md-7"><input type="text" name="spec_value[]" class="form-control form-control-sm" placeholder="Value"></div>
+        <div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="this.closest('.spec-row').remove()">&times;</button></div>
+    `;
+    list.appendChild(row);
+}
 
 function deleteGalleryImage(imageId, btn) {
     if (!confirm('Remove this image from the gallery?')) return;
