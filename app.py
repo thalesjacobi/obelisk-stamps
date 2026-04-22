@@ -554,6 +554,53 @@ def upload_bytes_to_gcs(data, object_name, content_type=None):
         return None
 
 
+def save_catalogue_image(file_storage) -> Optional[str]:
+    """
+    Save an uploaded catalogue image (werkzeug FileStorage).
+    Uploads to GCS when configured, otherwise falls back to static/uploads/catalogue/.
+    Returns the stored URL/relative-path (or None on failure).
+    """
+    if not file_storage or not file_storage.filename:
+        return None
+    import uuid
+    ext = Path(file_storage.filename).suffix.lower() or ".jpg"
+    # Normalise weird extensions
+    if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
+        ext = ".jpg"
+    fname = f"{uuid.uuid4().hex}{ext}"
+    data = file_storage.read()
+    if not data:
+        return None
+    content_type = file_storage.content_type or "image/jpeg"
+
+    # Try GCS first
+    gcs_url = upload_bytes_to_gcs(data, f"catalogue/{fname}", content_type=content_type)
+    if gcs_url:
+        return gcs_url
+
+    # Fallback: save locally under static/uploads/catalogue/
+    local_dir = Path("static") / "uploads" / "catalogue"
+    local_dir.mkdir(parents=True, exist_ok=True)
+    local_path = local_dir / fname
+    with open(local_path, "wb") as fp:
+        fp.write(data)
+    return f"uploads/catalogue/{fname}"
+
+
+def catalogue_img_url(url):
+    """
+    Resolve a catalogue image URL for the browser.
+    - Full http(s) URLs (GCS, external) → returned unchanged.
+    - Relative paths → served via /static/.
+    """
+    if not url:
+        return ""
+    if url.startswith("http://") or url.startswith("https://") or url.startswith("/"):
+        return url
+    # Relative static path
+    return url_for("static", filename=url)
+
+
 def resolve_image_to_local_path(img_url):
     """
     Given an image URL from the DB (GCS URL, relative path, or /static/ path),
@@ -1194,6 +1241,38 @@ except Exception as e:
     print(f"WARNING: Could not initialise site_settings table: {e}")
 
 
+def init_article_queue_table():
+    execute("""
+        CREATE TABLE IF NOT EXISTS article_queue (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(500) NOT NULL,
+            subtitle VARCHAR(500),
+            description TEXT,
+            target_date DATE NOT NULL,
+            status ENUM('pending','accepted','generating','ready','failed','rejected') DEFAULT 'pending',
+            article_id INT NULL,
+            generation_error TEXT NULL,
+            batch_id VARCHAR(50) NULL,
+            prompt_used TEXT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_status (status),
+            INDEX idx_target_date (target_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+
+try:
+    init_article_queue_table()
+    # Add prompt_used column if table was created before this column existed
+    try:
+        execute("ALTER TABLE article_queue ADD COLUMN prompt_used TEXT NULL AFTER batch_id")
+        print("article_queue: added prompt_used column")
+    except Exception:
+        pass  # Column already exists
+except Exception as e:
+    print(f"WARNING: Could not initialise article_queue table: {e}")
+
+
 def log_activity(user_id, activity_type, description=None, metadata=None):
     """Log a user activity. Silently fails to avoid disrupting the main flow."""
     try:
@@ -1523,6 +1602,7 @@ def inject_currency_helpers():
         "currency_symbol": CURRENCY_SYMBOLS.get(currency, currency),
         "currency_symbols": CURRENCY_SYMBOLS,
         "convert_catalogue_price": convert_catalogue_price,
+        "catalogue_img_url": catalogue_img_url,
         "is_admin": is_admin(),
         "contact_email": os.getenv("CONTACT_TO_EMAIL", "thalesjacobi@gmail.com"),
         "site_url": SITE_URL,
@@ -2156,7 +2236,9 @@ def fetch_follower_counts():
 # ------------------------------------------------------------
 @app.route("/")
 def home():
-    catalogue_items = query_all("SELECT * FROM catalogue")
+    catalogue_items = query_all(
+        "SELECT id, title, description, price, image_url, status FROM catalogue ORDER BY id DESC"
+    )
     currency = get_active_currency()
     return render_template("home.html", catalogue_items=catalogue_items, user_currency=currency)
 
@@ -2230,11 +2312,28 @@ def article_view(slug):
 
 @app.route("/catalogue")
 def catalogue():
-    catalogue_items = query_all("SELECT * FROM catalogue")
+    catalogue_items = query_all(
+        "SELECT id, title, description, price, image_url, status FROM catalogue ORDER BY id DESC"
+    )
+    # Fetch gallery images for all items in one query
+    galleries = {}
+    if catalogue_items:
+        ids = tuple(item[0] for item in catalogue_items)
+        placeholders = ",".join(["%s"] * len(ids))
+        gallery_rows = query_all(
+            f"SELECT catalogue_id, image_url FROM catalogue_images "
+            f"WHERE catalogue_id IN ({placeholders}) ORDER BY sort_order, id",
+            ids,
+        )
+        for cid, url in gallery_rows:
+            galleries.setdefault(cid, []).append(url)
     currency = get_active_currency()
     if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
         log_activity(current_user.id, "page_view", "Viewed catalogue", {"page": "/catalogue"})
-    return render_template("catalogue.html", catalogue_items=catalogue_items, user_currency=currency)
+    return render_template("catalogue.html",
+                           catalogue_items=catalogue_items,
+                           galleries=galleries,
+                           user_currency=currency)
 
 
 RECAPTCHA_SITE_KEY = "6LdO7nMsAAAAAFfZQbtr3vbztflfcyNA0uYL2opK"
@@ -2867,7 +2966,12 @@ def cart():
 def add_to_cart(catalogue_id):
     """Add item to cart."""
     # Check if item exists in catalogue
-    item = query_one("SELECT id, title FROM catalogue WHERE id = %s", (catalogue_id,))
+    item = query_one("SELECT id, title, status FROM catalogue WHERE id = %s", (catalogue_id,))
+    if item and len(item) >= 3 and (item[2] or "available") == "sold":
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"success": False, "error": "This item has been sold."}), 400
+        flash("This item has already been sold.", "warning")
+        return redirect(request.referrer or url_for("catalogue"))
     if not item:
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return jsonify({"error": "Item not found"}), 404
@@ -3136,6 +3240,12 @@ def _create_order_from_session(session):
                VALUES (%s, %s, %s, %s, %s)""",
             (order_id, catalogue_id, quantity, price, title),
         )
+        # Mark catalogue item as sold (each product is unique, 1 per listing)
+        try:
+            execute("UPDATE catalogue SET status = 'sold' WHERE id = %s", (catalogue_id,))
+        except Exception as _e:
+            # Status column may not yet be present in some envs — don't fail the order
+            print(f"WARN: could not mark catalogue {catalogue_id} as sold: {_e}")
 
     # Clear cart
     execute("DELETE FROM cart_items WHERE user_id = %s", (user_id,))
@@ -3731,6 +3841,212 @@ def admin_article_delete(article_id):
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ------------------------------------------------------------
+# ADMIN — CATALOGUE
+# ------------------------------------------------------------
+def _fetch_catalogue_gallery(catalogue_id):
+    """Return list of {id, image_url} for a catalogue item's gallery images."""
+    rows = query_all(
+        "SELECT id, image_url FROM catalogue_images "
+        "WHERE catalogue_id = %s ORDER BY sort_order, id",
+        (catalogue_id,),
+    )
+    return [{"id": r[0], "image_url": r[1]} for r in rows]
+
+
+@app.route("/admin/catalogue")
+@login_required
+@admin_required
+def admin_catalogue():
+    """List all catalogue items with status and image."""
+    rows = query_all(
+        "SELECT id, title, description, price, image_url, status "
+        "FROM catalogue ORDER BY id DESC"
+    )
+    items = [
+        {
+            "id": r[0], "title": r[1], "description": r[2],
+            "price": float(r[3]) if r[3] is not None else 0.0,
+            "image_url": r[4],
+            "status": r[5] or "available",
+        }
+        for r in rows
+    ]
+    return render_template("admin.html", active_tab="catalogue", catalogue=items)
+
+
+@app.route("/admin/catalogue/new")
+@login_required
+@admin_required
+def admin_catalogue_new():
+    return render_template("catalogue_edit.html", item=None, gallery=[])
+
+
+@app.route("/admin/catalogue/new", methods=["POST"])
+@login_required
+@admin_required
+def admin_catalogue_create():
+    title = (request.form.get("title") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    price_raw = (request.form.get("price") or "").strip()
+    if not title:
+        flash("Title is required.", "danger")
+        return redirect(url_for("admin_catalogue_new"))
+    try:
+        price = float(price_raw) if price_raw else 0.0
+    except ValueError:
+        flash("Price must be a number.", "danger")
+        return redirect(url_for("admin_catalogue_new"))
+
+    # Primary image (optional)
+    primary_url = None
+    primary_file = request.files.get("primary_image")
+    if primary_file and primary_file.filename:
+        primary_url = save_catalogue_image(primary_file)
+
+    new_id = execute(
+        "INSERT INTO catalogue (title, description, price, image_url, status) "
+        "VALUES (%s, %s, %s, %s, 'available')",
+        (title, description, price, primary_url),
+    )
+
+    # Gallery images (optional, multiple)
+    gallery_files = request.files.getlist("gallery_images")
+    for idx, gf in enumerate(gallery_files or []):
+        if gf and gf.filename:
+            url = save_catalogue_image(gf)
+            if url:
+                execute(
+                    "INSERT INTO catalogue_images (catalogue_id, image_url, sort_order) "
+                    "VALUES (%s, %s, %s)",
+                    (new_id, url, idx),
+                )
+
+    flash("Catalogue item created.", "success")
+    return redirect(url_for("admin_catalogue_edit", item_id=new_id))
+
+
+@app.route("/admin/catalogue/<int:item_id>/edit")
+@login_required
+@admin_required
+def admin_catalogue_edit(item_id):
+    row = query_one(
+        "SELECT id, title, description, price, image_url, status "
+        "FROM catalogue WHERE id = %s",
+        (item_id,),
+    )
+    if not row:
+        flash("Item not found.", "warning")
+        return redirect(url_for("admin_catalogue"))
+    item = {
+        "id": row[0], "title": row[1], "description": row[2],
+        "price": float(row[3]) if row[3] is not None else 0.0,
+        "image_url": row[4],
+        "status": row[5] or "available",
+    }
+    gallery = _fetch_catalogue_gallery(item_id)
+    return render_template("catalogue_edit.html", item=item, gallery=gallery)
+
+
+@app.route("/admin/catalogue/<int:item_id>/save", methods=["POST"])
+@login_required
+@admin_required
+def admin_catalogue_save(item_id):
+    existing = query_one("SELECT image_url FROM catalogue WHERE id = %s", (item_id,))
+    if not existing:
+        flash("Item not found.", "warning")
+        return redirect(url_for("admin_catalogue"))
+
+    title = (request.form.get("title") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    price_raw = (request.form.get("price") or "").strip()
+    if not title:
+        flash("Title is required.", "danger")
+        return redirect(url_for("admin_catalogue_edit", item_id=item_id))
+    try:
+        price = float(price_raw) if price_raw else 0.0
+    except ValueError:
+        flash("Price must be a number.", "danger")
+        return redirect(url_for("admin_catalogue_edit", item_id=item_id))
+
+    # Optional replacement of primary image
+    primary_url = existing[0]
+    primary_file = request.files.get("primary_image")
+    if primary_file and primary_file.filename:
+        new_url = save_catalogue_image(primary_file)
+        if new_url:
+            primary_url = new_url
+
+    execute(
+        "UPDATE catalogue SET title = %s, description = %s, price = %s, image_url = %s "
+        "WHERE id = %s",
+        (title, description, price, primary_url, item_id),
+    )
+
+    # Append any new gallery images
+    gallery_files = request.files.getlist("gallery_images")
+    # Start sort_order after the current max
+    max_order_row = query_one(
+        "SELECT COALESCE(MAX(sort_order), -1) FROM catalogue_images WHERE catalogue_id = %s",
+        (item_id,),
+    )
+    next_order = (max_order_row[0] if max_order_row else -1) + 1
+    for gf in gallery_files or []:
+        if gf and gf.filename:
+            url = save_catalogue_image(gf)
+            if url:
+                execute(
+                    "INSERT INTO catalogue_images (catalogue_id, image_url, sort_order) "
+                    "VALUES (%s, %s, %s)",
+                    (item_id, url, next_order),
+                )
+                next_order += 1
+
+    flash("Item updated.", "success")
+    return redirect(url_for("admin_catalogue_edit", item_id=item_id))
+
+
+@app.route("/admin/catalogue/<int:item_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def admin_catalogue_delete(item_id):
+    try:
+        execute("DELETE FROM catalogue WHERE id = %s", (item_id,))
+        flash("Item removed from catalogue.", "success")
+    except Exception as e:
+        flash(f"Could not delete: {e}", "danger")
+    return redirect(url_for("admin_catalogue"))
+
+
+@app.route("/admin/catalogue/<int:item_id>/mark-sold", methods=["POST"])
+@login_required
+@admin_required
+def admin_catalogue_mark_sold(item_id):
+    execute("UPDATE catalogue SET status = 'sold' WHERE id = %s", (item_id,))
+    flash("Marked as sold.", "success")
+    return redirect(request.referrer or url_for("admin_catalogue"))
+
+
+@app.route("/admin/catalogue/<int:item_id>/mark-available", methods=["POST"])
+@login_required
+@admin_required
+def admin_catalogue_mark_available(item_id):
+    execute("UPDATE catalogue SET status = 'available' WHERE id = %s", (item_id,))
+    flash("Marked as available.", "success")
+    return redirect(request.referrer or url_for("admin_catalogue"))
+
+
+@app.route("/admin/catalogue/images/<int:image_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def admin_catalogue_image_delete(image_id):
+    row = query_one("SELECT catalogue_id FROM catalogue_images WHERE id = %s", (image_id,))
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    execute("DELETE FROM catalogue_images WHERE id = %s", (image_id,))
+    return jsonify({"success": True})
 
 
 @app.route("/admin/articles/<int:article_id>/short-urls")
@@ -13499,6 +13815,471 @@ def admin_analytics():
                            articles=articles,
                            platform_totals=platform_totals,
                            ga_measurement_id=GA_MEASUREMENT_ID)
+
+
+# ------------------------------------------------------------
+# ARTICLE PIPELINE
+# ------------------------------------------------------------
+
+@app.route("/admin/article-pipeline")
+@login_required
+@admin_required
+def admin_article_pipeline():
+    rows = query_all(
+        "SELECT id, title, subtitle, description, target_date, status, article_id, generation_error, batch_id, created_at "
+        "FROM article_queue ORDER BY target_date ASC, id ASC"
+    )
+    queue = []
+    for r in rows:
+        queue.append({
+            "id": r[0], "title": r[1], "subtitle": r[2], "description": r[3],
+            "target_date": str(r[4]) if r[4] else "", "status": r[5],
+            "article_id": r[6], "generation_error": r[7], "batch_id": r[8],
+            "created_at": str(r[9]) if r[9] else ""
+        })
+    _default_idea_prompt = (
+        "You are an expert philatelist, historian, and content strategist for Obelisk Stamps, "
+        "a premium online store selling handcrafted framed stamp displays.\n\n"
+        "Research and generate article ideas based on real stories, curiosities, and fascinating events "
+        "from the world of stamps and postal history. Every country has issued stamps that reflect their "
+        "culture, politics, technology, and identity — find the most compelling stories behind them.\n\n"
+        "Include a mix of:\n"
+        "- Famous stamp errors and printing mistakes that became legendary (e.g., Inverted Jenny, Treskilling Yellow)\n"
+        "- Rare stamps with dramatic ownership histories and record-breaking auction sales\n"
+        "- How countries used stamps as propaganda, cultural promotion, or political statements\n"
+        "- Unusual stamp materials and formats (foil, silk, scented, 3D, shaped)\n"
+        "- Wartime postal stories, espionage, and stamps used in psychological operations\n"
+        "- The origins of postal systems and how they shaped global communication\n"
+        "- Stamp collecting tips, investment insights, and how to spot valuable finds\n"
+        "- Stories from all continents and eras — not just Western/European stamps\n\n"
+        "Each idea should be based on real historical events or verifiable facts. "
+        "Write titles that are click-worthy and SEO-friendly. "
+        "The articles will ultimately drive traffic to an e-commerce store selling framed stamp displays, "
+        "so favour topics that make readers appreciate the beauty and value of stamps."
+    )
+    idea_prompt = get_setting("pipeline_idea_prompt", _default_idea_prompt)
+    return render_template("admin_pipeline.html", queue=queue, idea_prompt=idea_prompt)
+
+
+@app.route("/admin/article-pipeline/generate-ideas", methods=["POST"])
+@login_required
+@admin_required
+def admin_pipeline_generate_ideas():
+    if not _openai_client:
+        return jsonify({"error": "OpenAI not configured"}), 400
+    try:
+        return _pipeline_generate_ideas_inner()
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[Pipeline] generate-ideas error: {tb}")
+        return jsonify({"error": str(e), "traceback": tb}), 500
+
+def _pipeline_generate_ideas_inner():
+    data = request.get_json() or {}
+    articles_per_day = int(data.get("articles_per_day", 2))
+    start_date = data.get("start_date", "")
+    end_date = data.get("end_date", "")
+
+    from datetime import datetime, timedelta
+    start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    total_days = (end - start).days + 1
+    total_articles = total_days * articles_per_day
+
+    target_dates = []
+    current = start
+    while current <= end:
+        for _ in range(articles_per_day):
+            target_dates.append(current)
+        current += timedelta(days=1)
+
+    batch_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    # Use custom prompt from form, or fall back to stored/default
+    custom_prompt = data.get("custom_prompt", "").strip()
+    if custom_prompt:
+        # Save as the new default for next time
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                ("pipeline_idea_prompt", custom_prompt, custom_prompt))
+
+    all_ideas = []
+    chunk_size = 30
+    for chunk_start in range(0, total_articles, chunk_size):
+        chunk_n = min(chunk_size, total_articles - chunk_start)
+        previous_titles = "\n".join([i["title"] for i in all_ideas[-50:]]) if all_ideas else "None yet"
+
+        # Build system prompt from custom prompt + structural instructions
+        base_prompt = custom_prompt or (
+            "You are an expert philatelist and content strategist for Obelisk Stamps, "
+            "a premium online store selling handcrafted framed stamp displays.\n\n"
+            "Generate unique article ideas about stamps, postal history, "
+            "stamp collecting, philately, famous stamps, stamp design, postal systems, and related topics.\n\n"
+            "Each article should be educational, engaging, and appeal to both new and experienced stamp collectors."
+        )
+
+        system_prompt = (
+            base_prompt + "\n\n"
+            "Generate exactly " + str(chunk_n) + " unique article ideas.\n\n"
+            "AVOID these previously generated titles:\n" + previous_titles + "\n\n"
+            "For each article provide:\n"
+            "- title: An engaging, SEO-friendly title (50-80 chars)\n"
+            "- subtitle: A complementary subtitle (40-60 chars)\n"
+            "- description: 2-3 sentences describing the article's angle and what it would cover\n\n"
+            "Output ONLY a valid JSON array of objects with keys \"title\", \"subtitle\", \"description\". "
+            "No markdown, no code blocks, just the JSON array."
+        )
+
+        try:
+            response = _openai_client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Generate {chunk_n} unique stamp article ideas."}
+                ],
+                max_tokens=4000,
+                temperature=0.9
+            )
+            text = response.choices[0].message.content.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+                if text.endswith("```"):
+                    text = text[:-3]
+                text = text.strip()
+            ideas = json.loads(text)
+        except Exception as e:
+            return jsonify({"error": f"OpenAI error: {str(e)}"}), 500
+
+        for idx, idea in enumerate(ideas):
+            date_idx = chunk_start + idx
+            if date_idx >= len(target_dates):
+                break
+            td = target_dates[date_idx]
+            execute(
+                "INSERT INTO article_queue (title, subtitle, description, target_date, status, batch_id, prompt_used) "
+                "VALUES (%s, %s, %s, %s, 'pending', %s, %s)",
+                (idea.get("title", "Untitled"), idea.get("subtitle", ""),
+                 idea.get("description", ""), td.strftime("%Y-%m-%d"), batch_id,
+                 base_prompt[:2000])
+            )
+            all_ideas.append(idea)
+
+    return jsonify({"ok": True, "count": len(all_ideas), "batch_id": batch_id})
+
+
+@app.route("/admin/article-pipeline/<int:queue_id>/status", methods=["POST"])
+@login_required
+@admin_required
+def admin_pipeline_update_status(queue_id):
+    data = request.get_json() or {}
+    new_status = data.get("status", "")
+    if new_status not in ("accepted", "rejected", "pending"):
+        return jsonify({"error": "Invalid status"}), 400
+    execute("UPDATE article_queue SET status = %s WHERE id = %s", (new_status, queue_id))
+
+    if new_status == "accepted":
+        threading.Thread(target=_generate_article_from_queue, args=(queue_id,), daemon=True).start()
+
+    return jsonify({"ok": True})
+
+
+def _generate_article_from_queue(queue_id):
+    """Background thread: generate article content + carousel from queue idea."""
+    import time as _time
+
+    row = query_one(
+        "SELECT id, title, subtitle, description FROM article_queue WHERE id = %s", (queue_id,))
+    if not row:
+        return
+
+    qid, title, subtitle, description = row
+    execute("UPDATE article_queue SET status = 'generating' WHERE id = %s", (qid,))
+
+    try:
+        if not _openai_client:
+            raise Exception("OpenAI not configured")
+
+        system_prompt = (
+            "You are a professional writer for Obelisk Stamps, a premium online store selling "
+            "handcrafted framed stamp displays. Write a comprehensive, educational, and engaging article.\n\n"
+            "Requirements:\n"
+            "- Write 2000-4000 words of well-structured HTML content\n"
+            "- Use <h2> and <h3> for section headings (NOT <h1>)\n"
+            "- Use <p> for paragraphs, <ul>/<ol> for lists where appropriate\n"
+            "- Include historical facts, interesting anecdotes, and collector tips where relevant\n"
+            "- Write in an authoritative but accessible tone\n"
+            "- SEO-friendly: naturally incorporate relevant keywords\n"
+            "- Do NOT include the article title in the content (it's rendered separately)\n"
+            "- End with a brief conclusion\n\n"
+            "Also generate:\n"
+            "- excerpt: 2-3 sentence summary for previews (max 200 chars)\n"
+            "- slug: URL-friendly version of the title (lowercase, hyphens, no special chars, max 60 chars)\n\n"
+            "Output ONLY valid JSON with keys: \"content\", \"excerpt\", \"slug\". No markdown wrapping."
+        )
+
+        user_msg = f"Title: {title}\nSubtitle: {subtitle}\nDescription: {description}"
+
+        response = _openai_client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg}
+            ],
+            max_tokens=8000,
+            temperature=0.7
+        )
+        text = response.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+
+        result = json.loads(text)
+        content = result.get("content", "")
+        excerpt = result.get("excerpt", "")
+        slug = result.get("slug", "")
+
+        if not slug:
+            slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:60]
+
+        existing = query_one("SELECT id FROM articles WHERE slug = %s", (slug,))
+        if existing:
+            slug = slug + "-" + str(qid)
+
+        execute(
+            "INSERT INTO articles (slug, title, subtitle, content, excerpt, is_published) "
+            "VALUES (%s, %s, %s, %s, %s, FALSE)",
+            (slug, title, subtitle or "", content, excerpt)
+        )
+        article_id = query_one("SELECT LAST_INSERT_ID()")[0]
+
+        execute("UPDATE article_queue SET status = 'ready', article_id = %s WHERE id = %s",
+                (article_id, qid))
+
+        try:
+            _generate_carousel_for_article_sync(article_id)
+        except Exception as ce:
+            print(f"[Pipeline] Carousel generation failed for article {article_id}: {ce}")
+
+    except Exception as e:
+        execute("UPDATE article_queue SET status = 'failed', generation_error = %s WHERE id = %s",
+                (str(e)[:500], qid))
+
+
+def _generate_carousel_for_article_sync(article_id):
+    """Synchronous carousel generation for pipeline use. Generates storyboard + DALL-E images."""
+    import time as _time
+
+    row = query_one(
+        "SELECT title, content, slug, carousel_prompts, carousel_images, carousel_punchlines, "
+        "carousel_style, carousel_created_at FROM articles WHERE id = %s", (article_id,))
+    if not row:
+        return
+
+    title = row[0] or ""
+    content = row[1] or ""
+    existing_prompts = json.loads(row[3] or "[]")
+    existing_images = json.loads(row[4] or "[]")
+    existing_punchlines = json.loads(row[5] or "[]")
+    existing_created = json.loads(row[7] or "[]")
+
+    plain = re.sub(r"<[^>]+>", " ", content)
+    plain = re.sub(r"\s+", " ", plain).strip()[:6000]
+
+    target_count = 10
+    empty_slots = [i for i in range(target_count) if i >= len(existing_images) or not existing_images[i]]
+    if not empty_slots:
+        return
+
+    n_needed = len(empty_slots)
+    active_style = get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
+
+    # GPT storyboard
+    storyboard_system = (
+        "You are a visual storyteller and Instagram content strategist. "
+        f"Your job is to break an article into exactly {n_needed} sequential scenes "
+        "that narrate the article's story from beginning to end.\n\n"
+        "For each scene, produce TWO things:\n"
+        "1. A detailed DALL-E 3 image prompt that captures that section's key message, moment, or concept.\n"
+        "2. A short punchline (max 15 words) -- a compelling caption that gives context to the image.\n\n"
+        "Rules:\n"
+        "- Each prompt must be specific to its section of the article (not generic)\n"
+        "- Prompts progress chronologically through the article\n"
+        "- Include concrete visual details: setting, subjects, actions, mood, colours\n"
+        f"- All {n_needed} prompts must share the same art style for visual cohesion\n"
+        "- Punchlines should be intriguing, concise, and encourage swiping\n"
+        f"- Output ONLY a JSON array of {n_needed} objects, each with keys \"prompt\" and \"punchline\", no other text"
+    )
+
+    try:
+        storyboard_resp = _openai_client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": storyboard_system},
+                {"role": "user", "content": (
+                    f"Article title: {title}\n\nFull article content:\n{plain[:3000]}\n\n"
+                    f"Generate a JSON array of exactly {n_needed} objects."
+                )}
+            ],
+            max_tokens=3000,
+            temperature=0.8
+        )
+        storyboard_text = storyboard_resp.choices[0].message.content.strip()
+        if storyboard_text.startswith("```"):
+            storyboard_text = re.sub(r'^```(?:json)?\s*', '', storyboard_text)
+            storyboard_text = re.sub(r'\s*```$', '', storyboard_text)
+        scenes = json.loads(storyboard_text.strip())
+    except Exception as e:
+        print(f"[Pipeline] Storyboard failed: {e}")
+        return
+
+    while len(existing_prompts) < target_count:
+        existing_prompts.append("")
+    while len(existing_images) < target_count:
+        existing_images.append("")
+    while len(existing_punchlines) < target_count:
+        existing_punchlines.append("")
+    while len(existing_created) < target_count:
+        existing_created.append("")
+
+    scene_idx = 0
+    for slot in empty_slots:
+        if scene_idx >= len(scenes):
+            break
+        scene = scenes[scene_idx]
+        prompt = scene.get("prompt", "")
+        punchline = scene.get("punchline", "")
+        scene_idx += 1
+
+        try:
+            dalle_resp = _openai_client.images.generate(
+                model="dall-e-3",
+                prompt=f"{prompt}. {active_style}",
+                size="1024x1024",
+                quality="standard",
+                style="vivid",
+                n=1
+            )
+            image_url = dalle_resp.data[0].url
+
+            dl = http_requests.get(image_url, timeout=60)
+            dl.raise_for_status()
+
+            local_filename = f"image_{slot + 1}.png"
+            gcs_object_name = f"articles/{article_id}/carousel/{local_filename}"
+            carousel_dir = os.path.join("static", "articles", str(article_id), "carousel")
+            os.makedirs(carousel_dir, exist_ok=True)
+            with open(os.path.join(carousel_dir, local_filename), "wb") as f:
+                f.write(dl.content)
+
+            gcs_url = upload_bytes_to_gcs(dl.content, gcs_object_name, content_type="image/png")
+            if gcs_url:
+                existing_images[slot] = gcs_url
+            else:
+                existing_images[slot] = f"articles/{article_id}/carousel/{local_filename}"
+
+            existing_prompts[slot] = prompt
+            existing_punchlines[slot] = punchline
+            existing_created[slot] = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            execute(
+                "UPDATE articles SET carousel_prompts=%s, carousel_images=%s, carousel_punchlines=%s, "
+                "carousel_style=%s, carousel_created_at=%s WHERE id=%s",
+                (json.dumps(existing_prompts), json.dumps(existing_images), json.dumps(existing_punchlines),
+                 active_style, json.dumps(existing_created), article_id)
+            )
+
+            _time.sleep(12)
+
+        except Exception as e:
+            print(f"[Pipeline] DALL-E failed for slot {slot}: {e}")
+            _time.sleep(5)
+            continue
+
+    print(f"[Pipeline] Carousel done for article {article_id}: {sum(1 for i in existing_images[:10] if i)} images")
+
+
+@app.route("/admin/article-pipeline/bulk-action", methods=["POST"])
+@login_required
+@admin_required
+def admin_pipeline_bulk_action():
+    data = request.get_json() or {}
+    action = data.get("action", "")
+    ids = data.get("ids", [])
+
+    if action == "accept_all":
+        threading.Thread(target=_bulk_accept_queue, args=(ids,), daemon=True).start()
+        return jsonify({"ok": True, "message": f"Processing {len(ids)} items"})
+    elif action == "reject_all":
+        for qid in ids:
+            execute("UPDATE article_queue SET status = 'rejected' WHERE id = %s AND status = 'pending'", (qid,))
+        return jsonify({"ok": True})
+    return jsonify({"error": "Unknown action"}), 400
+
+
+def _bulk_accept_queue(queue_ids):
+    import time as _time
+    for qid in queue_ids:
+        try:
+            row = query_one("SELECT status FROM article_queue WHERE id = %s", (qid,))
+            if row and row[0] == 'pending':
+                execute("UPDATE article_queue SET status = 'accepted' WHERE id = %s", (qid,))
+                _generate_article_from_queue(qid)
+                _time.sleep(2)
+        except Exception as e:
+            execute("UPDATE article_queue SET status = 'failed', generation_error = %s WHERE id = %s",
+                    (str(e)[:500], qid))
+
+
+@app.route("/admin/article-pipeline/progress")
+@login_required
+@admin_required
+def admin_pipeline_progress():
+    rows = query_all(
+        "SELECT id, title, status, article_id, generation_error FROM article_queue "
+        "WHERE status IN ('accepted','generating') ORDER BY id ASC"
+    )
+    items = [{"id": r[0], "title": r[1], "status": r[2], "article_id": r[3], "error": r[4]} for r in rows]
+    return jsonify({"items": items})
+
+
+@app.route("/admin/article-pipeline/<int:queue_id>", methods=["DELETE"])
+@login_required
+@admin_required
+def admin_pipeline_delete(queue_id):
+    execute("DELETE FROM article_queue WHERE id = %s", (queue_id,))
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/article-pipeline/<int:queue_id>/edit", methods=["POST"])
+@login_required
+@admin_required
+def admin_pipeline_edit(queue_id):
+    data = request.get_json() or {}
+    title = data.get("title")
+    subtitle = data.get("subtitle")
+    description = data.get("description")
+    target_date = data.get("target_date")
+    updates = []
+    params = []
+    if title is not None:
+        updates.append("title = %s")
+        params.append(title)
+    if subtitle is not None:
+        updates.append("subtitle = %s")
+        params.append(subtitle)
+    if description is not None:
+        updates.append("description = %s")
+        params.append(description)
+    if target_date is not None:
+        updates.append("target_date = %s")
+        params.append(target_date)
+    if updates:
+        params.append(queue_id)
+        execute(f"UPDATE article_queue SET {', '.join(updates)} WHERE id = %s", tuple(params))
+    return jsonify({"ok": True})
 
 
 # ------------------------------------------------------------

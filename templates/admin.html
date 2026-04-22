@@ -89,6 +89,14 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link {% if active_tab == 'catalogue' %}active{% endif %}" href="/admin/catalogue">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
+                        <path d="M0 1.5A1.5 1.5 0 0 1 1.5 0h9A1.5 1.5 0 0 1 12 1.5V14l-3-2-3 2-3-2-3 2V1.5z"/>
+                    </svg>
+                    Catalogue
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {% if active_tab == 'settings' %}active{% endif %}" href="/admin/settings">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
                         <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
@@ -102,6 +110,11 @@
                         <path d="M4 11H2v3h2v-3zm5-4H7v7h2V7zm5-5h-2v12h2V2zm-2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1h-2zM6 7a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7zm-5 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-3z"/>
                     </svg>
                     Analytics
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="/admin/article-pipeline">
+                    <i class="fa-solid fa-wand-magic-sparkles me-1"></i> Pipeline
                 </a>
             </li>
         </ul>
@@ -450,6 +463,78 @@
                     {% else %}
                     <tr>
                         <td colspan="5" class="text-center text-muted py-4">No articles yet. Create your first one!</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if active_tab == 'catalogue' %}
+        <!-- Catalogue Tab Content -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Catalogue Items</h5>
+            <a href="/admin/catalogue/new" class="btn btn-primary btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="me-1" viewBox="0 0 16 16">
+                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                </svg>
+                New Item
+            </a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:90px;">Image</th>
+                        <th>Title</th>
+                        <th>Price (GBP)</th>
+                        <th>Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in catalogue %}
+                    <tr>
+                        <td>
+                            {% if item.image_url %}
+                            <img src="{{ catalogue_img_url(item.image_url) }}" alt="{{ item.title }}"
+                                 style="width:72px; height:72px; object-fit:cover; border-radius:4px;">
+                            {% else %}
+                            <div class="bg-light text-center d-flex align-items-center justify-content-center"
+                                 style="width:72px; height:72px; border-radius:4px;">
+                                <span class="text-muted small">—</span>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>{{ item.title }}</td>
+                        <td>&pound;{{ "%.2f"|format(item.price) }}</td>
+                        <td>
+                            {% if item.status == 'sold' %}
+                                <span class="badge bg-danger">Sold</span>
+                            {% else %}
+                                <span class="badge bg-success">Available</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="/admin/catalogue/{{ item.id }}/edit" class="btn btn-outline-secondary btn-sm">Edit</a>
+                            {% if item.status == 'sold' %}
+                            <form method="POST" action="/admin/catalogue/{{ item.id }}/mark-available" class="d-inline">
+                                <button type="submit" class="btn btn-outline-success btn-sm">Mark Available</button>
+                            </form>
+                            {% else %}
+                            <form method="POST" action="/admin/catalogue/{{ item.id }}/mark-sold" class="d-inline">
+                                <button type="submit" class="btn btn-outline-warning btn-sm">Mark Sold</button>
+                            </form>
+                            {% endif %}
+                            <form method="POST" action="/admin/catalogue/{{ item.id }}/delete" class="d-inline"
+                                  onsubmit="return confirm('Delete this catalogue item? This cannot be undone.');">
+                                <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-4">No catalogue items yet. Click "New Item" to add one.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

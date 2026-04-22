@@ -56,11 +56,16 @@
                     </div>
                 </div>
                 {% endif %}
+                {% set is_sold = (item|length > 5 and (item[5] or 'available') == 'sold') %}
                 <div class="collection-card">
-                    <div class="card h-100">
+                    <div class="card h-100 position-relative{% if is_sold %} opacity-75{% endif %}">
+                        {% if is_sold %}
+                        <span class="badge bg-danger position-absolute"
+                              style="top:8px; right:8px; z-index:2;">SOLD</span>
+                        {% endif %}
                         <div class="bg-light text-center p-2" style="height: 160px;">
                             {% if item[4] %}
-                            <img src="{{ url_for('static', filename=item[4]) }}" alt="{{ item[1] }}" class="img-fluid h-100" style="object-fit: contain;">
+                            <img src="{{ catalogue_img_url(item[4]) }}" alt="{{ item[1] }}" class="img-fluid h-100" style="object-fit: contain;">
                             {% else %}
                             <div class="d-flex align-items-center justify-content-center h-100">
                                 <span class="text-muted small">No image</span>
@@ -70,7 +75,9 @@
                         <div class="card-body text-center p-2">
                             <h6 class="card-title mb-1">{{ item[1] }}</h6>
                             <p class="text-primary fw-bold mb-2">{{ currency_symbol }}{{ "%.2f"|format(convert_catalogue_price(item[3] or 0, active_currency) or 0) }}</p>
-                            {% if current_user.is_authenticated %}
+                            {% if is_sold %}
+                            <button class="btn btn-secondary btn-sm w-100" disabled>Sold</button>
+                            {% elif current_user.is_authenticated %}
                             <button class="btn btn-primary btn-sm w-100 add-to-cart-btn" data-catalogue-id="{{ item[0] }}">Add to Cart</button>
                             {% else %}
                             <a href="{{ url_for('login', next=request.path) }}" class="btn btn-outline-primary btn-sm w-100">Login to Buy</a>

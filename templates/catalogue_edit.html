@@ -1,0 +1,134 @@
+{% extends "layout.html" %}
+
+{% block title %}{% if item %}Edit Item{% else %}New Item{% endif %} — Admin{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">
+            {% if item %}Edit Catalogue Item{% else %}New Catalogue Item{% endif %}
+        </h3>
+        <a href="/admin/catalogue" class="btn btn-outline-secondary btn-sm">&larr; Back to Catalogue</a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, msg in messages %}
+          <div class="alert alert-{{ 'danger' if category == 'danger' else ('warning' if category == 'warning' else 'success') }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST"
+          action="{% if item %}/admin/catalogue/{{ item.id }}/save{% else %}/admin/catalogue/new{% endif %}"
+          enctype="multipart/form-data">
+
+        <div class="mb-3">
+            <label class="form-label">Title <span class="text-danger">*</span></label>
+            <input type="text" name="title" class="form-control" required
+                   value="{{ item.title if item else '' }}">
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Description</label>
+            <textarea name="description" class="form-control" rows="4">{{ item.description if item else '' }}</textarea>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Price (GBP) <span class="text-danger">*</span></label>
+            <div class="input-group" style="max-width:200px;">
+                <span class="input-group-text">&pound;</span>
+                <input type="number" step="0.01" min="0" name="price" class="form-control" required
+                       value="{{ '%.2f'|format(item.price) if item else '' }}">
+            </div>
+            <small class="text-muted">Prices are stored in GBP and converted for visitors using their selected currency.</small>
+        </div>
+
+        <hr>
+
+        <div class="mb-3">
+            <label class="form-label">Primary image (shown in listings)</label>
+            {% if item and item.image_url %}
+            <div class="mb-2">
+                <img src="{{ catalogue_img_url(item.image_url) }}" alt="Primary"
+                     style="max-width:200px; max-height:200px; object-fit:cover; border:1px solid #ddd; border-radius:4px;">
+                <div class="small text-muted mt-1">Leave the field below empty to keep this image.</div>
+            </div>
+            {% endif %}
+            <input type="file" name="primary_image" class="form-control" accept="image/*">
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Additional gallery images</label>
+            <input type="file" name="gallery_images" class="form-control" accept="image/*" multiple>
+            <small class="text-muted">Select one or more extra images. They will be added to the gallery below.</small>
+        </div>
+
+        {% if item and gallery %}
+        <div class="mb-3">
+            <label class="form-label">Current gallery ({{ gallery|length }} image{{ '' if gallery|length == 1 else 's' }})</label>
+            <div class="d-flex flex-wrap gap-2" id="gallery-list">
+                {% for g in gallery %}
+                <div class="position-relative gallery-thumb" data-image-id="{{ g.id }}"
+                     style="width:120px; height:120px;">
+                    <img src="{{ catalogue_img_url(g.image_url) }}" alt=""
+                         style="width:100%; height:100%; object-fit:cover; border:1px solid #ddd; border-radius:4px;">
+                    <button type="button" class="btn btn-sm btn-danger position-absolute"
+                            style="top:4px; right:4px; padding:2px 6px;"
+                            onclick="deleteGalleryImage({{ g.id }}, this)">&times;</button>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <hr>
+
+        <div class="d-flex justify-content-between">
+            <div>
+                <button type="submit" class="btn btn-primary">
+                    {% if item %}Save Changes{% else %}Create Item{% endif %}
+                </button>
+                <a href="/admin/catalogue" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+            {% if item %}
+            <div>
+                {% if item.status == 'sold' %}
+                <form method="POST" action="/admin/catalogue/{{ item.id }}/mark-available" class="d-inline">
+                    <button type="submit" class="btn btn-outline-success">Mark as Available</button>
+                </form>
+                {% else %}
+                <form method="POST" action="/admin/catalogue/{{ item.id }}/mark-sold" class="d-inline">
+                    <button type="submit" class="btn btn-outline-warning">Mark as Sold</button>
+                </form>
+                {% endif %}
+                <form method="POST" action="/admin/catalogue/{{ item.id }}/delete" class="d-inline"
+                      onsubmit="return confirm('Delete this catalogue item? This cannot be undone.');">
+                    <button type="submit" class="btn btn-outline-danger">Delete Item</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<script>
+function deleteGalleryImage(imageId, btn) {
+    if (!confirm('Remove this image from the gallery?')) return;
+    fetch('/admin/catalogue/images/' + imageId + '/delete', {
+        method: 'POST',
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            const thumb = btn.closest('.gallery-thumb');
+            if (thumb) thumb.remove();
+        } else {
+            alert('Could not delete image: ' + (data.error || 'unknown error'));
+        }
+    })
+    .catch(err => alert('Error: ' + err));
+}
+</script>
+{% endblock %}
