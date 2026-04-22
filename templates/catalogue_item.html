@@ -57,6 +57,20 @@
   }
 </style>
 <script type="application/ld+json">{{ json_ld | safe }}</script>
+
+<script>
+  // Expose this product to the floating chatbot so it can answer
+  // buyer-decision questions about this specific frame.
+  window.__chatProductContext = {
+      title: {{ item.title | tojson }},
+      category: {{ (item.category or "") | tojson }},
+      price_gbp: {{ item.price or 0 }},
+      status: {{ (item.status or "available") | tojson }},
+      description: {{ (item.description or "") | tojson }},
+      specs: {{ specs | tojson }},
+      url: window.location.href
+  };
+</script>
 {% endblock %}
 
 {% block content %}
@@ -178,6 +192,33 @@
                         <span>Authentic stamps</span>
                     </div>
                 </div>
+
+                <!-- Ask the assistant nudge -->
+                <div class="mt-3 p-3 rounded" style="background:#f1f6ff; border:1px solid #d6e4ff;">
+                    <div class="d-flex align-items-start gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="#0d6efd" viewBox="0 0 16 16" style="flex-shrink:0; margin-top:2px;">
+                            <path d="M14 1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4.414A2 2 0 0 0 3 11.586l-2 2V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v12.793a.5.5 0 0 0 .854.353l2.853-2.853A1 1 0 0 1 4.414 12H14a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/>
+                        </svg>
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold small mb-1">Not sure if it's the right piece?</div>
+                            <div class="small text-muted mb-2">Ask our Stamp Expert AI — it knows this frame's details.</div>
+                            <div class="d-flex flex-wrap gap-1">
+                                <button type="button" class="btn btn-sm btn-outline-primary chat-suggest"
+                                        data-q="Would this make a good gift? Who is it most suitable for?">
+                                    Is this a good gift?
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-primary chat-suggest"
+                                        data-q="What stamps are included in this frame and what period are they from?">
+                                    What stamps are in it?
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-primary chat-suggest"
+                                        data-q="How is this frame shipped and how long does delivery take to the UK?">
+                                    How is it shipped?
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -204,11 +245,12 @@
             </table>
             {% endif %}
         </div>
+    </div>
 
-        <div class="col-lg-5">
-            {% set trust_variant = "catalogue" %}
-            {% include 'partials/_trust_info.html' ignore missing %}
-        </div>
+    <!-- TRUST / SHIPPING / RETURNS (full width) -->
+    <div class="mt-5">
+        {% set trust_variant = "catalogue" %}
+        {% include 'partials/_trust_info.html' ignore missing %}
     </div>
 
     <!-- RELATED ITEMS -->
@@ -284,6 +326,40 @@
 </script>
 
 <script>
+// Swap the chatbot's default welcome message to something product-aware.
+(function () {
+    document.addEventListener('DOMContentLoaded', function () {
+        const messages = document.getElementById('chatbot-messages');
+        if (!messages) return;
+        const firstBubble = messages.querySelector('.chatbot-msg-assistant .chatbot-bubble');
+        if (firstBubble && window.__chatProductContext && window.__chatProductContext.title) {
+            firstBubble.textContent =
+                'Hi! I can help you decide whether "' + window.__chatProductContext.title + '" is right for you — ' +
+                'its stamps, dimensions, suitability as a gift, shipping, and more. What would you like to know?';
+        }
+    });
+})();
+
+// Suggested-question chips: open the chat, then submit the question programmatically.
+document.querySelectorAll('.chat-suggest').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        const q = this.dataset.q;
+        const toggle = document.getElementById('chatbot-toggle');
+        const panel = document.getElementById('chatbot-panel');
+        const input = document.getElementById('chatbot-input');
+        const form = document.getElementById('chatbot-form');
+        if (!toggle || !panel || !input || !form) return;
+        // Open the chat if it's closed
+        if (panel.style.display === 'none' || !panel.style.display) {
+            panel.style.display = 'block';
+            toggle.style.display = 'none';
+        }
+        input.value = q;
+        // Submit the form so the existing handler fires and context is sent.
+        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    });
+});
+
 document.querySelectorAll('.add-to-cart-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
         const catalogueId = this.dataset.catalogueId;

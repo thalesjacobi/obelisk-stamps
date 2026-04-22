@@ -2568,7 +2568,45 @@ def chat():
     if kb_docs:
         context_block = "\n\nRelevant business information:\n" + "\n---\n".join(kb_docs)
 
-    system_message = CHATBOT_SYSTEM_PROMPT + context_block
+    # If the user is on a product page, include that product's details so the
+    # assistant can answer specific questions about it ("Is this a good gift?",
+    # "How big is it?", "What stamps are in it?") and help the buyer decide.
+    product_block = ""
+    product_context = data.get("product_context") or {}
+    if isinstance(product_context, dict) and product_context.get("title"):
+        lines = ["\n\nThe user is currently viewing this product on our site:"]
+        if product_context.get("title"):
+            lines.append(f"- Title: {product_context['title']}")
+        if product_context.get("category"):
+            lines.append(f"- Category: {product_context['category']}")
+        if product_context.get("price_gbp") is not None:
+            try:
+                lines.append(f"- Price: GBP {float(product_context['price_gbp']):.2f}")
+            except (TypeError, ValueError):
+                pass
+        if product_context.get("status"):
+            lines.append(f"- Status: {product_context['status']}")
+        if product_context.get("description"):
+            desc = str(product_context['description'])[:600]
+            lines.append(f"- Description: {desc}")
+        specs_list = product_context.get("specs") or []
+        if isinstance(specs_list, list) and specs_list:
+            lines.append("- Specifications:")
+            for s in specs_list[:20]:
+                if isinstance(s, dict) and s.get("label") and s.get("value"):
+                    lines.append(f"    - {s['label']}: {s['value']}")
+        if product_context.get("url"):
+            lines.append(f"- URL: {product_context['url']}")
+        lines.append(
+            "\nAnswer questions about this specific item helpfully and enthusiastically. "
+            "If the user asks whether to buy it, help them decide by highlighting what's "
+            "special about it, who it suits (gift, collector, decor), and the practical "
+            "details (shipping, returns). Do not invent specs — only use what's listed above. "
+            "If a detail isn't listed, say so honestly and suggest they contact us."
+        )
+        product_block = "\n".join(lines)
+
+    system_message = CHATBOT_SYSTEM_PROMPT + product_block + context_block
 
     # Build conversation from client-side history (last 10 messages)
     history = data.get("history", [])

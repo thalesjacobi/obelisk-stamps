@@ -97,7 +97,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     message: userText,
-                    history: conversationHistory.slice(-MAX_HISTORY)
+                    history: conversationHistory.slice(-MAX_HISTORY),
+                    product_context: (typeof window !== 'undefined' && window.__chatProductContext) || null
                 })
             });
 
