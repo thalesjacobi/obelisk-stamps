@@ -14,8 +14,55 @@ document.addEventListener('DOMContentLoaded', function() {
     const identifyBtn = document.getElementById('identify-btn');
     const btnText = document.getElementById('btn-text');
     const btnSpinner = document.getElementById('btn-spinner');
+    const warmupBar = document.getElementById('ml-warmup-bar');
+    const warmupText = document.getElementById('ml-warmup-text');
 
     if (!form) return; // Exit if Stamp Quest AI is not on this page
+
+    // ── ML API warm-up ──────────────────────────────────────────────────────
+    // Ping the ML API in the background as soon as the page loads so the
+    // Cloud Run container is ready by the time the user clicks Identify.
+    let mlReady = false;
+    let warmupStartTime = Date.now();
+
+    function startWarmup() {
+        if (mlReady) return;
+        warmupBar.classList.remove('d-none');
+        identifyBtn.disabled = true;
+
+        // Tell Flask to kick off a background ping
+        fetch('/ml-warmup').catch(function(){});
+
+        // Poll /ml-ready every 5 s until the ML API responds
+        const pollInterval = setInterval(async function() {
+            try {
+                const r = await fetch('/ml-ready');
+                const data = await r.json();
+                if (data.ready) {
+                    clearInterval(pollInterval);
+                    mlReady = true;
+                    warmupBar.classList.add('d-none');
+                    identifyBtn.disabled = false;
+                } else {
+                    const elapsed = Math.round((Date.now() - warmupStartTime) / 1000);
+                    warmupText.textContent = `Preparing Stamp Quest AI… (${elapsed}s) — this takes about a minute on first load.`;
+                }
+            } catch (e) { /* keep polling */ }
+        }, 5000);
+
+        // Hard cap: stop blocking the button after 3 minutes regardless
+        setTimeout(function() {
+            if (!mlReady) {
+                clearInterval(pollInterval);
+                mlReady = true;
+                warmupBar.classList.add('d-none');
+                identifyBtn.disabled = false;
+            }
+        }, 180000);
+    }
+
+    startWarmup();
+    // ────────────────────────────────────────────────────────────────────────
 
     // Image preview
     imageInput.addEventListener('change', function(e) {
@@ -86,7 +133,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function showRetryableError() {
         errorSection.className = 'alert alert-warning d-none';
         errorSection.classList.remove('d-none');
-        errorContent.innerHTML = '<strong>Stamp Quest AI is warming up.</strong><br>This can happen when the service hasn\'t been used for a while. Please try again — it should work right away.';
+        errorContent.innerHTML = '<strong>Stamp Quest AI is warming up.</strong><br>This can happen when the service hasn\'t been used for a while. The first request can take up to 2&ndash;3 minutes while the AI model loads. Click <strong>Try Again</strong> — it will be instant after that.';
         errorRetry.classList.remove('d-none');
     }
 
@@ -154,25 +201,73 @@ document.addEventListener('DOMContentLoaded', function() {
             // Create cropped image from bbox using canvas
             const croppedImageUrl = cropStampFromImage(originalImage, stamp.bbox);
 
-            // Stamp header with cropped image
+            // Threshold below which we consider the stamp "unrecognized".
+            // Stamps above this show a match card; below it show a warning
+            // and are saved for admin review.
+            const UNRECOGNIZED_THRESHOLD = 0.35;
+            const topMatch = (stamp.matches && stamp.matches.length > 0) ? stamp.matches[0] : null;
+            const similarityPct = topMatch ? (topMatch.similarity * 100).toFixed(0) : null;
+            const isUnrecognized = !topMatch || (topMatch.similarity || 0) < UNRECOGNIZED_THRESHOLD;
+
+            // Stamp header with cropped image + match confidence badge
             const stampHeader = document.createElement('div');
             stampHeader.className = 'row align-items-center mb-3 pb-2 border-bottom';
+            const badgeClass = isUnrecognized ? 'bg-warning text-dark' : (topMatch.similarity >= 0.6 ? 'bg-success' : 'bg-secondary');
+            const badgeLabel = isUnrecognized ? 'Unrecognized' : `Match: ${similarityPct}%`;
             stampHeader.innerHTML = `
                 <div class="col-auto">
                     <img src="${croppedImageUrl}" alt="Stamp ${stampIndex + 1}"
                          class="img-thumbnail" style="max-height: 120px; max-width: 120px;">
                 </div>
                 <div class="col">
-                    <h4 class="mb-1">Stamp ${stampIndex + 1} of ${data.stamp_count}</h4>
-                    <span class="text-muted">Detection confidence: ${(stamp.detection_confidence * 100).toFixed(1)}%</span>
+                    <h4 class="mb-1">Stamp ${stampIndex + 1} of ${data.stamp_count}
+                        <span class="badge ${badgeClass} fs-6 ms-2">${badgeLabel}</span>
+                    </h4>
+                    <span class="text-muted small">Detection confidence: ${(stamp.detection_confidence * 100).toFixed(1)}%</span>
                 </div>
             `;
             stampSection.appendChild(stampHeader);
 
-            // Show only the best match for this stamp
-            if (stamp.matches && stamp.matches.length > 0) {
-                const result = stamp.matches[0];
-                const similarity = (result.similarity * 100).toFixed(1);
+            if (isUnrecognized) {
+                // Show a warning with the closest guess for context, and
+                // capture the crop silently for admin review.
+                const closestGuess = topMatch
+                    ? `<div class="mt-2 small text-muted"><strong>Closest guess:</strong> ${topMatch.title || '—'}
+                         (${similarityPct}% similarity) &mdash; ${topMatch.country || ''} ${topMatch.year || ''}</div>`
+                    : '';
+                const notice = document.createElement('div');
+                notice.className = 'alert alert-warning';
+                notice.innerHTML = `
+                    <strong>We couldn't identify this stamp confidently.</strong>
+                    ${closestGuess}
+                    <div class="mt-2 small text-muted">We've saved this crop so our experts can review it and add it to the database. Thanks for helping us improve!</div>
+                `;
+                stampSection.appendChild(notice);
+
+                // Fire-and-forget capture
+                try {
+                    fetch('/stamp-quest/capture', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            image_base64: croppedImageUrl,
+                            bbox: stamp.bbox,
+                            detection_confidence: stamp.detection_confidence,
+                            best_match_similarity: topMatch ? topMatch.similarity : null,
+                            best_match_title: topMatch ? topMatch.title : null,
+                            best_match_country: topMatch ? topMatch.country : null,
+                            best_match_year: topMatch ? topMatch.year : null,
+                        }),
+                    }).catch(function(){ /* swallow */ });
+                } catch (e) { /* swallow */ }
+
+                resultsContainer.appendChild(stampSection);
+                return; // next stamp
+            }
+
+            // Recognized stamp — show the best match card
+            {
+                const result = topMatch;
                 const price = result.price_converted ?
                     `${result.price_converted.value.toFixed(2)} ${result.price_converted.currency}` :
                     'N/A';
@@ -218,11 +313,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 `;
                 stampSection.appendChild(matchCard);
-            } else {
-                const noMatch = document.createElement('p');
-                noMatch.className = 'text-muted';
-                noMatch.textContent = 'No matches found for this stamp.';
-                stampSection.appendChild(noMatch);
             }
 
             resultsContainer.appendChild(stampSection);

@@ -78,11 +78,11 @@ def check_training_data():
 
 
 def train(
-    epochs: int = 100,
-    batch_size: int = 16,
-    image_size: int = 640,
-    model_size: str = "n",  # n=nano, s=small, m=medium, l=large, x=xlarge
-    patience: int = 20,
+    epochs: int = 150,
+    batch_size: int = 8,
+    image_size: int = 1280,
+    model_size: str = "s",  # n=nano, s=small, m=medium, l=large, x=xlarge
+    patience: int = 30,
     resume: bool = False,
 ):
     """
@@ -151,16 +151,19 @@ def train(
         name="training_run",
         exist_ok=True,
         verbose=True,
-        # Augmentation settings good for stamps
-        hsv_h=0.015,  # Hue augmentation
-        hsv_s=0.4,    # Saturation augmentation
-        hsv_v=0.3,    # Value augmentation
-        degrees=5,    # Rotation (stamps are usually upright)
+        # NMS IoU threshold during validation (lower = better for tightly packed stamps)
+        iou=0.5,
+        # Augmentation settings tuned for dense frame photos
+        hsv_h=0.02,       # Slight hue shift (different lighting conditions)
+        hsv_s=0.5,        # Saturation (indoor/outdoor light variation)
+        hsv_v=0.4,        # Brightness (flash, shadows)
+        degrees=10,       # Rotation (frames may be slightly tilted)
         translate=0.1,
-        scale=0.3,
-        flipud=0.0,   # No vertical flip (stamps have orientation)
-        fliplr=0.5,   # Horizontal flip OK
-        mosaic=0.5,   # Mosaic augmentation
+        scale=0.5,        # Zoom variation (photographer distance varies a lot)
+        perspective=0.001, # Slight perspective warp (camera angle)
+        flipud=0.0,        # No vertical flip (stamps have orientation)
+        fliplr=0.5,        # Horizontal flip OK
+        mosaic=1.0,        # Full mosaic - creates more dense stamp arrangements
     )
 
     # Copy best weights to standard location
@@ -180,12 +183,12 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Train YOLO stamp detector")
-    parser.add_argument("--epochs", type=int, default=100, help="Training epochs")
-    parser.add_argument("--batch", type=int, default=16, help="Batch size")
-    parser.add_argument("--size", type=int, default=640, help="Image size")
-    parser.add_argument("--model", type=str, default="n", choices=["n", "s", "m", "l", "x"],
-                        help="Model size (n=nano, s=small, m=medium, l=large, x=xlarge)")
-    parser.add_argument("--patience", type=int, default=20, help="Early stopping patience")
+    parser.add_argument("--epochs", type=int, default=150, help="Training epochs")
+    parser.add_argument("--batch", type=int, default=8, help="Batch size")
+    parser.add_argument("--size", type=int, default=1280, help="Image size (1280 recommended for dense frame photos)")
+    parser.add_argument("--model", type=str, default="s", choices=["n", "s", "m", "l", "x"],
+                        help="Model size (s=small recommended for dense detection)")
+    parser.add_argument("--patience", type=int, default=30, help="Early stopping patience")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
 
     args = parser.parse_args()

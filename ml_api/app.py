@@ -219,7 +219,7 @@ def detect_stamps(image_bytes: bytes, confidence: float = 0.3) -> List[dict]:
         tmp_path = tmp.name
 
     try:
-        results = stamp_detector(tmp_path, conf=confidence, verbose=False)
+        results = stamp_detector(tmp_path, conf=confidence, iou=0.4, verbose=False)
 
         detections = []
         for result in results:

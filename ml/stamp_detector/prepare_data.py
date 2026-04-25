@@ -270,12 +270,13 @@ def convert_labelme_to_yolo():
                 # Class 0 = stamp
                 yolo_lines.append(f"0 {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}")
 
-            if yolo_lines:
-                # Save YOLO label file
-                label_path = LABELS_DIR / f"{json_path.stem}.txt"
-                with open(label_path, 'w') as f:
-                    f.write('\n'.join(yolo_lines))
-                converted += 1
+            # Always write a label file — even empty ones (negative samples).
+            # YOLO treats an empty .txt as "no objects here", which helps
+            # reduce false positives on non-stamp images (envelopes, letters, etc.)
+            label_path = LABELS_DIR / f"{json_path.stem}.txt"
+            with open(label_path, 'w') as f:
+                f.write('\n'.join(yolo_lines))
+            converted += 1
 
         except Exception as e:
             print(f"Error converting {json_path.name}: {e}")

@@ -1609,6 +1609,13 @@ def log_social_post(article_id, platform, content_type, post_id, permalink, capt
 def inject_currency_helpers():
     """Make currency helpers available in all templates."""
     currency = get_active_currency()
+    unrecognized_count = 0
+    if is_admin():
+        try:
+            row = query_one("SELECT COUNT(*) FROM unrecognized_stamps WHERE reviewed = 0")
+            unrecognized_count = int(row[0]) if row and row[0] else 0
+        except Exception:
+            unrecognized_count = 0
     return {
         "active_currency": currency,
         "currency_symbol": CURRENCY_SYMBOLS.get(currency, currency),
@@ -1619,6 +1626,7 @@ def inject_currency_helpers():
         "contact_email": os.getenv("CONTACT_TO_EMAIL", "thalesjacobi@gmail.com"),
         "site_url": SITE_URL,
         "ga_measurement_id": GA_MEASUREMENT_ID,
+        "unrecognized_count": unrecognized_count,
     }
 
 
@@ -2871,6 +2879,39 @@ def convert_price(price_value, price_currency, target_currency):
         return round(amount_eur, 2)
 
 
+@app.route("/ml-warmup", methods=["GET"])
+def ml_warmup():
+    """
+    Fires a lightweight GET to the ML API in a background thread so the
+    Cloud Run container warms up before the user clicks Identify.
+    Returns immediately — callers poll /ml-ready for readiness.
+    """
+    import threading
+
+    def _ping():
+        try:
+            http_requests.get(ML_API_URL, timeout=180)
+        except Exception:
+            pass
+
+    t = threading.Thread(target=_ping, daemon=True)
+    t.start()
+    return jsonify({"started": True})
+
+
+@app.route("/ml-ready", methods=["GET"])
+def ml_ready():
+    """
+    Quick probe to check whether the ML API is reachable right now.
+    Returns {ready: true/false} within a short timeout (5 s).
+    """
+    try:
+        http_requests.get(ML_API_URL, timeout=5)
+        return jsonify({"ready": True})
+    except Exception:
+        return jsonify({"ready": False})
+
+
 @app.route("/predict", methods=["POST"])
 def predict():
     """
@@ -2893,13 +2934,13 @@ def predict():
     try:
         with open(save_path, "rb") as img_file:
             files = {"image": (f.filename, img_file, "image/jpeg")}
-            data = {"top_k": 3, "confidence": 0.3}
+            data = {"top_k": 3, "confidence": 0.1}
 
             response = http_requests.post(
                 f"{ML_API_URL}/predict",
                 files=files,
                 data=data,
-                timeout=60,
+                timeout=180,
             )
 
         if response.status_code != 200:
@@ -3048,6 +3089,77 @@ def add_to_album():
         log_activity(current_user.id, "stamp_saved", f"Saved stamp: {data.get('title', 'Unknown')}",
                      {"stamp_id": stamp_id, "title": data.get("title"), "country": data.get("country")})
         return jsonify({"success": True, "stamp_id": stamp_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/stamp-quest/capture", methods=["POST"])
+def capture_unrecognized_stamp():
+    """
+    Save a stamp crop the ML API could not recognise with high confidence,
+    so an admin can later enrich it (title, country, year, price, etc.) and
+    promote it into postbeeld_stamps. The crop image is uploaded to GCS when
+    available and falls back to a LONGBLOB in the DB.
+    """
+    import base64, uuid, json as _json
+
+    data = request.get_json(silent=True) or {}
+    img_b64 = data.get("image_base64")
+    if not img_b64:
+        return jsonify({"error": "image_base64 required"}), 400
+
+    if "," in img_b64:
+        img_b64 = img_b64.split(",", 1)[1]
+    try:
+        img_bytes = base64.b64decode(img_b64)
+    except Exception:
+        return jsonify({"error": "invalid base64 image"}), 400
+
+    if not img_bytes:
+        return jsonify({"error": "empty image"}), 400
+
+    # Upload to GCS under stamps/unrecognized/<uuid>.jpg (same top-level
+    # prefix used elsewhere for stamp imagery). Fall back to blob storage.
+    fname = f"{uuid.uuid4().hex}.jpg"
+    gcs_url = upload_bytes_to_gcs(
+        img_bytes, f"stamps/unrecognized/{fname}", content_type="image/jpeg"
+    )
+    image_blob = None if gcs_url else img_bytes
+
+    bbox = data.get("bbox")
+    bbox_json = _json.dumps(bbox) if bbox else None
+
+    user_id = current_user.id if getattr(current_user, "is_authenticated", False) else None
+    client_ip = (request.headers.get("X-Forwarded-For") or request.remote_addr or "")[:64]
+
+    # Coerce year to int when possible
+    year_val = data.get("best_match_year")
+    try:
+        year_val = int(year_val) if year_val not in (None, "", "N/A") else None
+    except (TypeError, ValueError):
+        year_val = None
+
+    try:
+        row_id = execute(
+            """INSERT INTO unrecognized_stamps
+               (image_url, image_blob, detection_confidence, bbox_json,
+                best_match_similarity, best_match_title, best_match_country,
+                best_match_year, user_id, client_ip)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                gcs_url,
+                image_blob,
+                data.get("detection_confidence"),
+                bbox_json,
+                data.get("best_match_similarity"),
+                (data.get("best_match_title") or None),
+                (data.get("best_match_country") or None),
+                year_val,
+                user_id,
+                client_ip,
+            ),
+        )
+        return jsonify({"success": True, "id": row_id})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -4317,6 +4429,121 @@ def admin_catalogue_image_delete(image_id):
         return jsonify({"error": "not found"}), 404
     execute("DELETE FROM catalogue_images WHERE id = %s", (image_id,))
     return jsonify({"success": True})
+
+
+# ------------------------------------------------------------
+# ADMIN: UNRECOGNIZED STAMPS (captured by /stamp-quest/capture)
+# ------------------------------------------------------------
+@app.route("/admin/unrecognized-stamps")
+@login_required
+@admin_required
+def admin_unrecognized_stamps():
+    show_reviewed = request.args.get("reviewed") == "1"
+    if show_reviewed:
+        rows = query_all(
+            """SELECT id, image_url, detection_confidence, best_match_similarity,
+                      best_match_title, best_match_country, best_match_year,
+                      title, country, year, condition_text, price_value,
+                      price_currency, notes, reviewed, created_at, user_id
+               FROM unrecognized_stamps
+               ORDER BY created_at DESC LIMIT 500"""
+        )
+    else:
+        rows = query_all(
+            """SELECT id, image_url, detection_confidence, best_match_similarity,
+                      best_match_title, best_match_country, best_match_year,
+                      title, country, year, condition_text, price_value,
+                      price_currency, notes, reviewed, created_at, user_id
+               FROM unrecognized_stamps
+               WHERE reviewed = 0
+               ORDER BY created_at DESC LIMIT 500"""
+        )
+    items = []
+    for r in rows:
+        items.append({
+            "id": r[0],
+            "image_url": r[1] or url_for("admin_unrecognized_image", item_id=r[0]),
+            "detection_confidence": float(r[2]) if r[2] is not None else None,
+            "best_match_similarity": float(r[3]) if r[3] is not None else None,
+            "best_match_title": r[4],
+            "best_match_country": r[5],
+            "best_match_year": r[6],
+            "title": r[7] or "",
+            "country": r[8] or "",
+            "year": r[9] or "",
+            "condition_text": r[10] or "",
+            "price_value": float(r[11]) if r[11] is not None else "",
+            "price_currency": r[12] or "EUR",
+            "notes": r[13] or "",
+            "reviewed": bool(r[14]),
+            "created_at": r[15],
+            "user_id": r[16],
+        })
+    return render_template("admin.html", active_tab="unrecognized",
+                           unrecognized=items, show_reviewed=show_reviewed)
+
+
+@app.route("/admin/unrecognized-stamps/<int:item_id>/image")
+@login_required
+@admin_required
+def admin_unrecognized_image(item_id):
+    from flask import Response
+    row = query_one("SELECT image_blob FROM unrecognized_stamps WHERE id = %s", (item_id,))
+    if row and row[0]:
+        return Response(row[0], mimetype="image/jpeg")
+    return ("", 404)
+
+
+@app.route("/admin/unrecognized-stamps/<int:item_id>/save", methods=["POST"])
+@login_required
+@admin_required
+def admin_unrecognized_save(item_id):
+    title = (request.form.get("title") or "").strip() or None
+    country = (request.form.get("country") or "").strip() or None
+    year_raw = (request.form.get("year") or "").strip()
+    try:
+        year = int(year_raw) if year_raw else None
+    except ValueError:
+        year = None
+    condition_text = (request.form.get("condition_text") or "").strip() or None
+    price_raw = (request.form.get("price_value") or "").strip()
+    try:
+        price_value = float(price_raw) if price_raw else None
+    except ValueError:
+        price_value = None
+    price_currency = (request.form.get("price_currency") or "EUR").strip().upper()[:3]
+    notes = (request.form.get("notes") or "").strip() or None
+
+    execute(
+        """UPDATE unrecognized_stamps
+           SET title=%s, country=%s, year=%s, condition_text=%s,
+               price_value=%s, price_currency=%s, notes=%s
+           WHERE id=%s""",
+        (title, country, year, condition_text, price_value, price_currency, notes, item_id),
+    )
+    flash("Saved.", "success")
+    return redirect(url_for("admin_unrecognized_stamps"))
+
+
+@app.route("/admin/unrecognized-stamps/<int:item_id>/mark-reviewed", methods=["POST"])
+@login_required
+@admin_required
+def admin_unrecognized_mark_reviewed(item_id):
+    execute(
+        "UPDATE unrecognized_stamps SET reviewed=1, reviewed_at=NOW() WHERE id=%s",
+        (item_id,),
+    )
+    flash("Marked as reviewed.", "success")
+    return redirect(url_for("admin_unrecognized_stamps"))
+
+
+@app.route("/admin/unrecognized-stamps/<int:item_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def admin_unrecognized_delete(item_id):
+    execute("DELETE FROM unrecognized_stamps WHERE id=%s", (item_id,))
+    flash("Deleted.", "success")
+    return redirect(url_for("admin_unrecognized_stamps"))
 
 
 @app.route("/admin/articles/<int:article_id>/short-urls")

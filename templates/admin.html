@@ -97,6 +97,16 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link {% if active_tab == 'unrecognized' %}active{% endif %}" href="/admin/unrecognized-stamps">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
+                        <path d="M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5v-5A3.5 3.5 0 0 0 10.5 2h-5zM3 5.5A2.5 2.5 0 0 1 5.5 3h5A2.5 2.5 0 0 1 13 5.5v5a2.5 2.5 0 0 1-2.5 2.5h-5A2.5 2.5 0 0 1 3 10.5v-5z"/>
+                        <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/>
+                    </svg>
+                    Unrecognized
+                    {% if unrecognized_count %}<span class="badge bg-danger ms-1">{{ unrecognized_count }}</span>{% endif %}
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {% if active_tab == 'settings' %}active{% endif %}" href="/admin/settings">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
                         <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
@@ -562,6 +572,102 @@
                 </tbody>
             </table>
         </div>
+        {% endif %}
+
+        {% if active_tab == 'unrecognized' %}
+        <!-- Unrecognized Stamps Tab Content -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Unrecognized Stamps from Stamp Quest AI</h5>
+            <div class="btn-group btn-group-sm" role="group">
+                <a href="/admin/unrecognized-stamps" class="btn btn-outline-primary {% if not show_reviewed %}active{% endif %}">Pending review</a>
+                <a href="/admin/unrecognized-stamps?reviewed=1" class="btn btn-outline-secondary {% if show_reviewed %}active{% endif %}">All (incl. reviewed)</a>
+            </div>
+        </div>
+        <p class="text-muted small">
+            Stamps detected by the ML pipeline that could not be confidently matched
+            against <code>postbeeld_stamps</code>. Fill in the fields below, then
+            &ldquo;Save &amp; Mark reviewed&rdquo; to promote them for a future index rebuild.
+        </p>
+        {% if unrecognized and unrecognized|length > 0 %}
+            {% for u in unrecognized %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <form method="POST" action="/admin/unrecognized-stamps/{{ u.id }}/save" class="row g-3 align-items-start">
+                        <div class="col-md-2 text-center">
+                            <img src="{{ u.image_url }}" alt="Unrecognized stamp #{{ u.id }}"
+                                 class="img-thumbnail" style="max-width: 160px; max-height: 160px;">
+                            <div class="small text-muted mt-2">
+                                #{{ u.id }}<br>
+                                {% if u.detection_confidence %}Det: {{ (u.detection_confidence * 100)|round(0) }}%{% endif %}
+                                {% if u.best_match_similarity %}<br>Best match: {{ (u.best_match_similarity * 100)|round(0) }}%{% endif %}
+                                {% if u.best_match_title %}<br><em class="text-truncate d-inline-block" style="max-width:150px;" title="{{ u.best_match_title }}">{{ u.best_match_title }}</em>{% endif %}
+                                <br>{{ u.created_at.strftime('%d %b %Y %H:%M') if u.created_at else '' }}
+                                {% if u.reviewed %}<br><span class="badge bg-success">Reviewed</span>{% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-10">
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label class="form-label small mb-0">Title</label>
+                                    <input type="text" name="title" value="{{ u.title }}" class="form-control form-control-sm"
+                                           placeholder="{{ u.best_match_title or 'e.g. Queen Elizabeth II, 1p red' }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small mb-0">Country</label>
+                                    <input type="text" name="country" value="{{ u.country }}" class="form-control form-control-sm"
+                                           placeholder="{{ u.best_match_country or '' }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small mb-0">Year</label>
+                                    <input type="number" name="year" value="{{ u.year }}" class="form-control form-control-sm"
+                                           placeholder="{{ u.best_match_year or '' }}">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small mb-0">Condition</label>
+                                    <input type="text" name="condition_text" value="{{ u.condition_text }}" class="form-control form-control-sm"
+                                           placeholder="Used / Mint / ...">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small mb-0">Price</label>
+                                    <input type="number" step="0.01" name="price_value" value="{{ u.price_value }}" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-0">Currency</label>
+                                    <select name="price_currency" class="form-select form-select-sm">
+                                        {% for c in ['EUR','GBP','USD','CAD','AUD'] %}
+                                        <option value="{{ c }}" {% if u.price_currency == c %}selected{% endif %}>{{ c }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-3 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-primary btn-sm w-100">Save</button>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small mb-0">Notes</label>
+                                    <input type="text" name="notes" value="{{ u.notes }}" class="form-control form-control-sm">
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                    <div class="d-flex gap-2 mt-2 justify-content-end">
+                        {% if not u.reviewed %}
+                        <form method="POST" action="/admin/unrecognized-stamps/{{ u.id }}/mark-reviewed" class="d-inline">
+                            <button type="submit" class="btn btn-outline-success btn-sm">Mark reviewed</button>
+                        </form>
+                        {% endif %}
+                        <form method="POST" action="/admin/unrecognized-stamps/{{ u.id }}/delete" class="d-inline"
+                              onsubmit="return confirm('Delete this capture permanently?');">
+                            <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="text-center text-muted py-4">
+                {% if show_reviewed %}No captures yet.{% else %}No pending captures — everything's reviewed!{% endif %}
+            </div>
+        {% endif %}
         {% endif %}
 
         {% if active_tab == 'settings' %}

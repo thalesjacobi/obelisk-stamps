@@ -1,0 +1,444 @@
+{% extends "layout.html" %}
+
+{% block title %}Article Pipeline - Obelisk Stamps{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="mb-0"><i class="fa-solid fa-wand-magic-sparkles me-2"></i>Article Pipeline</h2>
+        <a href="/admin/articles" class="btn btn-outline-secondary btn-sm">Back to Articles</a>
+    </div>
+
+    <!-- Stats bar -->
+    <div class="row g-2 mb-4" id="stats-bar">
+        <div class="col-auto"><span class="badge bg-warning text-dark fs-6" id="stat-pending">Pending: {{ queue|selectattr('status','equalto','pending')|list|length }}</span></div>
+        <div class="col-auto"><span class="badge bg-info fs-6" id="stat-accepted">Accepted: {{ queue|selectattr('status','equalto','accepted')|list|length }}</span></div>
+        <div class="col-auto"><span class="badge bg-primary fs-6" id="stat-generating">Generating: {{ queue|selectattr('status','equalto','generating')|list|length }}</span></div>
+        <div class="col-auto"><span class="badge bg-success fs-6" id="stat-ready">Ready: {{ queue|selectattr('status','equalto','ready')|list|length }}</span></div>
+        <div class="col-auto"><span class="badge bg-danger fs-6" id="stat-failed">Failed: {{ queue|selectattr('status','equalto','failed')|list|length }}</span></div>
+        <div class="col-auto"><span class="badge bg-secondary fs-6" id="stat-rejected">Rejected: {{ queue|selectattr('status','equalto','rejected')|list|length }}</span></div>
+    </div>
+
+    <!-- Generate Ideas panel -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Generate Article Ideas</h5>
+            <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#generateForm">
+                <i class="fa-solid fa-plus me-1"></i> New Batch
+            </button>
+        </div>
+        <div class="collapse" id="generateForm">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Articles per day</label>
+                        <input type="number" class="form-control" id="articles_per_day" value="2" min="1" max="10">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Start date</label>
+                        <input type="date" class="form-control" id="start_date">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">End date</label>
+                        <input type="date" class="form-control" id="end_date">
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-success w-100" id="btnGenerate" onclick="generateIdeas()">
+                            <i class="fa-solid fa-bolt me-1"></i> Generate Ideas
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <label class="form-label d-flex align-items-center gap-2">
+                        Idea Generation Prompt
+                        <span class="text-muted small">(customise the topic focus for this batch)</span>
+                        <a href="#" class="small text-decoration-none" onclick="event.preventDefault();document.getElementById('idea_prompt').value=DEFAULT_IDEA_PROMPT;">Reset to default</a>
+                    </label>
+                    <textarea class="form-control" id="idea_prompt" rows="5" style="font-size:.85rem">{{ idea_prompt }}</textarea>
+                </div>
+                <div class="mt-2 text-muted small" id="generateStatus"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk actions -->
+    <div class="d-flex gap-2 mb-3">
+        <button class="btn btn-outline-success btn-sm" onclick="bulkAccept()">
+            <i class="fa-solid fa-check-double me-1"></i> Accept All Pending
+        </button>
+        <button class="btn btn-outline-danger btn-sm" onclick="bulkReject()">
+            <i class="fa-solid fa-xmark me-1"></i> Reject All Pending
+        </button>
+    </div>
+
+    <!-- Queue table -->
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" id="queue-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 40px"><input type="checkbox" id="checkAll" onchange="toggleAll(this)"></th>
+                            <th style="width: 110px">Date</th>
+                            <th>Title</th>
+                            <th>Description</th>
+                            <th style="width: 120px">Status</th>
+                            <th style="width: 200px">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in queue %}
+                        <tr id="row-{{ item.id }}" data-id="{{ item.id }}" data-status="{{ item.status }}">
+                            <td><input type="checkbox" class="row-check" value="{{ item.id }}"></td>
+                            <td class="cell-date">{{ item.target_date }}</td>
+                            <td class="cell-title">
+                                <strong>{{ item.title }}</strong>
+                                {% if item.subtitle %}<br><small class="text-muted">{{ item.subtitle }}</small>{% endif %}
+                            </td>
+                            <td class="cell-desc"><small>{{ item.description|truncate(120) if item.description else '' }}</small></td>
+                            <td class="cell-status">
+                                {% if item.status == 'pending' %}
+                                    <span class="badge bg-warning text-dark">Pending</span>
+                                {% elif item.status == 'accepted' %}
+                                    <span class="badge bg-info">Accepted</span>
+                                {% elif item.status == 'generating' %}
+                                    <span class="badge bg-primary"><span class="spinner-border spinner-border-sm me-1"></span>Generating</span>
+                                {% elif item.status == 'ready' %}
+                                    <span class="badge bg-success">Ready</span>
+                                {% elif item.status == 'failed' %}
+                                    <span class="badge bg-danger" title="{{ item.generation_error or '' }}">Failed</span>
+                                {% elif item.status == 'rejected' %}
+                                    <span class="badge bg-secondary">Rejected</span>
+                                {% endif %}
+                            </td>
+                            <td class="cell-actions">
+                                {% if item.status == 'pending' %}
+                                    <button class="btn btn-success btn-sm" onclick="acceptItem({{ item.id }})" title="Accept"><i class="fa-solid fa-check"></i></button>
+                                    <button class="btn btn-danger btn-sm" onclick="rejectItem({{ item.id }})" title="Reject"><i class="fa-solid fa-xmark"></i></button>
+                                    <button class="btn btn-outline-secondary btn-sm" onclick="editItem({{ item.id }})" title="Edit"><i class="fa-solid fa-pencil"></i></button>
+                                    <button class="btn btn-outline-danger btn-sm" onclick="deleteItem({{ item.id }})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                                {% elif item.status == 'generating' %}
+                                    <span class="text-primary"><span class="spinner-border spinner-border-sm"></span> Working...</span>
+                                {% elif item.status == 'ready' %}
+                                    <a href="/admin/articles/{{ item.article_id }}/edit" class="btn btn-outline-primary btn-sm">View Article</a>
+                                {% elif item.status == 'failed' %}
+                                    <button class="btn btn-warning btn-sm" onclick="retryItem({{ item.id }})" title="Retry"><i class="fa-solid fa-rotate-right"></i> Retry</button>
+                                    <button class="btn btn-outline-danger btn-sm" onclick="deleteItem({{ item.id }})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                                    {% if item.generation_error %}
+                                    <button class="btn btn-outline-secondary btn-sm" title="{{ item.generation_error }}"><i class="fa-solid fa-circle-info"></i></button>
+                                    {% endif %}
+                                {% elif item.status == 'rejected' %}
+                                    <button class="btn btn-outline-warning btn-sm" onclick="restoreItem({{ item.id }})" title="Restore to pending"><i class="fa-solid fa-rotate-left"></i> Restore</button>
+                                    <button class="btn btn-outline-danger btn-sm" onclick="deleteItem({{ item.id }})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if not queue %}
+                        <tr id="empty-row"><td colspan="6" class="text-center text-muted py-4">No items in the pipeline. Generate some ideas to get started.</td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Queue Item</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-id">
+                <div class="mb-3">
+                    <label class="form-label">Title</label>
+                    <input type="text" class="form-control" id="edit-title">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Subtitle</label>
+                    <input type="text" class="form-control" id="edit-subtitle">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" id="edit-description" rows="3"></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Target Date</label>
+                    <input type="date" class="form-control" id="edit-target-date">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveEdit()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+#queue-table td { vertical-align: middle; }
+.cell-desc { max-width: 250px; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Set default dates
+(function() {
+    const today = new Date();
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 7);
+    document.getElementById('start_date').value = today.toISOString().slice(0,10);
+    document.getElementById('end_date').value = nextWeek.toISOString().slice(0,10);
+})();
+
+let _pollTimer = null;
+
+const DEFAULT_IDEA_PROMPT = `You are an expert philatelist, historian, and content strategist for Obelisk Stamps, a premium online store selling handcrafted framed stamp displays.
+
+Research and generate article ideas based on real stories, curiosities, and fascinating events from the world of stamps and postal history. Every country has issued stamps that reflect their culture, politics, technology, and identity — find the most compelling stories behind them.
+
+Include a mix of:
+- Famous stamp errors and printing mistakes that became legendary (e.g., Inverted Jenny, Treskilling Yellow)
+- Rare stamps with dramatic ownership histories and record-breaking auction sales
+- How countries used stamps as propaganda, cultural promotion, or political statements
+- Unusual stamp materials and formats (foil, silk, scented, 3D, shaped)
+- Wartime postal stories, espionage, and stamps used in psychological operations
+- The origins of postal systems and how they shaped global communication
+- Stamp collecting tips, investment insights, and how to spot valuable finds
+- Stories from all continents and eras — not just Western/European stamps
+
+Each idea should be based on real historical events or verifiable facts. Write titles that are click-worthy and SEO-friendly. The articles will ultimately drive traffic to an e-commerce store selling framed stamp displays, so favour topics that make readers appreciate the beauty and value of stamps.`;
+
+async function generateIdeas() {
+    const btn = document.getElementById('btnGenerate');
+    const status = document.getElementById('generateStatus');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Generating...';
+    status.textContent = 'Generating ideas with AI, please wait...';
+
+    try {
+        const resp = await fetch('/admin/article-pipeline/generate-ideas', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                articles_per_day: parseInt(document.getElementById('articles_per_day').value) || 2,
+                start_date: document.getElementById('start_date').value,
+                end_date: document.getElementById('end_date').value,
+                custom_prompt: document.getElementById('idea_prompt').value
+            })
+        });
+        let data;
+        const contentType = resp.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            data = await resp.json();
+        } else {
+            const text = await resp.text();
+            data = {error: `Server returned ${resp.status}. Check server logs for details.`};
+            console.error('[Pipeline] Non-JSON response:', text.substring(0, 500));
+        }
+        if (data.ok) {
+            status.innerHTML = `<span class="text-success">&#10003; Generated ${data.count} ideas (batch: ${data.batch_id}). Reloading...</span>`;
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            status.innerHTML = '<span class="text-danger">Error: ' + (data.error || 'Unknown error') + '</span>';
+            if (data.traceback) console.error('[Pipeline] Server traceback:\n', data.traceback);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-bolt me-1"></i> Generate Ideas';
+        }
+    } catch (e) {
+        status.innerHTML = '<span class="text-danger">Network error: ' + e.message + '</span>';
+        console.error('[Pipeline] Fetch error:', e);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-bolt me-1"></i> Generate Ideas';
+    }
+}
+
+async function acceptItem(id) {
+    await updateStatus(id, 'accepted');
+    startPolling();
+}
+
+async function rejectItem(id) {
+    await updateStatus(id, 'rejected');
+}
+
+async function retryItem(id) {
+    await updateStatus(id, 'accepted');
+    startPolling();
+}
+
+async function restoreItem(id) {
+    await updateStatus(id, 'pending');
+}
+
+async function updateStatus(id, status) {
+    try {
+        const resp = await fetch(`/admin/article-pipeline/${id}/status`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({status})
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown'));
+        }
+    } catch (e) {
+        alert('Network error: ' + e.message);
+    }
+}
+
+async function deleteItem(id) {
+    if (!confirm('Delete this item from the queue?')) return;
+    try {
+        const resp = await fetch(`/admin/article-pipeline/${id}`, {method: 'DELETE'});
+        const data = await resp.json();
+        if (data.ok) {
+            const row = document.getElementById('row-' + id);
+            if (row) row.remove();
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+function editItem(id) {
+    const row = document.getElementById('row-' + id);
+    if (!row) return;
+    document.getElementById('edit-id').value = id;
+    document.getElementById('edit-title').value = row.querySelector('.cell-title strong').textContent.trim();
+    const sub = row.querySelector('.cell-title small');
+    document.getElementById('edit-subtitle').value = sub ? sub.textContent.trim() : '';
+    document.getElementById('edit-description').value = row.querySelector('.cell-desc small')?.textContent.trim() || '';
+    document.getElementById('edit-target-date').value = row.querySelector('.cell-date').textContent.trim();
+    new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+
+async function saveEdit() {
+    const id = document.getElementById('edit-id').value;
+    try {
+        const resp = await fetch(`/admin/article-pipeline/${id}/edit`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                title: document.getElementById('edit-title').value,
+                subtitle: document.getElementById('edit-subtitle').value,
+                description: document.getElementById('edit-description').value,
+                target_date: document.getElementById('edit-target-date').value
+            })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+            location.reload();
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+function toggleAll(el) {
+    document.querySelectorAll('.row-check').forEach(cb => cb.checked = el.checked);
+}
+
+function getCheckedPendingIds() {
+    const ids = [];
+    document.querySelectorAll('.row-check:checked').forEach(cb => {
+        const row = cb.closest('tr');
+        if (row && row.dataset.status === 'pending') {
+            ids.push(parseInt(cb.value));
+        }
+    });
+    return ids;
+}
+
+async function bulkAccept() {
+    let ids = getCheckedPendingIds();
+    if (ids.length === 0) {
+        // If none checked, get all pending
+        ids = [];
+        document.querySelectorAll('tr[data-status="pending"]').forEach(row => {
+            ids.push(parseInt(row.dataset.id));
+        });
+    }
+    if (ids.length === 0) { alert('No pending items to accept.'); return; }
+    if (!confirm(`Accept and generate ${ids.length} articles? This may take a while.`)) return;
+
+    const resp = await fetch('/admin/article-pipeline/bulk-action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'accept_all', ids})
+    });
+    const data = await resp.json();
+    if (data.ok) {
+        location.reload();
+        startPolling();
+    }
+}
+
+async function bulkReject() {
+    let ids = getCheckedPendingIds();
+    if (ids.length === 0) {
+        ids = [];
+        document.querySelectorAll('tr[data-status="pending"]').forEach(row => {
+            ids.push(parseInt(row.dataset.id));
+        });
+    }
+    if (ids.length === 0) { alert('No pending items to reject.'); return; }
+    if (!confirm(`Reject ${ids.length} items?`)) return;
+
+    const resp = await fetch('/admin/article-pipeline/bulk-action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'reject_all', ids})
+    });
+    const data = await resp.json();
+    if (data.ok) location.reload();
+}
+
+function startPolling() {
+    if (_pollTimer) return;
+    _pollTimer = setInterval(pollProgress, 5000);
+}
+
+async function pollProgress() {
+    try {
+        const resp = await fetch('/admin/article-pipeline/progress');
+        const data = await resp.json();
+        if (data.items && data.items.length === 0) {
+            clearInterval(_pollTimer);
+            _pollTimer = null;
+            location.reload();
+            return;
+        }
+        // Update individual row statuses
+        for (const item of (data.items || [])) {
+            const row = document.getElementById('row-' + item.id);
+            if (!row) continue;
+            const statusCell = row.querySelector('.cell-status');
+            if (item.status === 'generating') {
+                statusCell.innerHTML = '<span class="badge bg-primary"><span class="spinner-border spinner-border-sm me-1"></span>Generating</span>';
+            }
+        }
+    } catch (e) {
+        // Ignore polling errors
+    }
+}
+
+// Auto-start polling if there are active items
+(function() {
+    const active = document.querySelectorAll('tr[data-status="accepted"], tr[data-status="generating"]');
+    if (active.length > 0) startPolling();
+})();
+</script>
+{% endblock %}
