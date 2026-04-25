@@ -208,7 +208,7 @@ def load_ml_assets() -> bool:
 # ------------------------------------------------------------
 # INFERENCE FUNCTIONS
 # ------------------------------------------------------------
-def detect_stamps(image_bytes: bytes, confidence: float = 0.3) -> List[dict]:
+def detect_stamps(image_bytes: bytes, confidence: float = 0.1) -> List[dict]:
     """Detect stamps in an image using YOLO."""
     if stamp_detector is None:
         return []
@@ -393,10 +393,12 @@ def predict():
 
     # Detect stamps
     detections = detect_stamps(image_bytes, confidence)
-    app.logger.info("predict: detect_stamps took %.3fs", time.perf_counter() - t1)
+    app.logger.info("predict: detect_stamps took %.3fs, found %d stamps (conf>=%.2f)",
+                    time.perf_counter() - t1, len(detections), confidence)
 
-    if len(detections) > 1:
-        # Multi-stamp image: match each detected stamp
+    if len(detections) >= 1:
+        # One or more detections: return each as its own card (even if matches are weak/empty)
+        # This avoids the misleading whole-image fallback when YOLO actually found stamps.
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         w, h = img.size
 
