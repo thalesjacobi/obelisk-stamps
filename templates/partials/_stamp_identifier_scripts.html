@@ -201,19 +201,28 @@ document.addEventListener('DOMContentLoaded', function() {
             // Create cropped image from bbox using canvas
             const croppedImageUrl = cropStampFromImage(originalImage, stamp.bbox);
 
-            // Threshold below which we consider the stamp "unrecognized".
-            // Stamps above this show a match card; below it show a warning
-            // and are saved for admin review.
-            const UNRECOGNIZED_THRESHOLD = 0.35;
             const topMatch = (stamp.matches && stamp.matches.length > 0) ? stamp.matches[0] : null;
             const similarityPct = topMatch ? (topMatch.similarity * 100).toFixed(0) : null;
-            const isUnrecognized = !topMatch || (topMatch.similarity || 0) < UNRECOGNIZED_THRESHOLD;
+            const hasMatch = !!topMatch;
 
-            // Stamp header with cropped image + match confidence badge
+            // Badge colour reflects similarity strength but never hides the card
+            let badgeClass, badgeLabel;
+            if (!hasMatch) {
+                badgeClass = 'bg-secondary';
+                badgeLabel = 'No match in DB';
+            } else if (topMatch.similarity >= 0.6) {
+                badgeClass = 'bg-success';
+                badgeLabel = `Match: ${similarityPct}%`;
+            } else if (topMatch.similarity >= 0.35) {
+                badgeClass = 'bg-warning text-dark';
+                badgeLabel = `Possible match: ${similarityPct}%`;
+            } else {
+                badgeClass = 'bg-secondary';
+                badgeLabel = `Weak match: ${similarityPct}%`;
+            }
+
             const stampHeader = document.createElement('div');
             stampHeader.className = 'row align-items-center mb-3 pb-2 border-bottom';
-            const badgeClass = isUnrecognized ? 'bg-warning text-dark' : (topMatch.similarity >= 0.6 ? 'bg-success' : 'bg-secondary');
-            const badgeLabel = isUnrecognized ? 'Unrecognized' : `Match: ${similarityPct}%`;
             stampHeader.innerHTML = `
                 <div class="col-auto">
                     <img src="${croppedImageUrl}" alt="Stamp ${stampIndex + 1}"
@@ -228,92 +237,70 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
             stampSection.appendChild(stampHeader);
 
-            if (isUnrecognized) {
-                // Show a warning with the closest guess for context, and
-                // capture the crop silently for admin review.
-                const closestGuess = topMatch
-                    ? `<div class="mt-2 small text-muted"><strong>Closest guess:</strong> ${topMatch.title || '—'}
-                         (${similarityPct}% similarity) &mdash; ${topMatch.country || ''} ${topMatch.year || ''}</div>`
-                    : '';
-                const notice = document.createElement('div');
-                notice.className = 'alert alert-warning';
-                notice.innerHTML = `
-                    <strong>We couldn't identify this stamp confidently.</strong>
-                    ${closestGuess}
-                    <div class="mt-2 small text-muted">We've saved this crop so our experts can review it and add it to the database. Thanks for helping us improve!</div>
-                `;
-                stampSection.appendChild(notice);
+            // Build the match card (always shown). If no match at all, render a placeholder.
+            const result = topMatch || {};
+            const price = result.price_converted
+                ? `${result.price_converted.value.toFixed(2)} ${result.price_converted.currency}`
+                : (result.price_value ? `${result.price_value} ${result.price_currency || ''}` : 'N/A');
 
-                // Fire-and-forget capture
-                try {
-                    fetch('/stamp-quest/capture', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            image_base64: croppedImageUrl,
-                            bbox: stamp.bbox,
-                            detection_confidence: stamp.detection_confidence,
-                            best_match_similarity: topMatch ? topMatch.similarity : null,
-                            best_match_title: topMatch ? topMatch.title : null,
-                            best_match_country: topMatch ? topMatch.country : null,
-                            best_match_year: topMatch ? topMatch.year : null,
-                        }),
-                    }).catch(function(){ /* swallow */ });
-                } catch (e) { /* swallow */ }
+            const stampData = {
+                image_base64: croppedImageUrl,
+                title: result.title,
+                country: result.country,
+                year: result.year,
+                condition_text: result.condition_text,
+                price_value: result.price_converted?.value || result.price_value,
+                price_currency: result.price_converted?.currency || result.price_currency,
+                source_url: result.source_url,
+                similarity: result.similarity
+            };
 
-                resultsContainer.appendChild(stampSection);
-                return; // next stamp
-            }
+            // Payload for the "doesn't look right" button so admins can review later
+            const reportData = {
+                image_base64: croppedImageUrl,
+                bbox: stamp.bbox,
+                detection_confidence: stamp.detection_confidence,
+                best_match_similarity: topMatch ? topMatch.similarity : null,
+                best_match_title: topMatch ? topMatch.title : null,
+                best_match_country: topMatch ? topMatch.country : null,
+                best_match_year: topMatch ? topMatch.year : null,
+            };
 
-            // Recognized stamp — show the best match card
-            {
-                const result = topMatch;
-                const price = result.price_converted ?
-                    `${result.price_converted.value.toFixed(2)} ${result.price_converted.currency}` :
-                    'N/A';
-
-                // Store result data for the add-to-album button
-                const stampData = {
-                    image_base64: croppedImageUrl,
-                    title: result.title,
-                    country: result.country,
-                    year: result.year,
-                    condition_text: result.condition_text,
-                    price_value: result.price_converted?.value || result.price_value,
-                    price_currency: result.price_converted?.currency || result.price_currency,
-                    source_url: result.source_url,
-                    similarity: result.similarity
-                };
-
-                const matchCard = document.createElement('div');
-                matchCard.className = 'row';
-                matchCard.innerHTML = `
-                    <div class="col-md-6">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h5 class="card-title">${result.title || 'Unknown'}</h5>
-                                <ul class="list-unstyled mb-0">
-                                    <li><strong>Country:</strong> ${result.country || 'N/A'}</li>
-                                    <li><strong>Year:</strong> ${result.year || 'N/A'}</li>
-                                    <li><strong>Condition:</strong> ${result.condition_text || 'N/A'}</li>
-                                    <li><strong>Price:</strong> <span class="text-success fw-bold">${price}</span></li>
-                                </ul>
-                            </div>
-                            ${window.userIsAuthenticated ? `
-                            <div class="card-footer">
-                                <button type="button" class="btn btn-sm btn-success add-to-album-btn" data-stamp='${JSON.stringify(stampData).replace(/'/g, "&#39;")}'>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-                                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                                    </svg>
-                                    Add to my album
-                                </button>
-                            </div>
+            const matchCard = document.createElement('div');
+            matchCard.className = 'row';
+            matchCard.innerHTML = `
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">${result.title || 'Not yet identified'}</h5>
+                            <ul class="list-unstyled mb-0">
+                                <li><strong>Country:</strong> ${result.country || 'N/A'}</li>
+                                <li><strong>Year:</strong> ${result.year || 'N/A'}</li>
+                                <li><strong>Condition:</strong> ${result.condition_text || 'N/A'}</li>
+                                <li><strong>Price:</strong> <span class="text-success fw-bold">${price}</span></li>
+                            </ul>
+                        </div>
+                        <div class="card-footer d-flex flex-wrap gap-2">
+                            ${window.userIsAuthenticated && hasMatch ? `
+                            <button type="button" class="btn btn-sm btn-success add-to-album-btn" data-stamp='${JSON.stringify(stampData).replace(/'/g, "&#39;")}'>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                                </svg>
+                                Add to my album
+                            </button>
                             ` : ''}
+                            <button type="button" class="btn btn-sm btn-outline-warning report-mismatch-btn" data-report='${JSON.stringify(reportData).replace(/'/g, "&#39;")}'>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                                    <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.553.553 0 0 1-1.1 0z"/>
+                                </svg>
+                                This doesn't look right
+                            </button>
                         </div>
                     </div>
-                `;
-                stampSection.appendChild(matchCard);
-            }
+                </div>
+            `;
+            stampSection.appendChild(matchCard);
 
             resultsContainer.appendChild(stampSection);
         });
@@ -393,6 +380,36 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
         resultsContainer.appendChild(card);
     }
+
+    // Handle "This doesn't look right" button clicks — saves crop to admin review queue
+    document.addEventListener('click', async function(e) {
+        const reportBtn = e.target.closest('.report-mismatch-btn');
+        if (reportBtn) {
+            const reportData = JSON.parse(reportBtn.dataset.report);
+            reportBtn.disabled = true;
+            const originalHtml = reportBtn.innerHTML;
+            reportBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+            try {
+                const response = await fetch('/stamp-quest/capture', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reportData)
+                });
+                if (response.ok) {
+                    reportBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg> Reported, thank you!';
+                    reportBtn.classList.remove('btn-outline-warning');
+                    reportBtn.classList.add('btn-secondary');
+                } else {
+                    throw new Error('Failed to report');
+                }
+            } catch (error) {
+                reportBtn.disabled = false;
+                reportBtn.innerHTML = originalHtml;
+                alert('Could not submit the report. Please try again.');
+            }
+            return;
+        }
+    });
 
     // Handle Add to Album button clicks
     document.addEventListener('click', async function(e) {
