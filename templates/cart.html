@@ -24,6 +24,9 @@
                         <div class="col-5 col-md-6">
                             <h6 class="mb-1">{{ item[3] }}</h6>
                             <p class="text-muted mb-0 small">Qty: {{ item[2] }}</p>
+                            {% if item[6] %}
+                            <p class="text-muted mb-0 small mt-1">🎁 <em>{{ item[6] }}</em></p>
+                            {% endif %}
                         </div>
                         <div class="col-2 col-md-2 text-end">
                             <span class="fw-bold">{{ currency_symbol }}{{ "%.2f"|format(convert_catalogue_price(item[4] * item[2], active_currency) or 0) }}</span>

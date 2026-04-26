@@ -48,7 +48,7 @@
                             <h6 class="card-title mb-1 text-center text-success">Shop With Confidence</h6>
                             <ul class="list-unstyled mb-0 small" style="font-size: 0.72rem;">
                                 <li><span class="text-success">&#10003;</span> Free UK shipping over &pound;75</li>
-                                <li><span class="text-success">&#10003;</span> 14-day returns</li>
+                                <li><span class="text-success">&#10003;</span> 14-day returns (seal intact)</li>
                                 <li><span class="text-success">&#10003;</span> Secure payments</li>
                                 <li><span class="text-success">&#10003;</span> Authentic stamps</li>
                             </ul>
@@ -57,6 +57,7 @@
                 </div>
                 {% endif %}
                 {% set is_sold = (item|length > 5 and (item[5] or 'available') == 'sold') %}
+                {% set has_detail = (item|length > 7 and item[6] and item[7]) %}
                 <div class="collection-card">
                     <div class="card h-100 position-relative{% if is_sold %} opacity-75{% endif %}">
                         {% if is_sold %}
@@ -65,7 +66,9 @@
                         {% endif %}
                         <div class="bg-light text-center p-2" style="height: 160px;">
                             {% if item[4] %}
+                            {% if has_detail %}<a href="/catalogue/{{ item[6] }}/{{ item[7] }}">{% endif %}
                             <img src="{{ catalogue_img_url(item[4]) }}" alt="{{ item[1] }}" class="img-fluid h-100" style="object-fit: contain;">
+                            {% if has_detail %}</a>{% endif %}
                             {% else %}
                             <div class="d-flex align-items-center justify-content-center h-100">
                                 <span class="text-muted small">No image</span>
@@ -73,7 +76,11 @@
                             {% endif %}
                         </div>
                         <div class="card-body text-center p-2">
-                            <h6 class="card-title mb-1">{{ item[1] }}</h6>
+                            <h6 class="card-title mb-1">
+                                {% if has_detail %}<a href="/catalogue/{{ item[6] }}/{{ item[7] }}" class="text-decoration-none text-dark">{% endif %}
+                                {{ item[1] }}
+                                {% if has_detail %}</a>{% endif %}
+                            </h6>
                             <p class="text-primary fw-bold mb-2">{{ currency_symbol }}{{ "%.2f"|format(convert_catalogue_price(item[3] or 0, active_currency) or 0) }}</p>
                             {% if is_sold %}
                             <button class="btn btn-secondary btn-sm w-100" disabled>Sold</button>
@@ -100,7 +107,7 @@
                             <h6 class="card-title mb-1 text-center text-success">Shop With Confidence</h6>
                             <ul class="list-unstyled mb-0 small" style="font-size: 0.72rem;">
                                 <li><span class="text-success">&#10003;</span> Free UK shipping over &pound;75</li>
-                                <li><span class="text-success">&#10003;</span> 14-day returns</li>
+                                <li><span class="text-success">&#10003;</span> 14-day returns (seal intact)</li>
                                 <li><span class="text-success">&#10003;</span> Secure payments</li>
                                 <li><span class="text-success">&#10003;</span> Authentic stamps</li>
                             </ul>

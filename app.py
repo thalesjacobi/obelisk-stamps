@@ -1214,6 +1214,15 @@ def init_site_settings():
             cur.execute("ALTER TABLE orders ADD COLUMN utm_campaign VARCHAR(255) DEFAULT NULL")
     except Exception:
         pass  # orders table may not exist yet
+    try:
+        cur.execute("""
+            SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cart_items' AND COLUMN_NAME = 'gift_message'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE cart_items ADD COLUMN gift_message TEXT DEFAULT NULL")
+    except Exception:
+        pass  # cart_items table may not exist yet
     # Migrate existing TEXT column to MEDIUMTEXT if not already upgraded
     cur.execute("""
         SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
@@ -2358,6 +2367,33 @@ def catalogue():
                            user_currency=currency)
 
 
+@app.route("/catalogue/<category>")
+def catalogue_category(category):
+    """Show all public items in a given category."""
+    catalogue_items = query_all(
+        "SELECT id, title, description, price, image_url, status, category, slug "
+        "FROM catalogue WHERE is_public = 1 AND category = %s ORDER BY id DESC",
+        (category,),
+    )
+    galleries = {}
+    if catalogue_items:
+        ids = tuple(item[0] for item in catalogue_items)
+        placeholders = ",".join(["%s"] * len(ids))
+        gallery_rows = query_all(
+            f"SELECT catalogue_id, image_url FROM catalogue_images "
+            f"WHERE catalogue_id IN ({placeholders}) ORDER BY sort_order, id",
+            ids,
+        )
+        for cid, url in gallery_rows:
+            galleries.setdefault(cid, []).append(url)
+    currency = get_active_currency()
+    return render_template("catalogue.html",
+                           catalogue_items=catalogue_items,
+                           galleries=galleries,
+                           user_currency=currency,
+                           active_category=category)
+
+
 @app.route("/catalogue/<category>/<slug>")
 def catalogue_item_detail(category, slug):
     """SEO-friendly detail page for a single catalogue item."""
@@ -3208,7 +3244,7 @@ def album_stamp_image(stamp_id):
 def cart():
     """View shopping cart."""
     cart_items = query_all(
-        """SELECT ci.id, ci.catalogue_id, ci.quantity, c.title, c.price, c.image_url
+        """SELECT ci.id, ci.catalogue_id, ci.quantity, c.title, c.price, c.image_url, ci.gift_message
            FROM cart_items ci
            JOIN catalogue c ON ci.catalogue_id = c.id
            WHERE ci.user_id = %s""",
@@ -3247,17 +3283,25 @@ def add_to_cart(catalogue_id):
         (current_user.id, catalogue_id),
     )
 
+    gift_message = request.form.get("gift_message", "").strip() or None
+
     if existing:
-        # Update quantity
-        execute(
-            "UPDATE cart_items SET quantity = quantity + 1 WHERE id = %s",
-            (existing[0],),
-        )
+        # Update quantity (and gift message if provided)
+        if gift_message:
+            execute(
+                "UPDATE cart_items SET quantity = quantity + 1, gift_message = %s WHERE id = %s",
+                (gift_message, existing[0]),
+            )
+        else:
+            execute(
+                "UPDATE cart_items SET quantity = quantity + 1 WHERE id = %s",
+                (existing[0],),
+            )
     else:
         # Insert new cart item
         execute(
-            "INSERT INTO cart_items (user_id, catalogue_id, quantity) VALUES (%s, %s, 1)",
-            (current_user.id, catalogue_id),
+            "INSERT INTO cart_items (user_id, catalogue_id, quantity, gift_message) VALUES (%s, %s, 1, %s)",
+            (current_user.id, catalogue_id, gift_message),
         )
 
     log_activity(current_user.id, "add_to_cart", f"Added {item[1]} to cart",
