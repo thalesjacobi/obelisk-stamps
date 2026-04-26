@@ -132,6 +132,33 @@
         <hr>
 
         <div class="mb-3">
+            <label class="form-label fw-semibold">Gift personas</label>
+            <small class="text-muted d-block mb-2">
+                Type any audience (e.g. <em>Football fans</em>, <em>Bird lovers</em>) and press <kbd>Enter</kbd> — an emoji is assigned automatically.
+                Or click a suggestion below to quick-add.
+            </small>
+            <div style="position:relative;">
+                <div id="persona-box"
+                     class="form-control"
+                     style="height:auto; min-height:42px; display:flex; flex-wrap:wrap; gap:5px; align-items:center; padding:6px 10px; cursor:text;"
+                     onclick="document.getElementById('persona-input').focus()">
+                    <input id="persona-input" type="text" placeholder="Type a persona and press Enter…" autocomplete="off"
+                           style="border:none; outline:none; background:transparent; flex:1; min-width:160px; font-size:0.9rem; padding:0;">
+                </div>
+                <div id="persona-dropdown"
+                     class="list-group shadow"
+                     style="display:none; position:absolute; z-index:1050; width:100%; max-height:220px; overflow-y:auto;"></div>
+            </div>
+            <div class="mt-2">
+                <small class="text-muted me-1">Quick add:</small>
+                <div id="persona-suggestions" class="d-inline-flex flex-wrap gap-1 mt-1"></div>
+            </div>
+            <div id="persona-hidden"></div>
+        </div>
+
+        <hr>
+
+        <div class="mb-3">
             <label class="form-label">Primary image (shown in listings)</label>
             {% if item and item.image_url %}
             <div class="mb-2">
@@ -277,5 +304,241 @@ function deleteGalleryImage(imageId, btn) {
     })
     .catch(err => alert('Error: ' + err));
 }
+
+// ── Gift Personas Tag Widget ────────────────────────────────────────────────
+(function () {
+    const PRESETS = {{ gift_persona_presets | tojson }};
+
+    // keyword → emoji map (order matters: more specific first)
+    const EMOJI_MAP = [
+        // Sports
+        {k:['football','soccer'],           e:'⚽'},
+        {k:['cricket'],                     e:'🏏'},
+        {k:['rugby'],                       e:'🏉'},
+        {k:['tennis'],                      e:'🎾'},
+        {k:['golf'],                        e:'⛳'},
+        {k:['swim','swimming'],             e:'🏊'},
+        {k:['cycling','bicycle','bike'],    e:'🚴'},
+        {k:['running','marathon','athletics','runner'], e:'🏃'},
+        {k:['boxing'],                      e:'🥊'},
+        {k:['basketball'],                  e:'🏀'},
+        {k:['baseball'],                    e:'⚾'},
+        {k:['hockey'],                      e:'🏒'},
+        {k:['ski','skiing'],                e:'⛷️'},
+        {k:['olympic','olympics'],          e:'🏅'},
+        {k:['equestrian','horse','horses'], e:'🐎'},
+        {k:['sport','sports'],              e:'⚽'},
+        // Animals & nature
+        {k:['bird','birds','ornitholog'],   e:'🐦'},
+        {k:['insect','insects','butterfly','butterflies','entomolog','beetle','bug'], e:'🦋'},
+        {k:['flower','flowers','floral','botanical','botany','blossom','bloom'], e:'🌸'},
+        {k:['mammal','mammals','safari'],   e:'🦁'},
+        {k:['dog','dogs','canine'],         e:'🐕'},
+        {k:['cat','cats','feline'],         e:'🐈'},
+        {k:['fish','fishing','aquatic','coral','reef'], e:'🐟'},
+        {k:['reptile','snake','lizard','turtle'], e:'🦎'},
+        {k:['dinosaur','fossil','prehistoric'], e:'🦕'},
+        {k:['tree','trees','forest','woodland'], e:'🌳'},
+        {k:['garden','gardening','plant','plants'], e:'🌱'},
+        {k:['wildlife','animal','animals'], e:'🐾'},
+        {k:['biology','biological','biologist'], e:'🔬'},
+        {k:['nature','natural'],            e:'🌿'},
+        // Geography & travel
+        {k:['geography','geographic','map','cartograph'], e:'🌍'},
+        {k:['travel','travell','explorer','adventure','expedition'], e:'✈️'},
+        {k:['architecture','architect'],    e:'🏛️'},
+        {k:['landmark','monument'],         e:'🗽'},
+        {k:['mountain','hiking','trekking','climbing'], e:'🏔️'},
+        {k:['beach','surf','coast','seaside'], e:'🏖️'},
+        // History & culture
+        {k:['history','historian','historical','heritage'], e:'📜'},
+        {k:['art','artist','artistic','painting','gallery'], e:'🎨'},
+        {k:['music','musician','musical'],  e:'🎵'},
+        {k:['space','astronomy','astronaut','cosmos','universe','planet','star'], e:'🚀'},
+        {k:['science','scientist','scientific','physics','chemistry'], e:'🔭'},
+        {k:['military','war','army','navy','soldier','veteran'], e:'🎖️'},
+        {k:['royal','royalty','monarchy','queen','king','crown'], e:'👑'},
+        {k:['religion','religious','church','cathedral'], e:'⛪'},
+        {k:['vintage','antique','retro'],   e:'🕰️'},
+        // Transport
+        {k:['train','railway','locomotive','rail'], e:'🚂'},
+        {k:['ship','ships','naval','maritime','sailing','sailor'], e:'⚓'},
+        {k:['car','cars','automobile','motor','racing'], e:'🏎️'},
+        {k:['aircraft','aviation','airplane','plane','pilot'], e:'✈️'},
+        {k:['transport','transit'],         e:'🚌'},
+        // Stamps & collecting
+        {k:['stamp','stamps','philately','philatelist','collector','collection','collecting'], e:'🧳'},
+        // Occasions
+        {k:['birthday','birthdays'],        e:'🎂'},
+        {k:['christmas','holiday','festive','xmas'], e:'🎄'},
+        {k:['retirement','retire'],         e:'🎓'},
+        {k:['anniversary','anniversaries'], e:'💍'},
+        {k:['wedding','engagement'],        e:'💍'},
+        {k:['gift','gifts','present'],      e:'🎁'},
+        // Lifestyle
+        {k:['home','interior','decor','décor','decoration'], e:'🏠'},
+        {k:['office','desk','workspace'],   e:'🏢'},
+        {k:['education','teacher','school','learning','academic'], e:'📚'},
+        {k:['technology','tech','engineering','computer'], e:'⚙️'},
+        {k:['food','cooking','chef','cuisine','culinary'], e:'🍽️'},
+        {k:['wine','beer','spirits','drinks'], e:'🍷'},
+    ];
+
+    function pickEmoji(text) {
+        const lower = text.toLowerCase();
+        for (const {k, e} of EMOJI_MAP) {
+            if (k.some(kw => lower.includes(kw))) return e;
+        }
+        return '🏷️';
+    }
+
+    function startsWithEmoji(str) {
+        // Check if first codepoint is non-ASCII (emoji range)
+        return str && str.codePointAt(0) > 0x00FF;
+    }
+
+    function formatPersona(raw) {
+        const text = raw.trim();
+        if (!text) return '';
+        if (startsWithEmoji(text)) return text;
+        return pickEmoji(text) + ' ' + text;
+    }
+
+    function esc(str) {
+        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    let tags = [];
+
+    function addTag(raw, alreadyFormatted) {
+        const persona = alreadyFormatted ? raw.trim() : formatPersona(raw);
+        if (!persona || tags.includes(persona)) return;
+        tags.push(persona);
+        render();
+    }
+
+    function removeTag(persona) {
+        tags = tags.filter(t => t !== persona);
+        render();
+    }
+
+    function render() {
+        const box = document.getElementById('persona-box');
+        const input = document.getElementById('persona-input');
+        box.querySelectorAll('.ptag').forEach(el => el.remove());
+        tags.forEach(p => {
+            const span = document.createElement('span');
+            span.className = 'ptag badge border d-inline-flex align-items-center gap-1';
+            span.style.cssText = 'background:#f8f9fa; color:#212529; font-weight:400; font-size:0.82rem; padding:4px 8px;';
+            span.innerHTML = esc(p) +
+                ' <button type="button" aria-label="Remove" style="background:none;border:none;padding:0;line-height:1;cursor:pointer;font-size:0.8rem;color:#888;">&times;</button>';
+            span.querySelector('button').onclick = () => removeTag(p);
+            box.insertBefore(span, input);
+        });
+
+        // Hidden inputs
+        const hidden = document.getElementById('persona-hidden');
+        hidden.innerHTML = '';
+        tags.forEach(p => {
+            const inp = document.createElement('input');
+            inp.type = 'hidden'; inp.name = 'gift_persona'; inp.value = p;
+            hidden.appendChild(inp);
+        });
+
+        // Suggestions (presets not yet added)
+        const sugBox = document.getElementById('persona-suggestions');
+        sugBox.innerHTML = '';
+        PRESETS.filter(p => !tags.includes(p)).forEach(p => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-outline-secondary btn-sm';
+            btn.style.fontSize = '0.78rem';
+            btn.textContent = p;
+            btn.onclick = () => { addTag(p, true); };
+            sugBox.appendChild(btn);
+        });
+    }
+
+    // Autocomplete
+    const input = document.getElementById('persona-input');
+    const dropdown = document.getElementById('persona-dropdown');
+
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const val = input.value.trim();
+            // If dropdown has highlighted item, pick it
+            const active = dropdown.querySelector('.active');
+            if (active) {
+                active.click();
+            } else if (val) {
+                addTag(val, false);
+                input.value = '';
+                hideDropdown();
+            }
+        } else if (e.key === 'Backspace' && !input.value && tags.length) {
+            removeTag(tags[tags.length - 1]);
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            navigateDropdown(1);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            navigateDropdown(-1);
+        } else if (e.key === 'Escape') {
+            hideDropdown();
+        }
+    });
+
+    input.addEventListener('input', () => {
+        const val = input.value.trim();
+        if (!val) { hideDropdown(); return; }
+        const lower = val.toLowerCase();
+        const matches = PRESETS.filter(p => p.toLowerCase().includes(lower) && !tags.includes(p));
+        showDropdown(matches, val);
+    });
+
+    input.addEventListener('blur', () => setTimeout(hideDropdown, 160));
+
+    function showDropdown(matches, typed) {
+        dropdown.innerHTML = '';
+        matches.slice(0, 8).forEach(m => {
+            const a = document.createElement('button');
+            a.type = 'button';
+            a.className = 'list-group-item list-group-item-action';
+            a.style.fontSize = '0.88rem';
+            a.textContent = m;
+            a.onclick = () => { addTag(m, true); input.value = ''; hideDropdown(); };
+            dropdown.appendChild(a);
+        });
+        // "Add custom" option if not an exact preset match
+        if (typed && !PRESETS.some(p => p.toLowerCase() === typed.toLowerCase())) {
+            const preview = formatPersona(typed);
+            const a = document.createElement('button');
+            a.type = 'button';
+            a.className = 'list-group-item list-group-item-action text-primary';
+            a.style.fontSize = '0.88rem';
+            a.innerHTML = '<em>Add &ldquo;' + esc(preview) + '&rdquo;</em>';
+            a.onclick = () => { addTag(typed, false); input.value = ''; hideDropdown(); };
+            dropdown.appendChild(a);
+        }
+        dropdown.style.display = dropdown.children.length ? 'block' : 'none';
+    }
+
+    function hideDropdown() { dropdown.style.display = 'none'; }
+
+    function navigateDropdown(dir) {
+        const items = [...dropdown.querySelectorAll('button')];
+        if (!items.length) return;
+        const cur = dropdown.querySelector('.active');
+        let idx = cur ? items.indexOf(cur) + dir : (dir > 0 ? 0 : items.length - 1);
+        idx = Math.max(0, Math.min(idx, items.length - 1));
+        items.forEach(i => i.classList.remove('active'));
+        items[idx].classList.add('active');
+    }
+
+    // Initialise from existing saved personas
+    const existing = {{ (item.gift_personas if item else []) | tojson }};
+    existing.forEach(p => addTag(p, true));
+})();
 </script>
 {% endblock %}

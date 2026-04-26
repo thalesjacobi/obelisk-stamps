@@ -82,6 +82,36 @@ else:
         print("WARNING: OPENAI_API_KEY not set — chatbot disabled")
 
 # Style suffix appended to every DALL-E 3 prompt in the Instagram carousel
+GIFT_PERSONA_PRESETS = [
+    "🧳 Stamp collectors",
+    "📜 History enthusiasts",
+    "🌍 Geography lovers",
+    "🔬 Biology lovers",
+    "🐦 Bird lovers",
+    "🦋 Insect enthusiasts",
+    "🌸 Flower enthusiasts",
+    "🌿 Nature lovers",
+    "⚽ Football fans",
+    "🏅 Olympics fans",
+    "⚽ Sports fans",
+    "🏛️ Architecture enthusiasts",
+    "🚂 Railway enthusiasts",
+    "⚓ Maritime lovers",
+    "✈️ Aviation enthusiasts",
+    "🚀 Space & astronomy fans",
+    "🎨 Art lovers",
+    "🎵 Music lovers",
+    "🎖️ Military history fans",
+    "👑 Royal & monarchy fans",
+    "🏔️ Hiking & adventure lovers",
+    "🏠 Home & office décor",
+    "📚 Education & learning",
+    "🎂 Birthdays & anniversaries",
+    "🎄 Christmas & holiday gifts",
+    "🎓 Retirement gifts",
+    "💍 Wedding & engagement gifts",
+]
+
 CAROUSEL_STYLE_SUFFIX = (
     "Style: vintage editorial illustration, reminiscent of classic postage-stamp engravings "
     "and collector's print ephemera. Rich, deep colour palette — navy blue, burgundy, warm "
@@ -1223,6 +1253,15 @@ def init_site_settings():
             cur.execute("ALTER TABLE cart_items ADD COLUMN gift_message TEXT DEFAULT NULL")
     except Exception:
         pass  # cart_items table may not exist yet
+    try:
+        cur.execute("""
+            SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'catalogue' AND COLUMN_NAME = 'gift_personas'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE catalogue ADD COLUMN gift_personas TEXT DEFAULT NULL")
+    except Exception:
+        pass  # catalogue table may not exist yet
     # Migrate existing TEXT column to MEDIUMTEXT if not already upgraded
     cur.execute("""
         SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
@@ -2401,7 +2440,7 @@ def catalogue_item_detail(category, slug):
     is_admin_user = hasattr(current_user, "is_authenticated") and current_user.is_authenticated and is_admin()
     visibility_clause = "" if is_admin_user else " AND is_public = 1"
     row = query_one(
-        "SELECT id, title, description, price, image_url, status, category, slug, is_public "
+        "SELECT id, title, description, price, image_url, status, category, slug, is_public, gift_personas "
         "FROM catalogue WHERE category = %s AND slug = %s" + visibility_clause,
         (category, slug),
     )
@@ -2409,6 +2448,7 @@ def catalogue_item_detail(category, slug):
         if _template_exists("404.html"):
             return render_template("404.html"), 404
         return "Not found", 404
+    personas_raw = row[9] or ""
     item = {
         "id": row[0], "title": row[1], "description": row[2],
         "price": float(row[3]) if row[3] is not None else 0.0,
@@ -2417,6 +2457,7 @@ def catalogue_item_detail(category, slug):
         "category": row[6] or "",
         "slug": row[7] or "",
         "is_public": bool(row[8]) if len(row) > 8 else True,
+        "gift_personas": [p.strip() for p in personas_raw.split(",") if p.strip()],
     }
     gallery = query_all(
         "SELECT image_url FROM catalogue_images "
@@ -4238,7 +4279,8 @@ def admin_catalogue():
 @admin_required
 def admin_catalogue_new():
     return render_template("catalogue_edit.html", item=None, gallery=[], specs=[],
-                           existing_categories=_existing_categories())
+                           existing_categories=_existing_categories(),
+                           gift_persona_presets=GIFT_PERSONA_PRESETS)
 
 
 @app.route("/admin/catalogue/new", methods=["POST"])
@@ -4280,11 +4322,12 @@ def admin_catalogue_create():
         primary_url = save_catalogue_image(primary_file)
 
     is_public = 1 if request.form.get("is_public") in ("1", "on", "true") else 0
+    gift_personas_str = ",".join(p for p in request.form.getlist("gift_persona") if p.strip()) or None
 
     new_id = execute(
-        "INSERT INTO catalogue (title, description, price, image_url, status, category, slug, is_public) "
-        "VALUES (%s, %s, %s, %s, 'available', %s, %s, %s)",
-        (title, description, price, primary_url, category, slug, is_public),
+        "INSERT INTO catalogue (title, description, price, image_url, status, category, slug, is_public, gift_personas) "
+        "VALUES (%s, %s, %s, %s, 'available', %s, %s, %s, %s)",
+        (title, description, price, primary_url, category, slug, is_public, gift_personas_str),
     )
 
     # Gallery images (optional, multiple)
@@ -4313,13 +4356,14 @@ def admin_catalogue_create():
 @admin_required
 def admin_catalogue_edit(item_id):
     row = query_one(
-        "SELECT id, title, description, price, image_url, status, category, slug, is_public "
+        "SELECT id, title, description, price, image_url, status, category, slug, is_public, gift_personas "
         "FROM catalogue WHERE id = %s",
         (item_id,),
     )
     if not row:
         flash("Item not found.", "warning")
         return redirect(url_for("admin_catalogue"))
+    personas_raw = row[9] or ""
     item = {
         "id": row[0], "title": row[1], "description": row[2],
         "price": float(row[3]) if row[3] is not None else 0.0,
@@ -4328,11 +4372,13 @@ def admin_catalogue_edit(item_id):
         "category": row[6] or "",
         "slug": row[7] or "",
         "is_public": bool(row[8]) if len(row) > 8 else True,
+        "gift_personas": [p.strip() for p in personas_raw.split(",") if p.strip()],
     }
     gallery = _fetch_catalogue_gallery(item_id)
     specs = _fetch_catalogue_specs(item_id)
     return render_template("catalogue_edit.html", item=item, gallery=gallery, specs=specs,
-                           existing_categories=_existing_categories())
+                           existing_categories=_existing_categories(),
+                           gift_persona_presets=GIFT_PERSONA_PRESETS)
 
 
 @app.route("/admin/catalogue/<int:item_id>/save", methods=["POST"])
@@ -4381,11 +4427,12 @@ def admin_catalogue_save(item_id):
             primary_url = new_url
 
     is_public = 1 if request.form.get("is_public") in ("1", "on", "true") else 0
+    gift_personas_str = ",".join(p for p in request.form.getlist("gift_persona") if p.strip()) or None
 
     execute(
         "UPDATE catalogue SET title = %s, description = %s, price = %s, image_url = %s, "
-        "category = %s, slug = %s, is_public = %s WHERE id = %s",
-        (title, description, price, primary_url, category, slug, is_public, item_id),
+        "category = %s, slug = %s, is_public = %s, gift_personas = %s WHERE id = %s",
+        (title, description, price, primary_url, category, slug, is_public, gift_personas_str, item_id),
     )
 
     # Replace specs with the submitted set (simple and atomic)

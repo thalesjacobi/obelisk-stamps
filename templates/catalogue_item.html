@@ -181,18 +181,16 @@
             {% endif %}
 
             <!-- PERFECT GIFT FOR -->
+            {% if item.gift_personas %}
             <div class="mt-4">
                 <div class="fw-semibold small mb-2">Perfect gift for</div>
                 <div class="gift-personas">
-                    <span class="gift-persona">🧳 Stamp collectors</span>
-                    <span class="gift-persona">📜 History enthusiasts</span>
-                    <span class="gift-persona">🌍 Geography lovers</span>
-                    <span class="gift-persona">🏠 Home &amp; office décor</span>
-                    <span class="gift-persona">🎂 Birthdays &amp; anniversaries</span>
-                    <span class="gift-persona">🎄 Christmas &amp; holiday gifts</span>
-                    <span class="gift-persona">🎓 Retirement gifts</span>
+                    {% for persona in item.gift_personas %}
+                    <span class="gift-persona">{{ persona }}</span>
+                    {% endfor %}
                 </div>
             </div>
+            {% endif %}
         </div>
 
         <!-- BUY BOX -->
