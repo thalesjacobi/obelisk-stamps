@@ -2454,6 +2454,7 @@ const IG_ARTICLE_CAPTION_PROMPT = {{ ig_article_caption_prompt | tojson }};
 const ARTICLE_TITLE = {{ (article.title if article and article.title else '') | tojson }};
 const CAROUSEL_PUNCHLINES = {{ (article.carousel_punchlines if article and article.carousel_punchlines else []) | tojson }};
 const ARTICLE_URL    = {{ ((site_url ~ '/articles/' ~ article.slug) if article and article.slug else '') | tojson }};
+const SITE_URL       = {{ (site_url or '') | tojson }};
 const IG_CONFIGURED  = {{ ig_configured | tojson }};
 
 function toggleSlideshow(enabled) {
