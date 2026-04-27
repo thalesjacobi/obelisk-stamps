@@ -83,32 +83,32 @@ else:
 
 # Style suffix appended to every DALL-E 3 prompt in the Instagram carousel
 GIFT_PERSONA_PRESETS = [
-    "🧳 Stamp collectors",
-    "📜 History enthusiasts",
-    "🌍 Geography lovers",
+    "🏛️ Architecture enthusiasts",
+    "🎨 Art lovers",
+    "✈️ Aviation enthusiasts",
+    "🎂 Birthdays & anniversaries",
     "🔬 Biology lovers",
     "🐦 Bird lovers",
-    "🦋 Insect enthusiasts",
-    "🌸 Flower enthusiasts",
-    "🌿 Nature lovers",
-    "⚽ Football fans",
-    "🏅 Olympics fans",
-    "⚽ Sports fans",
-    "🏛️ Architecture enthusiasts",
-    "🚂 Railway enthusiasts",
-    "⚓ Maritime lovers",
-    "✈️ Aviation enthusiasts",
-    "🚀 Space & astronomy fans",
-    "🎨 Art lovers",
-    "🎵 Music lovers",
-    "🎖️ Military history fans",
-    "👑 Royal & monarchy fans",
-    "🏔️ Hiking & adventure lovers",
-    "🏠 Home & office décor",
-    "📚 Education & learning",
-    "🎂 Birthdays & anniversaries",
     "🎄 Christmas & holiday gifts",
+    "📚 Education & learning",
+    "🌸 Flower enthusiasts",
+    "⚽ Football fans",
+    "🌍 Geography lovers",
+    "🏔️ Hiking & adventure lovers",
+    "📜 History enthusiasts",
+    "🏠 Home & office décor",
+    "🦋 Insect enthusiasts",
+    "⚓ Maritime lovers",
+    "🎖️ Military history fans",
+    "🎵 Music lovers",
+    "🌿 Nature lovers",
+    "🏅 Olympics fans",
+    "🚂 Railway enthusiasts",
     "🎓 Retirement gifts",
+    "👑 Royal & monarchy fans",
+    "🧳 Stamp collectors",
+    "🚀 Space & astronomy fans",
+    "⚽ Sports fans",
     "💍 Wedding & engagement gifts",
 ]
 
@@ -4642,7 +4642,8 @@ def admin_unrecognized_delete(item_id):
 @admin_required
 def admin_article_short_urls(article_id):
     """Get or generate short URLs for all platforms for this article."""
-    platforms = ['ig', 'fb', 'yt', 'x', 'threads', 'pinterest', 'tiktok', 'linkedin', 'bluesky', 'reddit']
+    platforms = ['ig', 'fb', 'yt', 'x', 'threads', 'pinterest', 'tiktok', 'linkedin',
+                 'bluesky', 'reddit', 'telegram', 'vimeo', 'mastodon', 'vk', 'tumblr']
     result = {}
     for p in platforms:
         try:
@@ -8164,8 +8165,15 @@ def admin_article_generate_ig_caption(article_id):
         plain = _re.sub(r"<[^>]+>", " ", content)
         plain = _re.sub(r"\s+", " ", plain).strip()[:500]
 
-        site_url = os.getenv("SITE_URL", "").rstrip("/")
-        article_link = f"{site_url}/articles/{slug}" if site_url and slug else ""
+        # Use tracked short URL so clicks can be measured per-platform
+        log_component = (request.get_json() or {}).get("component") or "carousel"
+        if log_component not in ("carousel", "cinemagraph", "narrated"):
+            log_component = "carousel"
+        try:
+            article_link = make_short_url(article_id, "ig") if SITE_URL and slug else ""
+        except Exception:
+            site_url = os.getenv("SITE_URL", "").rstrip("/")
+            article_link = f"{site_url}/articles/{slug}" if site_url and slug else ""
 
         # Per-article prompt takes priority, then global, then hardcoded default
         system_msg = (
@@ -8188,9 +8196,6 @@ def admin_article_generate_ig_caption(article_id):
         if article_link:
             caption += f"\n\nWant to read the full article? Access the following link:\n{article_link}"
 
-        log_component = (request.get_json() or {}).get("component") or "carousel"
-        if log_component not in ("carousel", "cinemagraph", "narrated"):
-            log_component = "carousel"
         _add_activity_log(article_id, "Caption Generated (OpenAI)",
                           f"Prompt: {system_msg[:120]}…\n\nGenerated caption:\n{caption[:300]}…",
                           component=log_component)

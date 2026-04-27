@@ -305,8 +305,11 @@
                     <div class="position-relative d-inline-block w-100">
                         <div id="image-preview-wrap" class="{% if not (article and article.image_url) %}d-none{% endif %} mb-1">
                             <img id="image-preview-img" src="{{ article.image_url if article and article.image_url else '' }}" class="img-fluid rounded" alt="Cover preview" style="max-height:100px; object-fit:cover; width:100%;">
-                            <button type="button" onclick="openCoverImagePicker()" title="Change cover image" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.55);color:#fff;font-size:12px;font-weight:700;line-height:22px;text-align:center;cursor:pointer;padding:0;opacity:0.8;">i</button>
+                            <button type="button" onclick="openCoverImagePicker()" title="Change cover image" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.55);color:#fff;font-size:12px;font-weight:700;line-height:22px;text-align:center;cursor:pointer;padding:0;opacity:0.8;">✎</button>
                         </div>
+                        <button type="button" id="cover-image-pick-btn" class="btn btn-sm btn-outline-secondary w-100 {% if article and article.image_url %}d-none{% endif %}" onclick="openCoverImagePicker()">
+                            <span style="font-size:0.8rem;">🖼 Choose cover image</span>
+                        </button>
                     </div>
                     {% if article %}
                     <div class="form-check form-switch mt-2">
@@ -2514,6 +2517,8 @@ function _applyCoverImage(url) {
     document.getElementById('image-url').value = url;
     document.getElementById('image-preview-img').src = url;
     document.getElementById('image-preview-wrap').classList.remove('d-none');
+    var pickBtn = document.getElementById('cover-image-pick-btn');
+    if (pickBtn) pickBtn.classList.add('d-none');
 }
 
 function setCoverImageFromInput() {
