@@ -753,9 +753,11 @@
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <label class="small text-muted mb-0" for="car-x-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from X. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); shortenIgCaptionForPlatform({sourceId:'car-ig-caption', targetId:'car-x-caption', countId:'car-x-char-count', platform:'x', limit:280, linkEl:this})">Shorten with AI (~$0.01)</a>
-                        <a href="#" class="small ig-section-link" id="car-x-copy-link"
-                           onclick="event.preventDefault(); copyIgCaptionToX('car')">Copy from Instagram</a>
+                        <select class="form-select form-select-sm ms-auto ig-section-link" id="car-x-copy-link" style="width:auto;font-size:0.75rem;padding:.05rem 1.4rem .05rem .4rem;"
+                                onmousedown="_populateCaptionSourceSelect(this, 'car', 'x', 280)"
+                                onchange="_handleCaptionSourceChange(this, 'car', 'x', 280)">
+                            <option value="">Fill caption…</option>
+                        </select>
                     </div>
                     <textarea id="car-x-caption" class="form-control form-control-sm" rows="3"
                               maxlength="280" placeholder="Write your X caption… #stamps #philately"
@@ -810,9 +812,11 @@
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <label class="small text-muted mb-0" for="car-threads-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Archive post&#39; to archive it from Threads. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); shortenIgCaptionForPlatform({sourceId:'car-ig-caption', targetId:'car-threads-caption', countId:'car-threads-char-count', platform:'threads', limit:500, linkEl:this})">Shorten with AI (~$0.01)</a>
-                        <a href="#" class="small ig-section-link" id="car-threads-copy-link"
-                           onclick="event.preventDefault(); copyIgCaptionToThreads('car')">Copy from Instagram</a>
+                        <select class="form-select form-select-sm ms-auto ig-section-link" id="car-threads-copy-link" style="width:auto;font-size:0.75rem;padding:.05rem 1.4rem .05rem .4rem;"
+                                onmousedown="_populateCaptionSourceSelect(this, 'car', 'threads', 500)"
+                                onchange="_handleCaptionSourceChange(this, 'car', 'threads', 500)">
+                            <option value="">Fill caption…</option>
+                        </select>
                     </div>
                     <textarea id="car-threads-caption" class="form-control form-control-sm" rows="3"
                               maxlength="500" placeholder="Write your Threads caption… #stamps #philately"
@@ -867,9 +871,11 @@
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <label class="small text-muted mb-0" for="car-pinterest-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Pinterest. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); shortenIgCaptionForPlatform({sourceId:'car-ig-caption', targetId:'car-pinterest-caption', countId:'car-pinterest-char-count', platform:'pinterest', limit:800, linkEl:this})">Shorten with AI (~$0.01)</a>
-                        <a href="#" class="small ig-section-link" id="car-pinterest-copy-link"
-                           onclick="event.preventDefault(); copyIgCaptionToPinterest('car')">Copy from Instagram</a>
+                        <select class="form-select form-select-sm ms-auto ig-section-link" id="car-pinterest-copy-link" style="width:auto;font-size:0.75rem;padding:.05rem 1.4rem .05rem .4rem;"
+                                onmousedown="_populateCaptionSourceSelect(this, 'car', 'pinterest', 800)"
+                                onchange="_handleCaptionSourceChange(this, 'car', 'pinterest', 800)">
+                            <option value="">Fill caption…</option>
+                        </select>
                     </div>
                     <textarea id="car-pinterest-caption" class="form-control form-control-sm" rows="3"
                               maxlength="800" placeholder="Write your Pinterest description… #stamps #philately"
@@ -980,9 +986,11 @@
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <label class="small text-muted mb-0" for="car-bluesky-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Bluesky. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); shortenIgCaptionForPlatform({sourceId:'car-ig-caption', targetId:'car-bluesky-caption', countId:'car-bluesky-char-count', platform:'bluesky', limit:300, linkEl:this})">Shorten with AI (~$0.01)</a>
-                        <a href="#" class="small ig-section-link" id="car-bluesky-copy-link"
-                           onclick="event.preventDefault(); copyIgCaptionToBluesky('car')">Copy from Instagram</a>
+                        <select class="form-select form-select-sm ms-auto ig-section-link" id="car-bluesky-copy-link" style="width:auto;font-size:0.75rem;padding:.05rem 1.4rem .05rem .4rem;"
+                                onmousedown="_populateCaptionSourceSelect(this, 'car', 'bluesky', 300)"
+                                onchange="_handleCaptionSourceChange(this, 'car', 'bluesky', 300)">
+                            <option value="">Fill caption…</option>
+                        </select>
                     </div>
                     <textarea id="car-bluesky-caption" class="form-control form-control-sm" rows="3"
                               maxlength="300" placeholder="Write your Bluesky caption… #stamps #philately"
@@ -1170,9 +1178,11 @@
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <label class="small text-muted mb-0" for="car-mastodon-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Mastodon. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); shortenIgCaptionForPlatform({sourceId:'car-ig-caption', targetId:'car-mastodon-caption', countId:'car-mastodon-char-count', platform:'mastodon', limit:500, linkEl:this})">Shorten with AI (~$0.01)</a>
-                        <a href="#" class="small ig-section-link" id="car-mastodon-copy-link"
-                           onclick="event.preventDefault(); copyIgCaptionToMastodon('car')">Copy from Instagram</a>
+                        <select class="form-select form-select-sm ms-auto ig-section-link" id="car-mastodon-copy-link" style="width:auto;font-size:0.75rem;padding:.05rem 1.4rem .05rem .4rem;"
+                                onmousedown="_populateCaptionSourceSelect(this, 'car', 'mastodon', 500)"
+                                onchange="_handleCaptionSourceChange(this, 'car', 'mastodon', 500)">
+                            <option value="">Fill caption…</option>
+                        </select>
                     </div>
                     <textarea id="car-mastodon-caption" class="form-control form-control-sm" rows="3"
                               maxlength="500" placeholder="Write your Mastodon caption… #stamps #philately"
@@ -3401,9 +3411,10 @@ function shortenIgCaptionForPlatform(opts) {
     if (!igEl || !dstEl) return;
     var source = (igEl.value || '').trim();
     if (!source) { alert('Instagram caption is empty.'); return; }
-    var origLabel = link ? link.textContent : '';
+    var origLabel = (link && link.tagName !== 'SELECT') ? link.textContent : '';
     if (link) {
-        link.textContent = 'Shortening…';
+        if (link.tagName === 'SELECT') { link.disabled = true; }
+        else { link.textContent = 'Shortening…'; }
         link.classList.add('text-muted', 'pe-none');
     }
     fetch('/admin/articles/' + ARTICLE_ID + '/shorten-caption-for-platform', {
@@ -3424,10 +3435,117 @@ function shortenIgCaptionForPlatform(opts) {
     .catch(function(e) { alert('Request failed: ' + e); })
     .finally(function() {
         if (link) {
-            link.textContent = origLabel || 'Shorten with AI (~$0.01)';
+            if (link.tagName === 'SELECT') { link.disabled = false; }
+            else { link.textContent = origLabel || 'Shorten with AI (~$0.01)'; }
             link.classList.remove('text-muted', 'pe-none');
         }
     });
+}
+
+/* ── Caption-source dropdown ────────────────────────────────────────────────
+   A single <select> per tight-limit platform replaces "Copy from Instagram"
+   + "Shorten with AI" links. Options are repopulated each time the dropdown
+   opens, showing only sources whose current caption fits the target limit
+   (so e.g. Bluesky 300 can copy from X 280 and skip the AI cost).
+*/
+var ALL_CAPTION_PLATFORMS = [
+    {key:'ig',        name:'Instagram'},
+    {key:'fb',        name:'Facebook'},
+    {key:'x',         name:'X'},
+    {key:'threads',   name:'Threads'},
+    {key:'pinterest', name:'Pinterest'},
+    {key:'linkedin',  name:'LinkedIn'},
+    {key:'bluesky',   name:'Bluesky'},
+    {key:'reddit',    name:'Reddit'},
+    {key:'telegram',  name:'Telegram'},
+    {key:'mastodon',  name:'Mastodon'},
+    {key:'vk',        name:'VK'},
+    {key:'tumblr',    name:'Tumblr'},
+];
+
+function _captionSelectConfig(mode, targetPlatform, targetLimit, ts) {
+    var igId, targetId, countId, srcIdFor;
+    if (mode === 'nv') {
+        igId      = 'nv-ig-' + ts + '-caption';
+        targetId  = 'nv-' + targetPlatform + '-' + ts + '-caption';
+        countId   = 'nv-' + targetPlatform + '-' + ts + '-count';
+        srcIdFor  = function(p) { return 'nv-' + p + '-' + ts + '-caption'; };
+    } else {
+        igId      = mode + '-ig-caption';
+        targetId  = mode + '-' + targetPlatform + '-caption';
+        countId   = mode + '-' + targetPlatform + '-char-count';
+        srcIdFor  = function(p) { return mode + '-' + p + '-caption'; };
+    }
+    var crossSources = [];
+    ALL_CAPTION_PLATFORMS.forEach(function(p) {
+        if (p.key === targetPlatform || p.key === 'ig') return;
+        crossSources.push({platform: p.key, id: srcIdFor(p.key), name: p.name});
+    });
+    return {
+        igSourceId: igId, targetId: targetId, countId: countId,
+        targetPlatform: targetPlatform, targetLimit: targetLimit,
+        crossSources: crossSources,
+    };
+}
+
+function _copyCaptionToTarget(sourceId, cfg) {
+    var srcEl = document.getElementById(sourceId);
+    var dstEl = document.getElementById(cfg.targetId);
+    if (!srcEl || !dstEl) return;
+    var text = _swapUrlForPlatform(srcEl.value || '', cfg.targetPlatform);
+    if (cfg.targetLimit && text.length > cfg.targetLimit) {
+        text = text.slice(0, cfg.targetLimit);
+    }
+    dstEl.value = text;
+    var cnt = document.getElementById(cfg.countId);
+    if (cnt && cfg.targetLimit) {
+        cnt.textContent = dstEl.value.length + ' / ' + cfg.targetLimit;
+    }
+    dstEl.dispatchEvent(new Event('input'));
+}
+
+function _populateCaptionSourceSelect(sel, mode, targetPlatform, targetLimit, ts) {
+    var cfg = _captionSelectConfig(mode, targetPlatform, targetLimit, ts);
+    var html = '<option value="">Fill caption…</option>';
+    // Instagram (always available; flag if it would truncate)
+    var igEl = document.getElementById(cfg.igSourceId);
+    if (igEl) {
+        var igLen = (igEl.value || '').trim().length;
+        if (igLen > 0) {
+            var igFlag = (cfg.targetLimit && igLen > cfg.targetLimit) ? ' (truncates)' : '';
+            html += '<option value="ig">Copy from Instagram' + igFlag + '</option>';
+        }
+    }
+    // Cross-platform copies (only if they fit)
+    cfg.crossSources.forEach(function(s) {
+        var el = document.getElementById(s.id);
+        if (!el) return;
+        var v = (el.value || '').trim();
+        if (!v) return;
+        if (cfg.targetLimit && v.length > cfg.targetLimit) return;
+        html += '<option value="src:' + s.id + '">Copy from ' + s.name + '</option>';
+    });
+    // AI shortener
+    html += '<option value="ai">Shorten with AI (~$0.01)</option>';
+    sel.innerHTML = html;
+}
+
+function _handleCaptionSourceChange(sel, mode, targetPlatform, targetLimit, ts) {
+    var v = sel.value;
+    if (!v) return;
+    var cfg = _captionSelectConfig(mode, targetPlatform, targetLimit, ts);
+    sel.value = ''; // reset to placeholder
+    if (v === 'ig') {
+        _copyCaptionToTarget(cfg.igSourceId, cfg);
+    } else if (v === 'ai') {
+        shortenIgCaptionForPlatform({
+            sourceId: cfg.igSourceId, targetId: cfg.targetId,
+            countId: cfg.countId, platform: targetPlatform,
+            limit: targetLimit, linkEl: sel,
+        });
+    } else if (v.indexOf('src:') === 0) {
+        _copyCaptionToTarget(v.slice(4), cfg);
+    }
 }
 
 function copyIgCaptionToFb(mode) {
@@ -10551,8 +10669,8 @@ function buildRunItem(run, expandIt) {
     if (ytTitleEl && ARTICLE_TITLE) ytTitleEl.value = ARTICLE_TITLE;
     var vimeoTitleEl = item.querySelector('#nv-vimeo-' + run.ts + '-title');
     if (vimeoTitleEl && ARTICLE_TITLE) vimeoTitleEl.value = ARTICLE_TITLE;
-    /* Inject "Shorten with AI" links next to the tight-limit "Copy from
-       Instagram" links inside this narrated run (X 280, Bluesky 300,
+    /* Replace the static "Copy from Instagram" link with a smart caption-source
+       <select> for tight-limit narrated platforms (X 280, Bluesky 300,
        Threads/Mastodon 500, Pinterest 800). Done post-render to avoid the
        quote-escaping mess of editing template literals. */
     [
@@ -10564,29 +10682,20 @@ function buildRunItem(run, expandIt) {
     ].forEach(function(p) {
         var copyLink = item.querySelector('#nv-' + p.plat + '-' + run.ts + '-body .ig-section-link');
         if (!copyLink) return;
-        var shorten = document.createElement('a');
-        shorten.href = '#';
-        shorten.className = 'small ig-section-link';
-        shorten.textContent = 'Shorten with AI (~$0.01)';
-        var srcId  = 'nv-ig-'    + run.ts + '-caption';
-        var dstId  = 'nv-' + p.plat + '-' + run.ts + '-caption';
-        var cntId  = 'nv-' + p.plat + '-' + run.ts + '-count';
-        var lim    = p.lim;
-        var plat   = p.plat;
-        shorten.onclick = function(ev) {
-            ev.preventDefault();
-            shortenIgCaptionForPlatform({
-                sourceId: srcId, targetId: dstId, countId: cntId,
-                platform: plat, limit: lim, linkEl: shorten,
-            });
-        };
-        // Move ms-auto from the copy link to the new shorten link so both
-        // sit at the right edge with the new link first.
-        if (copyLink.classList.contains('ms-auto')) {
-            copyLink.classList.remove('ms-auto');
-            shorten.classList.add('ms-auto');
-        }
-        copyLink.parentNode.insertBefore(shorten, copyLink);
+        var sel = document.createElement('select');
+        sel.className = 'form-select form-select-sm ig-section-link';
+        sel.style.cssText = 'width:auto;font-size:0.75rem;padding:.05rem 1.4rem .05rem .4rem;';
+        if (copyLink.classList.contains('ms-auto')) sel.classList.add('ms-auto');
+        sel.innerHTML = '<option value="">Fill caption…</option>';
+        var ts = run.ts, plat = p.plat, lim = p.lim;
+        sel.addEventListener('mousedown', function() {
+            _populateCaptionSourceSelect(sel, 'nv', plat, lim, ts);
+        });
+        sel.addEventListener('change', function() {
+            _handleCaptionSourceChange(sel, 'nv', plat, lim, ts);
+        });
+        copyLink.parentNode.insertBefore(sel, copyLink);
+        copyLink.classList.add('d-none'); // hide the static link; select replaces it
     });
 
     /* Check video duration — X rejects videos > 2 min */
