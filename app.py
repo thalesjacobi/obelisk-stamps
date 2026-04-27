@@ -8192,8 +8192,22 @@ def admin_article_generate_ig_caption(article_id):
         )
         caption = response.choices[0].message.content.strip()
 
-        # Append call-to-action with article link
-        if article_link:
+        # Remove any article link the model may have included itself, then append
+        # the canonical tracked short URL so there's never a duplicate.
+        if article_link and slug:
+            import re as _re2
+            # Strip any trailing "Want to read…" block the model added (with any URL)
+            caption = _re2.sub(
+                r'\n+Want to read the full article\?.*$',
+                '', caption, flags=_re2.IGNORECASE | _re2.DOTALL
+            ).rstrip()
+            # Also strip bare article URLs the model may have appended
+            caption = _re2.sub(
+                r'\n+https?://[^\s]*' + _re2.escape(slug) + r'[^\s]*$',
+                '', caption, flags=_re2.IGNORECASE | _re2.DOTALL
+            ).rstrip()
+            caption += f"\n\nWant to read the full article? Access the following link:\n{article_link}"
+        elif article_link:
             caption += f"\n\nWant to read the full article? Access the following link:\n{article_link}"
 
         _add_activity_log(article_id, "Caption Generated (OpenAI)",
