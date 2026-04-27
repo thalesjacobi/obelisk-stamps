@@ -8226,6 +8226,112 @@ def admin_article_generate_ig_caption(article_id):
         return jsonify({"error": f"Caption generation failed: {e}"}), 500
 
 
+# Platforms with tight character limits where the IG caption (up to 2200 chars)
+# typically does not fit and needs AI-rewriting rather than naive truncation.
+_SHORTEN_PLATFORM_LIMITS = {
+    'x': 280,
+    'bluesky': 300,
+    'threads': 500,
+    'mastodon': 500,
+    'pinterest': 800,
+}
+
+@app.route("/admin/articles/<int:article_id>/shorten-caption-for-platform", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_shorten_caption(article_id):
+    """Use OpenAI to rewrite an Instagram caption so it fits a target platform's
+    character limit. Strips any existing 'Want to read…' CTA from the source,
+    asks GPT to compress, then re-appends the target platform's tracked short URL.
+    """
+    if not _openai_client:
+        return jsonify({"error": "OpenAI is not configured on this server."}), 400
+
+    body     = request.get_json(silent=True) or {}
+    source   = (body.get("source") or "").strip()
+    platform = (body.get("platform") or "").strip().lower()
+
+    if not source:
+        return jsonify({"error": "Source caption is empty."}), 400
+    if platform not in _SHORTEN_PLATFORM_LIMITS:
+        return jsonify({"error": f"Unsupported platform: {platform}"}), 400
+
+    max_chars = _SHORTEN_PLATFORM_LIMITS[platform]
+
+    try:
+        # Resolve target short URL + CTA template
+        slug_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        slug = slug_row[0] if slug_row else ""
+        try:
+            short_url = make_short_url(article_id, platform) if SITE_URL and slug else ""
+        except Exception:
+            short_url = f"{SITE_URL}/articles/{slug}" if SITE_URL and slug else ""
+
+        # Strip any existing "Want to read…" CTA / bare article URLs from source
+        import re as _re
+        body_text = _re.sub(
+            r'\n+Want to read the full article\?.*$',
+            '', source, flags=_re.IGNORECASE | _re.DOTALL
+        ).rstrip()
+        body_text = _re.sub(
+            r'\n+https?://[^\s]+$', '', body_text, flags=_re.IGNORECASE
+        ).rstrip()
+
+        # Decide whether to attach a CTA (only if there's room)
+        cta_template = f"\n\n👉 {short_url}" if short_url else ""
+        target_body_chars = max(80, max_chars - len(cta_template) - 5)
+
+        system_msg = (
+            "You rewrite social-media captions so they fit a strict character "
+            "budget while keeping the voice, emojis, hashtags-relevance and key "
+            "selling point. Drop or shorten hashtags first if needed. Never include "
+            "any URL or 'read more' line — those will be appended separately. "
+            f"Output MUST be at most {target_body_chars} characters. "
+            "Return ONLY the caption text, no commentary, no quotes."
+        )
+        user_msg = (
+            f"Target platform: {platform} ({max_chars} char total budget).\n"
+            f"Body budget (excluding URL): {target_body_chars} characters.\n\n"
+            f"Original caption:\n{body_text}"
+        )
+
+        response = _openai_client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user",   "content": user_msg},
+            ],
+            max_tokens=600,
+        )
+        shortened = (response.choices[0].message.content or "").strip()
+        # Hard-truncate as a safety net if model overshoots
+        if len(shortened) > target_body_chars:
+            shortened = shortened[:target_body_chars].rstrip()
+
+        final = shortened + (cta_template if short_url else "")
+        if len(final) > max_chars:
+            final = final[:max_chars]
+
+        _add_activity_log(
+            article_id,
+            f"Caption Shortened ({platform}, OpenAI)",
+            f"Target: {max_chars} chars (body budget {target_body_chars}).\n\n"
+            f"Source ({len(source)} chars):\n{source}\n\n"
+            f"Result ({len(final)} chars):\n{final}",
+            component="carousel",
+        )
+        return jsonify({"caption": final, "length": len(final), "limit": max_chars})
+
+    except Exception as e:
+        print(f"Caption shorten error: {e}", flush=True)
+        try:
+            _add_activity_log(article_id, "Caption Shorten Failed",
+                              f"Platform: {platform}\nError: {e}", component="carousel")
+        except Exception:
+            pass
+        return jsonify({"error": f"Caption shortening failed: {e}"}), 500
+
+
 # ------------------------------------------------------------
 # FACEBOOK PAGE POSTING
 # ------------------------------------------------------------

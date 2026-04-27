@@ -753,7 +753,8 @@
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <label class="small text-muted mb-0" for="car-x-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from X. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" id="car-x-copy-link"
+                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); shortenIgCaptionForPlatform({sourceId:'car-ig-caption', targetId:'car-x-caption', countId:'car-x-char-count', platform:'x', limit:280, linkEl:this})">Shorten with AI (~$0.01)</a>
+                        <a href="#" class="small ig-section-link" id="car-x-copy-link"
                            onclick="event.preventDefault(); copyIgCaptionToX('car')">Copy from Instagram</a>
                     </div>
                     <textarea id="car-x-caption" class="form-control form-control-sm" rows="3"
@@ -809,7 +810,8 @@
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <label class="small text-muted mb-0" for="car-threads-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Archive post&#39; to archive it from Threads. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" id="car-threads-copy-link"
+                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); shortenIgCaptionForPlatform({sourceId:'car-ig-caption', targetId:'car-threads-caption', countId:'car-threads-char-count', platform:'threads', limit:500, linkEl:this})">Shorten with AI (~$0.01)</a>
+                        <a href="#" class="small ig-section-link" id="car-threads-copy-link"
                            onclick="event.preventDefault(); copyIgCaptionToThreads('car')">Copy from Instagram</a>
                     </div>
                     <textarea id="car-threads-caption" class="form-control form-control-sm" rows="3"
@@ -865,7 +867,8 @@
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <label class="small text-muted mb-0" for="car-pinterest-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Pinterest. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" id="car-pinterest-copy-link"
+                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); shortenIgCaptionForPlatform({sourceId:'car-ig-caption', targetId:'car-pinterest-caption', countId:'car-pinterest-char-count', platform:'pinterest', limit:800, linkEl:this})">Shorten with AI (~$0.01)</a>
+                        <a href="#" class="small ig-section-link" id="car-pinterest-copy-link"
                            onclick="event.preventDefault(); copyIgCaptionToPinterest('car')">Copy from Instagram</a>
                     </div>
                     <textarea id="car-pinterest-caption" class="form-control form-control-sm" rows="3"
@@ -977,7 +980,8 @@
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <label class="small text-muted mb-0" for="car-bluesky-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Bluesky. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" id="car-bluesky-copy-link"
+                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); shortenIgCaptionForPlatform({sourceId:'car-ig-caption', targetId:'car-bluesky-caption', countId:'car-bluesky-char-count', platform:'bluesky', limit:300, linkEl:this})">Shorten with AI (~$0.01)</a>
+                        <a href="#" class="small ig-section-link" id="car-bluesky-copy-link"
                            onclick="event.preventDefault(); copyIgCaptionToBluesky('car')">Copy from Instagram</a>
                     </div>
                     <textarea id="car-bluesky-caption" class="form-control form-control-sm" rows="3"
@@ -1166,7 +1170,8 @@
                 <div class="mb-2">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <label class="small text-muted mb-0" for="car-mastodon-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Mastodon. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" id="car-mastodon-copy-link"
+                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); shortenIgCaptionForPlatform({sourceId:'car-ig-caption', targetId:'car-mastodon-caption', countId:'car-mastodon-char-count', platform:'mastodon', limit:500, linkEl:this})">Shorten with AI (~$0.01)</a>
+                        <a href="#" class="small ig-section-link" id="car-mastodon-copy-link"
                            onclick="event.preventDefault(); copyIgCaptionToMastodon('car')">Copy from Instagram</a>
                     </div>
                     <textarea id="car-mastodon-caption" class="form-control form-control-sm" rows="3"
@@ -3379,6 +3384,50 @@ function _swapUrlForPlatform(captionText, targetPlatform) {
         captionText = captionText.replace(new RegExp(ARTICLE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), shortUrl);
     }
     return captionText;
+}
+
+/* ── AI shortener for tight-limit platforms ─────────────────────────────────
+   Calls /admin/articles/<id>/shorten-caption-for-platform to ask GPT to
+   rewrite the Instagram caption so it fits a target platform's hard limit
+   (X 280, Bluesky 300, Threads/Mastodon 500, Pinterest 800), then drops the
+   result into the target platform's textarea and updates its char counter.
+   Used by the per-platform "Shorten with AI" links.
+*/
+function shortenIgCaptionForPlatform(opts) {
+    if (!ARTICLE_ID) { alert('Save the article first.'); return; }
+    var igEl  = document.getElementById(opts.sourceId);
+    var dstEl = document.getElementById(opts.targetId);
+    var link  = opts.linkEl || (event && event.target);
+    if (!igEl || !dstEl) return;
+    var source = (igEl.value || '').trim();
+    if (!source) { alert('Instagram caption is empty.'); return; }
+    var origLabel = link ? link.textContent : '';
+    if (link) {
+        link.textContent = 'Shortening…';
+        link.classList.add('text-muted', 'pe-none');
+    }
+    fetch('/admin/articles/' + ARTICLE_ID + '/shorten-caption-for-platform', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({source: source, platform: opts.platform})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) { alert('Shorten failed: ' + d.error); return; }
+        dstEl.value = d.caption || '';
+        var countEl = opts.countId ? document.getElementById(opts.countId) : null;
+        if (countEl && opts.limit) {
+            countEl.textContent = dstEl.value.length + ' / ' + opts.limit;
+        }
+        dstEl.dispatchEvent(new Event('input'));
+    })
+    .catch(function(e) { alert('Request failed: ' + e); })
+    .finally(function() {
+        if (link) {
+            link.textContent = origLabel || 'Shorten with AI (~$0.01)';
+            link.classList.remove('text-muted', 'pe-none');
+        }
+    });
 }
 
 function copyIgCaptionToFb(mode) {
@@ -6184,11 +6233,12 @@ function showNvXDone(ts, permalink) {
     /* Make caption read-only */
     var ta = document.getElementById(_nvXId(ts, 'caption'));
     if (ta) { ta.readOnly = true; ta.style.opacity = '0.7'; }
-    /* Disable "Copy from Instagram" link */
+    /* Disable "Copy from Instagram" / "Shorten with AI" links */
     var body = document.getElementById(_nvXId(ts, 'body'));
     if (body) {
-        var copyLink = body.querySelector('.ig-section-link');
-        if (copyLink) { copyLink.classList.add('text-muted', 'pe-none'); copyLink.style.opacity = '0.5'; }
+        body.querySelectorAll('.ig-section-link').forEach(function(l) {
+            l.classList.add('text-muted', 'pe-none'); l.style.opacity = '0.5';
+        });
     }
     var postBtn = document.getElementById(_nvXId(ts, 'post-btn'));
     _makeViewPostBtn(postBtn, permalink, 'x');
@@ -6248,8 +6298,9 @@ function nvXDeleteAndArchive(ts) {
         if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
         var body = document.getElementById(_nvXId(ts, 'body'));
         if (body) {
-            var copyLink = body.querySelector('.ig-section-link');
-            if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+            body.querySelectorAll('.ig-section-link').forEach(function(l) {
+                l.classList.remove('text-muted', 'pe-none'); l.style.opacity = '';
+            });
         }
         var postBtn = document.getElementById(_nvXId(ts, 'post-btn'));
         _restorePostBtn(postBtn);
@@ -6309,8 +6360,9 @@ function nvXArchivePost(ts) {
         if (ta) { ta.readOnly = false; ta.style.opacity = ''; }
         var body = document.getElementById(_nvXId(ts, 'body'));
         if (body) {
-            var copyLink = body.querySelector('.ig-section-link');
-            if (copyLink) { copyLink.classList.remove('text-muted', 'pe-none'); copyLink.style.opacity = ''; }
+            body.querySelectorAll('.ig-section-link').forEach(function(l) {
+                l.classList.remove('text-muted', 'pe-none'); l.style.opacity = '';
+            });
         }
         var postBtn = document.getElementById(_nvXId(ts, 'post-btn'));
         _restorePostBtn(postBtn);
@@ -8970,11 +9022,12 @@ function showNvFbDone(ts, permalink) {
     /* Make caption read-only */
     var ta = document.getElementById(_nvFbId(ts, 'caption'));
     if (ta) { ta.readOnly = true; ta.style.opacity = '0.7'; }
-    /* Disable "Copy from Instagram" link */
+    /* Disable "Copy from Instagram" / "Shorten with AI" links */
     var body = document.getElementById(_nvFbId(ts, 'body'));
     if (body) {
-        var copyLink = body.querySelector('.ig-section-link');
-        if (copyLink) { copyLink.classList.add('text-muted', 'pe-none'); copyLink.style.opacity = '0.5'; }
+        body.querySelectorAll('.ig-section-link').forEach(function(l) {
+            l.classList.add('text-muted', 'pe-none'); l.style.opacity = '0.5';
+        });
     }
     var postBtn = document.getElementById(_nvFbId(ts, 'post-btn'));
     _makeViewPostBtn(postBtn, permalink, 'fb');
@@ -10498,6 +10551,44 @@ function buildRunItem(run, expandIt) {
     if (ytTitleEl && ARTICLE_TITLE) ytTitleEl.value = ARTICLE_TITLE;
     var vimeoTitleEl = item.querySelector('#nv-vimeo-' + run.ts + '-title');
     if (vimeoTitleEl && ARTICLE_TITLE) vimeoTitleEl.value = ARTICLE_TITLE;
+    /* Inject "Shorten with AI" links next to the tight-limit "Copy from
+       Instagram" links inside this narrated run (X 280, Bluesky 300,
+       Threads/Mastodon 500, Pinterest 800). Done post-render to avoid the
+       quote-escaping mess of editing template literals. */
+    [
+        {plat: 'x',         lim: 280},
+        {plat: 'bluesky',   lim: 300},
+        {plat: 'threads',   lim: 500},
+        {plat: 'mastodon',  lim: 500},
+        {plat: 'pinterest', lim: 800},
+    ].forEach(function(p) {
+        var copyLink = item.querySelector('#nv-' + p.plat + '-' + run.ts + '-body .ig-section-link');
+        if (!copyLink) return;
+        var shorten = document.createElement('a');
+        shorten.href = '#';
+        shorten.className = 'small ig-section-link';
+        shorten.textContent = 'Shorten with AI (~$0.01)';
+        var srcId  = 'nv-ig-'    + run.ts + '-caption';
+        var dstId  = 'nv-' + p.plat + '-' + run.ts + '-caption';
+        var cntId  = 'nv-' + p.plat + '-' + run.ts + '-count';
+        var lim    = p.lim;
+        var plat   = p.plat;
+        shorten.onclick = function(ev) {
+            ev.preventDefault();
+            shortenIgCaptionForPlatform({
+                sourceId: srcId, targetId: dstId, countId: cntId,
+                platform: plat, limit: lim, linkEl: shorten,
+            });
+        };
+        // Move ms-auto from the copy link to the new shorten link so both
+        // sit at the right edge with the new link first.
+        if (copyLink.classList.contains('ms-auto')) {
+            copyLink.classList.remove('ms-auto');
+            shorten.classList.add('ms-auto');
+        }
+        copyLink.parentNode.insertBefore(shorten, copyLink);
+    });
+
     /* Check video duration — X rejects videos > 2 min */
     if (X_CONFIGURED) {
         var videoEl = item.querySelector('video');
