@@ -8197,7 +8197,7 @@ def admin_article_generate_ig_caption(article_id):
             caption += f"\n\nWant to read the full article? Access the following link:\n{article_link}"
 
         _add_activity_log(article_id, "Caption Generated (OpenAI)",
-                          f"Prompt: {system_msg[:120]}…\n\nGenerated caption:\n{caption[:300]}…",
+                          f"Prompt: {system_msg}\n\nGenerated caption:\n{caption}",
                           component=log_component)
         return jsonify({"caption": caption})
 
