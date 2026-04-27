@@ -255,14 +255,18 @@ else:
 
 
 # --- Pinterest API (optional — for pinning) ---
-PINTEREST_ACCESS_TOKEN = os.getenv("PINTEREST_ACCESS_TOKEN", "")
-PINTEREST_BOARD_ID     = os.getenv("PINTEREST_BOARD_ID", "")
-PINTEREST_CONFIGURED   = bool(PINTEREST_ACCESS_TOKEN and PINTEREST_BOARD_ID)
-_PINTEREST_API_URL     = "https://api.pinterest.com/v5"
-if PINTEREST_CONFIGURED:
-    print("Pinterest: credentials configured")
+PINTEREST_ACCESS_TOKEN  = os.getenv("PINTEREST_ACCESS_TOKEN", "")
+PINTEREST_BOARD_ID      = os.getenv("PINTEREST_BOARD_ID", "")
+PINTEREST_CLIENT_ID     = os.getenv("PINTEREST_CLIENT_ID", "")
+PINTEREST_CLIENT_SECRET = os.getenv("PINTEREST_CLIENT_SECRET", "")
+PINTEREST_REDIRECT_URI  = os.getenv("SITE_URL", "").rstrip("/") + "/admin/pinterest-oauth-callback"
+# Token can come from env var OR from DB (OAuth flow) — only board ID is required at startup
+PINTEREST_CONFIGURED    = bool(PINTEREST_BOARD_ID)
+_PINTEREST_API_URL      = "https://api.pinterest.com/v5"
+if PINTEREST_BOARD_ID:
+    print("Pinterest: board ID configured")
 else:
-    print("Pinterest: PINTEREST_ACCESS_TOKEN / PINTEREST_BOARD_ID not set — posting disabled")
+    print("Pinterest: PINTEREST_BOARD_ID not set — posting disabled")
 
 
 # --- TikTok API (optional — for posting videos) ---
@@ -3931,8 +3935,10 @@ def admin_settings():
                            x_access_token_secret_set=bool(X_ACCESS_TOKEN_SECRET),
                            threads_user_id_set=bool(THREADS_USER_ID),
                            threads_token_set=bool(THREADS_ACCESS_TOKEN),
-                           pinterest_token_set=bool(PINTEREST_ACCESS_TOKEN),
+                           pinterest_token_set=bool(PINTEREST_ACCESS_TOKEN or get_setting("pinterest_access_token")),
                            pinterest_board_id_set=bool(PINTEREST_BOARD_ID),
+                           pinterest_oauth_connected=bool(get_setting("pinterest_access_token")),
+                           pinterest_client_id_set=bool(PINTEREST_CLIENT_ID),
                            tiktok_client_key_set=bool(TIKTOK_CLIENT_KEY),
                            tiktok_client_secret_set=bool(TIKTOK_CLIENT_SECRET),
                            tiktok_token_set=bool(TIKTOK_ACCESS_TOKEN),
@@ -10161,10 +10167,59 @@ def admin_archive_narrated_threads_post(article_id):
 
 # ── Pinterest: Workers & Routes ──────────────────────────────
 
+def _refresh_pinterest_token():
+    """Use the stored refresh token to get a new Pinterest access token. Returns new token or None."""
+    import requests as _req, time as _time, base64 as _b64
+    refresh_token = get_setting("pinterest_refresh_token")
+    if not refresh_token or not PINTEREST_CLIENT_ID or not PINTEREST_CLIENT_SECRET:
+        return None
+    try:
+        creds = _b64.b64encode(f"{PINTEREST_CLIENT_ID}:{PINTEREST_CLIENT_SECRET}".encode()).decode()
+        resp = _req.post(
+            "https://api.pinterest.com/v5/oauth/token",
+            headers={"Authorization": f"Basic {creds}",
+                     "Content-Type": "application/x-www-form-urlencoded"},
+            data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+            timeout=15,
+        )
+        data = resp.json()
+        new_token = data.get("access_token")
+        if new_token:
+            expires_in = data.get("expires_in", 2592000)
+            expires_at = str(_time.time() + expires_in)
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    ("pinterest_access_token", new_token, new_token))
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    ("pinterest_token_expires", expires_at, expires_at))
+            if data.get("refresh_token"):
+                execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                        ("pinterest_refresh_token", data["refresh_token"], data["refresh_token"]))
+            print("[Pinterest] Token refreshed successfully", flush=True)
+            return new_token
+        print(f"[Pinterest] Token refresh failed: {data}", flush=True)
+    except Exception as _e:
+        print(f"[Pinterest] Token refresh error: {_e}", flush=True)
+    return None
+
+
 def _pinterest_headers():
-    """Return Authorization headers for Pinterest API."""
+    """Return Authorization headers for Pinterest API, preferring DB-stored OAuth token."""
+    import time as _time
+    # Prefer DB token (set via OAuth flow) — fall back to env var
+    db_token = get_setting("pinterest_access_token")
+    if db_token:
+        expires = get_setting("pinterest_token_expires")
+        if expires:
+            try:
+                if float(expires) < _time.time() + 300:   # refresh 5 min before expiry
+                    db_token = _refresh_pinterest_token() or db_token
+            except ValueError:
+                pass
+        token = db_token
+    else:
+        token = PINTEREST_ACCESS_TOKEN
     return {
-        "Authorization": f"Bearer {PINTEREST_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 
@@ -10462,6 +10517,71 @@ def _post_narrated_pinterest_worker(article_id, video_url, caption, run_ts):
         _set_result(f"error:{e}")
         _add_activity_log(article_id, "Pinterest Narrated Video Post Failed",
                           f"Exception: {e}\n\n{tb[:2000]}", component="narrated")
+
+
+# ── Pinterest: OAuth connect ─────────────────────────────────
+
+@app.route("/admin/pinterest-connect")
+@login_required
+@admin_required
+def admin_pinterest_connect():
+    """Redirect admin to Pinterest OAuth to authorise posting access."""
+    import urllib.parse as _urlparse
+    if not PINTEREST_CLIENT_ID:
+        flash("PINTEREST_CLIENT_ID not configured. Add it as a GitHub Secret first.", "danger")
+        return redirect(url_for("admin_panel"))
+    params = {
+        "client_id":     PINTEREST_CLIENT_ID,
+        "redirect_uri":  PINTEREST_REDIRECT_URI,
+        "response_type": "code",
+        "scope":         "pins:read,pins:write,boards:read,boards:write,user_accounts:read",
+    }
+    url = "https://www.pinterest.com/oauth/?" + _urlparse.urlencode(params)
+    return redirect(url)
+
+
+@app.route("/admin/pinterest-oauth-callback")
+@login_required
+@admin_required
+def admin_pinterest_oauth_callback():
+    """Exchange Pinterest auth code for access + refresh token and store in DB."""
+    import requests as _req, time as _time, base64 as _b64
+    code = request.args.get("code")
+    if not code:
+        flash("Pinterest authorisation failed — no code returned.", "danger")
+        return redirect(url_for("admin_panel"))
+    try:
+        creds = _b64.b64encode(f"{PINTEREST_CLIENT_ID}:{PINTEREST_CLIENT_SECRET}".encode()).decode()
+        resp = _req.post(
+            "https://api.pinterest.com/v5/oauth/token",
+            headers={"Authorization": f"Basic {creds}",
+                     "Content-Type": "application/x-www-form-urlencoded"},
+            data={
+                "grant_type":   "authorization_code",
+                "code":          code,
+                "redirect_uri":  PINTEREST_REDIRECT_URI,
+            },
+            timeout=15,
+        )
+        data = resp.json()
+        access_token  = data.get("access_token")
+        refresh_token = data.get("refresh_token")
+        if not access_token:
+            flash(f"Pinterest auth failed: {data.get('message', data)}", "danger")
+            return redirect(url_for("admin_panel"))
+        expires_in = data.get("expires_in", 2592000)
+        expires_at = str(_time.time() + expires_in)
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                ("pinterest_access_token", access_token, access_token))
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                ("pinterest_token_expires", expires_at, expires_at))
+        if refresh_token:
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    ("pinterest_refresh_token", refresh_token, refresh_token))
+        flash("Pinterest account connected successfully!", "success")
+    except Exception as _e:
+        flash(f"Pinterest OAuth error: {_e}", "danger")
+    return redirect(url_for("admin_panel"))
 
 
 # ── Pinterest: Post carousel ────────────────────────────────

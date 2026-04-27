@@ -701,7 +701,7 @@
                     <div class="text-end text-muted small" id="car-fb-char-count">0 / 2200</div>
                 </div>
                 <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-fb-btn-row">
-                    <button type="button" class="btn btn-sm btn-primary" onclick="postToFacebook('car')" id="car-fb-post-btn">
+                    <button type="button" class="btn btn-sm btn-dark" onclick="postToFacebook('car')" id="car-fb-post-btn">
                         <i class="fa-brands fa-facebook me-1"></i>Post to Facebook
                     </button>
                 </div>
@@ -854,9 +854,10 @@
                  style="cursor:pointer" onclick="togglePinterestSection('car')">
                 <i id="car-pinterest-icon" class="fa-brands fa-pinterest smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
                 <span class="small fw-semibold">Post Carousel Images to Pinterest</span>
+                <a href="/admin/pinterest-connect" class="small text-muted ms-auto me-2" style="font-size:0.7rem;white-space:nowrap" onclick="event.stopPropagation()" title="Reconnect Pinterest account">Reconnect</a>
                 <svg id="car-pinterest-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                      viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
+                     stroke-linecap="round" stroke-linejoin="round" class="me-1"
                      style="transition:transform 0.2s;flex-shrink:0">
                     <polyline points="6 9 12 15 18 9"/>
                 </svg>
@@ -864,8 +865,7 @@
             <div id="car-pinterest-body" class="d-none pt-1">
                 {% if not pinterest_configured %}
                 <div class="alert alert-warning py-2 small mb-0">
-                    Pinterest credentials not configured.
-                    Set <code>PINTEREST_ACCESS_TOKEN</code> and <code>PINTEREST_BOARD_ID</code> in your environment.
+                    Pinterest board ID not configured. Set <code>PINTEREST_BOARD_ID</code> as a GitHub Secret.
                 </div>
                 {% else %}
                 <div class="mb-2">

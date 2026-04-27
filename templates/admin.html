@@ -945,26 +945,25 @@
 
         <!-- Pinterest API -->
         <div class="card mt-4">
-            <div class="card-header"><strong>Pinterest API</strong></div>
+            <div class="card-header d-flex align-items-center gap-2">
+                <strong>Pinterest API</strong>
+                {% if pinterest_oauth_connected %}
+                    <span class="badge bg-success ms-2">✓ Connected via OAuth</span>
+                {% elif pinterest_token_set %}
+                    <span class="badge bg-success ms-2">✓ Token set</span>
+                {% else %}
+                    <span class="badge bg-warning text-dark ms-2">Not connected</span>
+                {% endif %}
+            </div>
             <div class="card-body">
                 <p class="text-muted small mb-3">
-                    Set up Pinterest API credentials to pin Carousel Images and Narrated Videos directly from the article editor.
-                    Get credentials at <a href="https://developers.pinterest.com/apps/" target="_blank" rel="noopener">Pinterest for Developers</a>.
+                    Connect your Pinterest account to pin Carousel Images and Narrated Videos directly from the article editor.
+                    If you get an authentication error, click the button below to reconnect.
                 </p>
                 <table class="table table-sm table-bordered small mb-3">
                     <tbody>
                         <tr>
-                            <td style="width:55%"><code>PINTEREST_ACCESS_TOKEN</code></td>
-                            <td>
-                                {% if pinterest_token_set %}
-                                    <span class="badge bg-success">✓ Set</span>
-                                {% else %}
-                                    <span class="badge bg-warning text-dark">Not set</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        <tr>
-                            <td><code>PINTEREST_BOARD_ID</code></td>
+                            <td style="width:55%"><code>PINTEREST_BOARD_ID</code></td>
                             <td>
                                 {% if pinterest_board_id_set %}
                                     <span class="badge bg-success">✓ Set</span>
@@ -973,12 +972,33 @@
                                 {% endif %}
                             </td>
                         </tr>
+                        <tr>
+                            <td><code>PINTEREST_CLIENT_ID</code></td>
+                            <td>
+                                {% if pinterest_client_id_set %}
+                                    <span class="badge bg-success">✓ Set</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Not set — required for OAuth</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>PINTEREST_CLIENT_SECRET</code></td>
+                            <td><span class="badge bg-secondary">checked at runtime</span></td>
+                        </tr>
                     </tbody>
                 </table>
-                <p class="text-muted small mb-0">
-                    Add these values as GitHub Secrets (<code>PINTEREST_ACCESS_TOKEN</code>, <code>PINTEREST_BOARD_ID</code>)
-                    and they will be injected at deploy time.
-                </p>
+                <div class="d-flex align-items-center gap-3">
+                    <a href="/admin/pinterest-connect" class="btn btn-sm btn-danger">
+                        <i class="fa-brands fa-pinterest me-1"></i>
+                        {% if pinterest_oauth_connected %}Re-connect Pinterest{% else %}Connect Pinterest{% endif %}
+                    </a>
+                    <span class="text-muted small">
+                        <code>PINTEREST_BOARD_ID</code>, <code>PINTEREST_CLIENT_ID</code> and <code>PINTEREST_CLIENT_SECRET</code>
+                        must be set as GitHub Secrets before connecting.
+                        Get credentials at <a href="https://developers.pinterest.com/apps/" target="_blank" rel="noopener">Pinterest for Developers</a>.
+                    </span>
+                </div>
             </div>
         </div>
 
