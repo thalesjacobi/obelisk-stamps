@@ -364,16 +364,44 @@
                         <thead>
                             <tr>
                                 <th>Platform</th>
-                                <th class="text-end">Likes</th>
-                                <th class="text-end">Views</th>
-                                <th class="text-end">Shares</th>
+                                <th class="text-end" title="Likes / reactions">Likes</th>
+                                <th class="text-end" title="Video views or post views (where reported)">Views</th>
+                                <th class="text-end" title="Shares / reposts">Shares</th>
                                 <th class="text-end">Comments</th>
-                                <th class="text-end">Saves</th>
+                                <th class="text-end" title="Saves / bookmarks (Instagram, Pinterest)">Saves</th>
+                                <th class="text-end" title="Clicks on the tracked obelisk-stamps.com/a/… short link for this platform">Link Clicks</th>
+                                <th class="text-end" title="Impressions (where reported)">Impr.</th>
+                                <th class="text-end" title="Unique users reached (where reported)">Reach</th>
+                                <th class="text-end" title="Orders attributed via UTM tag for this platform">Orders</th>
                             </tr>
                         </thead>
                         <tbody id="engagement-tbody"></tbody>
                         <tfoot id="engagement-tfoot"></tfoot>
                     </table>
+                </div>
+                <!-- Per content-type breakdown -->
+                <div id="engagement-by-ct-wrap" class="mb-2 d-none">
+                    <details>
+                        <summary class="small text-muted" style="cursor:pointer">
+                            <i class="fa-solid fa-layer-group me-1"></i>Per content-type breakdown
+                        </summary>
+                        <div class="table-responsive mt-2">
+                            <table class="table table-sm table-bordered small mb-0" id="engagement-by-ct-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Platform</th>
+                                        <th>Content</th>
+                                        <th class="text-end">Likes</th>
+                                        <th class="text-end">Views</th>
+                                        <th class="text-end">Shares</th>
+                                        <th class="text-end">Comments</th>
+                                        <th class="text-end">Saves</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="engagement-by-ct-tbody"></tbody>
+                            </table>
+                        </div>
+                    </details>
                 </div>
                 <div class="d-flex align-items-center gap-2">
                     <small class="text-muted" id="engagement-updated"></small>
@@ -2786,68 +2814,140 @@ function loadEngagement() {
     fetch(`/admin/articles/${ARTICLE_ID}/engagement`)
         .then(r => r.json())
         .then(data => {
-            if (data.fetched_at && data.details && data.details.length > 0) {
+            // Render if there's engagement data, OR link clicks, OR orders
+            var hasDetails  = data.details && data.details.length > 0;
+            var hasClicks   = (data.totals && (data.totals.link_clicks || 0) > 0);
+            var hasOrders   = (data.totals && (data.totals.orders || 0) > 0);
+            if (hasDetails || hasClicks || hasOrders) {
                 renderEngagement(data);
             }
         })
         .catch(() => {});
 }
 
+function _fmtNum(n) { return (n || 0).toLocaleString(); }
+function _fmtMoney(n) {
+    if (!n) return '—';
+    return '£' + (n).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+var _CONTENT_TYPE_LABELS = {
+    'carousel': 'Carousel',
+    'cinemagraph': 'Cinemagraph',
+    'narrated_video': 'Narrated video',
+    '': '—'
+};
+
 function renderEngagement(data) {
     var content = document.getElementById('engagement-content');
     var empty = document.getElementById('engagement-empty');
     var totals = data.totals || {};
     var platforms = data.platforms || {};
+    var revenueByPlat = data.revenue_by_platform || {};
+    var ordersByPlat = data.orders_by_platform || {};
+    var byCT = data.by_content_type || [];
 
     empty.classList.add('d-none');
     content.classList.remove('d-none');
 
-    // Totals row
+    // Totals row — only show cards for non-zero metrics (saves/impressions/reach often unavailable)
     var totalsEl = document.getElementById('engagement-totals');
     var metricLabels = [
-        {key:'likes', icon:'fa-solid fa-heart', color:'#dc3545', label:'Likes'},
-        {key:'views', icon:'fa-solid fa-eye', color:'#0d6efd', label:'Views'},
-        {key:'shares', icon:'fa-solid fa-share', color:'#198754', label:'Shares'},
-        {key:'comments', icon:'fa-solid fa-comment', color:'#ffc107', label:'Comments'},
-        {key:'saves', icon:'fa-solid fa-bookmark', color:'#6f42c1', label:'Saves'},
+        {key:'likes',       icon:'fa-solid fa-heart',        color:'#dc3545', label:'Likes',      always:true},
+        {key:'views',       icon:'fa-solid fa-eye',          color:'#0d6efd', label:'Views',      always:true},
+        {key:'shares',      icon:'fa-solid fa-share',        color:'#198754', label:'Shares',     always:true},
+        {key:'comments',    icon:'fa-solid fa-comment',      color:'#ffc107', label:'Comments',   always:true},
+        {key:'saves',       icon:'fa-solid fa-bookmark',     color:'#6f42c1', label:'Saves'},
+        {key:'link_clicks', icon:'fa-solid fa-link',         color:'#20c997', label:'Link Clicks', always:true},
+        {key:'impressions', icon:'fa-solid fa-chart-simple', color:'#fd7e14', label:'Impressions'},
+        {key:'reach',       icon:'fa-solid fa-users',        color:'#6610f2', label:'Reach'},
+        {key:'orders',      icon:'fa-solid fa-cart-shopping',color:'#0dcaf0', label:'Orders'},
     ];
-    totalsEl.innerHTML = metricLabels.map(function(m) {
+    var cards = metricLabels.map(function(m) {
         var val = totals[m.key] || 0;
-        if (val === 0 && m.key === 'saves') return '';  // hide saves if 0
+        if (!m.always && val === 0) return '';
         return '<div class="border rounded px-3 py-2 text-center" style="min-width:100px">' +
                '<div class="fw-bold fs-5" style="color:' + m.color + '">' +
-               '<i class="' + m.icon + ' me-1" style="font-size:.8em"></i>' + val.toLocaleString() +
+               '<i class="' + m.icon + ' me-1" style="font-size:.8em"></i>' + _fmtNum(val) +
                '</div><div class="text-muted small">' + m.label + '</div></div>';
-    }).filter(Boolean).join('');
+    }).filter(Boolean);
+    // Revenue card — only if > 0
+    if ((totals.revenue || 0) > 0) {
+        cards.push('<div class="border rounded px-3 py-2 text-center" style="min-width:100px">' +
+                   '<div class="fw-bold fs-5" style="color:#198754">' +
+                   '<i class="fa-solid fa-sterling-sign me-1" style="font-size:.8em"></i>' +
+                   _fmtMoney(totals.revenue) +
+                   '</div><div class="text-muted small">Revenue</div></div>');
+    }
+    totalsEl.innerHTML = cards.join('');
 
     // Platform table
     var tbody = document.getElementById('engagement-tbody');
     var tfoot = document.getElementById('engagement-tfoot');
     var rows = '';
     var sortedPlatforms = Object.keys(platforms).sort(function(a,b) {
-        return (platforms[b].likes + platforms[b].views) - (platforms[a].likes + platforms[a].views);
+        var aScore = (platforms[a].likes||0) + (platforms[a].views||0) + (platforms[a].link_clicks||0)*5;
+        var bScore = (platforms[b].likes||0) + (platforms[b].views||0) + (platforms[b].link_clicks||0)*5;
+        return bScore - aScore;
     });
     sortedPlatforms.forEach(function(p) {
         var d = platforms[p];
+        var ordersForP = ordersByPlat[p] || 0;
+        var revForP    = revenueByPlat[p] || 0;
+        var orderCell  = ordersForP > 0
+            ? _fmtNum(ordersForP) + (revForP > 0 ? ' <span class="text-muted">(' + _fmtMoney(revForP) + ')</span>' : '')
+            : '<span class="text-muted">—</span>';
         rows += '<tr>' +
             '<td><i class="' + (_PLATFORM_ICONS[p]||'') + ' me-1"></i>' + (_PLATFORM_NAMES[p]||p) + '</td>' +
-            '<td class="text-end">' + (d.likes||0).toLocaleString() + '</td>' +
-            '<td class="text-end">' + (d.views||0).toLocaleString() + '</td>' +
-            '<td class="text-end">' + (d.shares||0).toLocaleString() + '</td>' +
-            '<td class="text-end">' + (d.comments||0).toLocaleString() + '</td>' +
-            '<td class="text-end">' + (d.saves||0).toLocaleString() + '</td>' +
+            '<td class="text-end">' + _fmtNum(d.likes) + '</td>' +
+            '<td class="text-end">' + _fmtNum(d.views) + '</td>' +
+            '<td class="text-end">' + _fmtNum(d.shares) + '</td>' +
+            '<td class="text-end">' + _fmtNum(d.comments) + '</td>' +
+            '<td class="text-end">' + _fmtNum(d.saves) + '</td>' +
+            '<td class="text-end fw-semibold" style="color:#20c997">' + _fmtNum(d.link_clicks) + '</td>' +
+            '<td class="text-end">' + ((d.impressions||0) ? _fmtNum(d.impressions) : '<span class="text-muted">—</span>') + '</td>' +
+            '<td class="text-end">' + ((d.reach||0) ? _fmtNum(d.reach) : '<span class="text-muted">—</span>') + '</td>' +
+            '<td class="text-end">' + orderCell + '</td>' +
             '</tr>';
     });
-    tbody.innerHTML = rows;
+    tbody.innerHTML = rows || '<tr><td colspan="10" class="text-center text-muted py-3">No platform data yet.</td></tr>';
 
     tfoot.innerHTML = '<tr class="fw-bold">' +
         '<td>Total</td>' +
-        '<td class="text-end">' + (totals.likes||0).toLocaleString() + '</td>' +
-        '<td class="text-end">' + (totals.views||0).toLocaleString() + '</td>' +
-        '<td class="text-end">' + (totals.shares||0).toLocaleString() + '</td>' +
-        '<td class="text-end">' + (totals.comments||0).toLocaleString() + '</td>' +
-        '<td class="text-end">' + (totals.saves||0).toLocaleString() + '</td>' +
+        '<td class="text-end">' + _fmtNum(totals.likes) + '</td>' +
+        '<td class="text-end">' + _fmtNum(totals.views) + '</td>' +
+        '<td class="text-end">' + _fmtNum(totals.shares) + '</td>' +
+        '<td class="text-end">' + _fmtNum(totals.comments) + '</td>' +
+        '<td class="text-end">' + _fmtNum(totals.saves) + '</td>' +
+        '<td class="text-end" style="color:#20c997">' + _fmtNum(totals.link_clicks) + '</td>' +
+        '<td class="text-end">' + ((totals.impressions||0) ? _fmtNum(totals.impressions) : '—') + '</td>' +
+        '<td class="text-end">' + ((totals.reach||0) ? _fmtNum(totals.reach) : '—') + '</td>' +
+        '<td class="text-end">' + ((totals.orders||0)
+            ? _fmtNum(totals.orders) + ((totals.revenue||0) > 0 ? ' <span class="text-muted">(' + _fmtMoney(totals.revenue) + ')</span>' : '')
+            : '—') + '</td>' +
         '</tr>';
+
+    // Per content-type breakdown
+    var ctWrap = document.getElementById('engagement-by-ct-wrap');
+    var ctBody = document.getElementById('engagement-by-ct-tbody');
+    if (byCT && byCT.length) {
+        ctWrap.classList.remove('d-none');
+        var ctRows = byCT.slice().sort(function(a,b) {
+            return (b.likes+b.views) - (a.likes+a.views);
+        }).map(function(r) {
+            return '<tr>' +
+                '<td><i class="' + (_PLATFORM_ICONS[r.platform]||'') + ' me-1"></i>' + (_PLATFORM_NAMES[r.platform]||r.platform) + '</td>' +
+                '<td>' + (_CONTENT_TYPE_LABELS[r.content_type] || r.content_type || '—') + '</td>' +
+                '<td class="text-end">' + _fmtNum(r.likes) + '</td>' +
+                '<td class="text-end">' + _fmtNum(r.views) + '</td>' +
+                '<td class="text-end">' + _fmtNum(r.shares) + '</td>' +
+                '<td class="text-end">' + _fmtNum(r.comments) + '</td>' +
+                '<td class="text-end">' + _fmtNum(r.saves) + '</td>' +
+                '</tr>';
+        }).join('');
+        ctBody.innerHTML = ctRows;
+    } else {
+        ctWrap.classList.add('d-none');
+    }
 
     // Updated timestamp
     var updatedEl = document.getElementById('engagement-updated');

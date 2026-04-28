@@ -1710,7 +1710,7 @@ def _fetch_ig_engagement(article_id):
     # Also check NV posts
     rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (f"ig_narrated_post_id_{article_id}_%",))
     for row in (rows or []):
-        post_id = row['value']
+        post_id = row[1]
         if not post_id:
             continue
         try:
@@ -1739,7 +1739,7 @@ def _fetch_fb_engagement(article_id):
         else:
             rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (f"fb_narrated_post_id_{article_id}_%",))
             for row in (rows or []):
-                post_id = row['value']
+                post_id = row[1]
                 if not post_id:
                     continue
                 try:
@@ -1794,9 +1794,9 @@ def _fetch_x_engagement(article_id):
                 rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (key_pattern,))
             else:
                 val = get_setting(key_pattern)
-                rows = [{'value': val}] if val else []
+                rows = [(None, val)] if val else []
             for row in (rows or []):
-                tweet_id = row['value']
+                tweet_id = row[1]
                 if not tweet_id:
                     continue
                 resp = oauth.get(f"https://api.x.com/2/tweets/{tweet_id}",
@@ -1829,9 +1829,9 @@ def _fetch_threads_engagement(article_id):
             rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (key_pattern,))
         else:
             val = get_setting(key_pattern)
-            rows = [{'value': val}] if val else []
+            rows = [(None, val)] if val else []
         for row in (rows or []):
-            post_id = row['value']
+            post_id = row[1]
             if not post_id:
                 continue
             try:
@@ -1876,7 +1876,7 @@ def _fetch_youtube_engagement(article_id):
     rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s",
                      (f"youtube_video_id_{article_id}_%",))
     for row in (rows or []):
-        video_id = row['value']
+        video_id = row[1]
         if not video_id:
             continue
         try:
@@ -1911,9 +1911,9 @@ def _fetch_pinterest_engagement(article_id):
             rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (key_pattern,))
         else:
             val = get_setting(key_pattern)
-            rows = [{'value': val}] if val else []
+            rows = [(None, val)] if val else []
         for row in (rows or []):
-            pin_id = row['value']
+            pin_id = row[1]
             if not pin_id:
                 continue
             try:
@@ -1954,9 +1954,9 @@ def _fetch_bluesky_engagement(article_id):
             rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (key_pattern,))
         else:
             val = get_setting(key_pattern)
-            rows = [{'value': val}] if val else []
+            rows = [(None, val)] if val else []
         for row in (rows or []):
-            post_uri = row['value']
+            post_uri = row[1]
             if not post_uri:
                 continue
             try:
@@ -14540,20 +14540,89 @@ def admin_refresh_engagement(article_id):
             print(f"[Engagement] {label} comments fetch failed: {_ce}", flush=True)
             comment_errors.append({'platform': label, 'error': str(_ce)})
 
-    totals = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0}
+    METRIC_KEYS = ['likes', 'views', 'shares', 'comments', 'saves', 'clicks', 'impressions', 'reach']
+    totals = {k: 0 for k in METRIC_KEYS}
     platforms = {}
+    by_content_type = {}  # {(platform, content_type): {metrics...}}
+
     for r in results:
-        for k in totals:
+        for k in METRIC_KEYS:
             totals[k] += r.get(k, 0)
         p = r.get('platform', '')
         if not p:
             continue
+        ct = r.get('content_type', '')
         if p not in platforms:
-            platforms[p] = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0, 'content_types': []}
-        for k in totals:
+            platforms[p] = {k: 0 for k in METRIC_KEYS}
+            platforms[p]['content_types'] = []
+            platforms[p]['link_clicks'] = 0
+        for k in METRIC_KEYS:
             platforms[p][k] += r.get(k, 0)
-        platforms[p]['content_types'].append(r.get('content_type', ''))
-    return jsonify({'ok': True, 'totals': totals, 'platforms': platforms, 'details': results,
+        if ct and ct not in platforms[p]['content_types']:
+            platforms[p]['content_types'].append(ct)
+
+        # Per content-type breakdown
+        ct_key = f"{p}::{ct}"
+        if ct_key not in by_content_type:
+            by_content_type[ct_key] = {'platform': p, 'content_type': ct,
+                                        **{k: 0 for k in METRIC_KEYS}}
+        for k in METRIC_KEYS:
+            by_content_type[ct_key][k] += r.get(k, 0)
+
+    # Short-link clicks per platform (the user's "clicks on the links" metric)
+    link_clicks_total = 0
+    try:
+        link_rows = query_all(
+            "SELECT platform, click_count FROM short_links WHERE article_id = %s",
+            (article_id,))
+        for lr in (link_rows or []):
+            plat, clicks = lr[0], int(lr[1] or 0)
+            link_clicks_total += clicks
+            if plat not in platforms:
+                platforms[plat] = {k: 0 for k in METRIC_KEYS}
+                platforms[plat]['content_types'] = []
+                platforms[plat]['link_clicks'] = 0
+            platforms[plat]['link_clicks'] = clicks
+    except Exception as _le:
+        print(f"[Engagement] short_links lookup failed: {_le}", flush=True)
+
+    # UTM-attributed orders/revenue per platform
+    revenue_by_platform = {}
+    orders_by_platform = {}
+    revenue_total = 0.0
+    orders_total = 0
+    try:
+        slug_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        if slug_row and slug_row[0]:
+            order_rows = query_all(
+                "SELECT utm_source, COUNT(*), COALESCE(SUM(total_amount), 0) "
+                "FROM orders WHERE utm_campaign = %s AND utm_source IS NOT NULL "
+                "GROUP BY utm_source",
+                (slug_row[0],))
+            for orow in (order_rows or []):
+                src = (orow[0] or '').lower()
+                cnt = int(orow[1] or 0)
+                rev = float(orow[2] or 0)
+                if not src:
+                    continue
+                orders_by_platform[src] = cnt
+                revenue_by_platform[src] = rev
+                orders_total += cnt
+                revenue_total += rev
+    except Exception as _re:
+        print(f"[Engagement] orders attribution lookup failed: {_re}", flush=True)
+
+    totals['link_clicks'] = link_clicks_total
+    totals['orders'] = orders_total
+    totals['revenue'] = round(revenue_total, 2)
+
+    return jsonify({'ok': True,
+                    'totals': totals,
+                    'platforms': platforms,
+                    'details': results,
+                    'by_content_type': list(by_content_type.values()),
+                    'revenue_by_platform': revenue_by_platform,
+                    'orders_by_platform': orders_by_platform,
                     'platform_errors': platform_errors + comment_errors,
                     'fetched_at': datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
 
@@ -14574,7 +14643,7 @@ def admin_fetch_follower_counts():
 @login_required
 @admin_required
 def admin_get_engagement(article_id):
-    """Get latest engagement snapshot for an article."""
+    """Get latest engagement snapshot for an article (incl. link clicks & orders)."""
     rows = query_all("""
         SELECT e1.* FROM article_engagement e1
         INNER JOIN (
@@ -14587,33 +14656,98 @@ def admin_get_engagement(article_id):
         ORDER BY e1.platform, e1.content_type
     """, (article_id, article_id))
 
-    if not rows:
-        return jsonify({'totals': {}, 'platforms': {}, 'details': [], 'fetched_at': None})
-
-    # Map tuples to dicts: id, article_id, platform, content_type, post_id, permalink,
-    # likes, views, shares, comments, saves, clicks, impressions, reach, fetched_at, created_at
+    METRIC_KEYS = ['likes', 'views', 'shares', 'comments', 'saves', 'clicks', 'impressions', 'reach']
     _eng_cols = ['id','article_id','platform','content_type','post_id','permalink',
                  'likes','views','shares','comments','saves','clicks','impressions','reach',
                  'fetched_at','created_at']
-    totals = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0}
+    totals = {k: 0 for k in METRIC_KEYS}
     platforms = {}
+    by_content_type = {}
     details = []
     fetched_at = None
-    for r in rows:
+    for r in rows or []:
         d = {_eng_cols[i]: r[i] for i in range(min(len(_eng_cols), len(r)))}
         details.append(d)
-        for k in totals:
+        for k in METRIC_KEYS:
             totals[k] += d.get(k, 0) or 0
-        p = d['platform']
+        p = d.get('platform') or ''
+        ct = d.get('content_type') or ''
+        if not p:
+            continue
         if p not in platforms:
-            platforms[p] = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0}
-        for k in totals:
+            platforms[p] = {k: 0 for k in METRIC_KEYS}
+            platforms[p]['content_types'] = []
+            platforms[p]['link_clicks'] = 0
+        for k in METRIC_KEYS:
             platforms[p][k] += d.get(k, 0) or 0
+        if ct and ct not in platforms[p]['content_types']:
+            platforms[p]['content_types'].append(ct)
+        ct_key = f"{p}::{ct}"
+        if ct_key not in by_content_type:
+            by_content_type[ct_key] = {'platform': p, 'content_type': ct,
+                                        **{k: 0 for k in METRIC_KEYS}}
+        for k in METRIC_KEYS:
+            by_content_type[ct_key][k] += d.get(k, 0) or 0
         if d.get('fetched_at'):
             fa = d['fetched_at']
             fetched_at = fa.strftime("%Y-%m-%dT%H:%M:%SZ") if hasattr(fa, 'strftime') else str(fa)
 
-    return jsonify({'totals': totals, 'platforms': platforms, 'details': details, 'fetched_at': fetched_at})
+    # Short-link clicks per platform
+    link_clicks_total = 0
+    try:
+        link_rows = query_all(
+            "SELECT platform, click_count FROM short_links WHERE article_id = %s",
+            (article_id,))
+        for lr in (link_rows or []):
+            plat, clicks = lr[0], int(lr[1] or 0)
+            link_clicks_total += clicks
+            if plat not in platforms:
+                platforms[plat] = {k: 0 for k in METRIC_KEYS}
+                platforms[plat]['content_types'] = []
+                platforms[plat]['link_clicks'] = 0
+            platforms[plat]['link_clicks'] = clicks
+    except Exception as _le:
+        print(f"[Engagement] short_links lookup failed: {_le}", flush=True)
+
+    # UTM-attributed orders
+    revenue_by_platform = {}
+    orders_by_platform = {}
+    revenue_total = 0.0
+    orders_total = 0
+    try:
+        slug_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        if slug_row and slug_row[0]:
+            order_rows = query_all(
+                "SELECT utm_source, COUNT(*), COALESCE(SUM(total_amount), 0) "
+                "FROM orders WHERE utm_campaign = %s AND utm_source IS NOT NULL "
+                "GROUP BY utm_source",
+                (slug_row[0],))
+            for orow in (order_rows or []):
+                src = (orow[0] or '').lower()
+                if not src:
+                    continue
+                cnt = int(orow[1] or 0)
+                rev = float(orow[2] or 0)
+                orders_by_platform[src] = cnt
+                revenue_by_platform[src] = rev
+                orders_total += cnt
+                revenue_total += rev
+    except Exception as _re:
+        print(f"[Engagement] orders attribution lookup failed: {_re}", flush=True)
+
+    totals['link_clicks'] = link_clicks_total
+    totals['orders'] = orders_total
+    totals['revenue'] = round(revenue_total, 2)
+
+    return jsonify({
+        'totals': totals,
+        'platforms': platforms,
+        'details': details,
+        'by_content_type': list(by_content_type.values()),
+        'revenue_by_platform': revenue_by_platform,
+        'orders_by_platform': orders_by_platform,
+        'fetched_at': fetched_at,
+    })
 
 
 @app.route("/admin/engagement/poll-all", methods=["POST"])
