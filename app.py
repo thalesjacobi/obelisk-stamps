@@ -2170,24 +2170,43 @@ def _fetch_bluesky_comments(article_id):
 
 
 def fetch_all_engagement(article_id):
-    """Fetch engagement metrics from all configured platforms and store snapshots."""
+    """Fetch engagement metrics from all configured platforms and store snapshots.
+
+    Each platform fetch is isolated so one failure (e.g. expired YouTube token)
+    cannot break the whole refresh. Per-platform errors are collected and
+    returned in the special key '_errors' on the result list.
+    """
     from datetime import datetime as _dt_now
     all_results = []
+    errors = []  # list of {'platform': str, 'error': str}
+
+    def _safe_fetch(platform_label, fetch_fn):
+        try:
+            res = fetch_fn(article_id)
+            if res:
+                all_results.extend(res)
+        except Exception as _e:
+            import traceback as _tb
+            print(f"[Engagement] {platform_label} fetch failed: {_e}\n{_tb.format_exc()}", flush=True)
+            errors.append({'platform': platform_label, 'error': str(_e)})
 
     if IG_USER_ID and IG_ACCESS_TOKEN:
-        all_results.extend(_fetch_ig_engagement(article_id))
+        _safe_fetch('Instagram', _fetch_ig_engagement)
     if FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN:
-        all_results.extend(_fetch_fb_engagement(article_id))
+        _safe_fetch('Facebook', _fetch_fb_engagement)
     if X_CONFIGURED:
-        all_results.extend(_fetch_x_engagement(article_id))
+        _safe_fetch('X', _fetch_x_engagement)
     if THREADS_CONFIGURED:
-        all_results.extend(_fetch_threads_engagement(article_id))
+        _safe_fetch('Threads', _fetch_threads_engagement)
     if get_setting("youtube_refresh_token"):
-        all_results.extend(_fetch_youtube_engagement(article_id))
+        _safe_fetch('YouTube', _fetch_youtube_engagement)
     if PINTEREST_CONFIGURED:
-        all_results.extend(_fetch_pinterest_engagement(article_id))
+        _safe_fetch('Pinterest', _fetch_pinterest_engagement)
     if BLUESKY_CONFIGURED:
-        all_results.extend(_fetch_bluesky_engagement(article_id))
+        _safe_fetch('Bluesky', _fetch_bluesky_engagement)
+
+    # Stash per-platform errors via function attribute so caller can read them
+    fetch_all_engagement._last_errors = errors
 
     # Store snapshots
     now = _dt_now.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -14490,32 +14509,52 @@ def admin_delete_narrated_tumblr_post(article_id):
 @login_required
 @admin_required
 def admin_refresh_engagement(article_id):
-    """Fetch latest engagement metrics from all platform APIs."""
-    results = fetch_all_engagement(article_id)
-    # Also fetch comments for ML/NLP
+    """Fetch latest engagement metrics from all platform APIs.
+
+    Always returns JSON, even on partial or total failure, so the frontend can
+    render a meaningful error instead of choking on an HTML error page.
+    """
     try:
-        if IG_USER_ID and IG_ACCESS_TOKEN:
-            _fetch_ig_comments(article_id)
-        if FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN:
-            _fetch_fb_comments(article_id)
-        if THREADS_CONFIGURED:
-            _fetch_threads_comments(article_id)
-        if BLUESKY_CONFIGURED:
-            _fetch_bluesky_comments(article_id)
-    except Exception:
-        pass  # Don't fail the main refresh if comment fetch fails
+        results = fetch_all_engagement(article_id)
+        platform_errors = getattr(fetch_all_engagement, '_last_errors', []) or []
+    except Exception as _e:
+        import traceback as _tb
+        print(f"[Engagement] fetch_all_engagement crashed: {_e}\n{_tb.format_exc()}", flush=True)
+        return jsonify({'ok': False, 'error': f'Engagement fetch crashed: {_e}',
+                        'totals': {}, 'platforms': {}, 'details': [],
+                        'platform_errors': []}), 200
+
+    # Comment fetches are best-effort — log per-platform errors but don't abort
+    comment_errors = []
+    for label, configured, fn in [
+        ('Instagram', bool(IG_USER_ID and IG_ACCESS_TOKEN), _fetch_ig_comments),
+        ('Facebook',  bool(FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN), _fetch_fb_comments),
+        ('Threads',   bool(THREADS_CONFIGURED), _fetch_threads_comments),
+        ('Bluesky',   bool(BLUESKY_CONFIGURED), _fetch_bluesky_comments),
+    ]:
+        if not configured:
+            continue
+        try:
+            fn(article_id)
+        except Exception as _ce:
+            print(f"[Engagement] {label} comments fetch failed: {_ce}", flush=True)
+            comment_errors.append({'platform': label, 'error': str(_ce)})
+
     totals = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0}
     platforms = {}
     for r in results:
         for k in totals:
             totals[k] += r.get(k, 0)
-        p = r['platform']
+        p = r.get('platform', '')
+        if not p:
+            continue
         if p not in platforms:
             platforms[p] = {'likes':0, 'views':0, 'shares':0, 'comments':0, 'saves':0, 'clicks':0, 'content_types': []}
         for k in totals:
             platforms[p][k] += r.get(k, 0)
         platforms[p]['content_types'].append(r.get('content_type', ''))
     return jsonify({'ok': True, 'totals': totals, 'platforms': platforms, 'details': results,
+                    'platform_errors': platform_errors + comment_errors,
                     'fetched_at': datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")})
 
 

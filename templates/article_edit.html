@@ -2715,25 +2715,70 @@ function refreshEngagement() {
     content.classList.add('d-none');
 
     fetch(`/admin/articles/${ARTICLE_ID}/refresh-engagement`, {method:'POST'})
-        .then(r => r.json())
-        .then(data => {
+        .then(r => r.text().then(text => ({status: r.status, text: text})))
+        .then(({status, text}) => {
             loading.classList.add('d-none');
             btn.disabled = false;
             btn.innerHTML = '<i class="fa-solid fa-arrows-rotate me-1"></i>Refresh Metrics';
 
-            if (!data.ok || !data.details || data.details.length === 0) {
+            // Try to parse as JSON; if it fails, the server returned HTML (error page)
+            var data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
                 empty.classList.remove('d-none');
-                empty.textContent = 'No posts found to track. Publish content first, then refresh.';
+                var snippet = text ? text.substring(0, 200).replace(/<[^>]*>/g, '').trim() : '(empty)';
+                empty.innerHTML = '<span class="text-danger">Server error (HTTP ' + status +
+                    '). Response was not JSON: ' + snippet + '</span>';
                 return;
             }
+
+            // Build a per-platform error banner if any platform failed
+            var errBanner = '';
+            if (data.platform_errors && data.platform_errors.length) {
+                errBanner = '<div class="alert alert-warning small mb-2">' +
+                    '<strong>Some platforms failed:</strong><ul class="mb-0 mt-1">';
+                data.platform_errors.forEach(function(pe) {
+                    var msg = (pe.error || '').toString();
+                    // Detect common auth issues and add a reconnect hint
+                    var hint = '';
+                    if (/invalid_grant|Authentication failed|expired|unauthor/i.test(msg)) {
+                        if (pe.platform === 'YouTube')   hint = ' <a href="/admin/youtube-connect">Re-connect</a>';
+                        else if (pe.platform === 'Pinterest') hint = ' <a href="/admin/pinterest-connect">Re-connect</a>';
+                        else hint = ' (re-auth needed in admin panel)';
+                    }
+                    errBanner += '<li><strong>' + pe.platform + ':</strong> ' +
+                        msg.substring(0, 200) + hint + '</li>';
+                });
+                errBanner += '</ul></div>';
+            }
+
+            if (!data.ok) {
+                empty.classList.remove('d-none');
+                empty.innerHTML = errBanner +
+                    '<span class="text-danger">' + (data.error || 'Unknown error') + '</span>';
+                return;
+            }
+
+            if (!data.details || data.details.length === 0) {
+                empty.classList.remove('d-none');
+                empty.innerHTML = errBanner +
+                    'No posts found to track. Publish content first, then refresh.';
+                return;
+            }
+
+            // Inject error banner above the metrics if any
             renderEngagement(data);
+            if (errBanner) {
+                content.insertAdjacentHTML('afterbegin', errBanner);
+            }
         })
         .catch(err => {
             loading.classList.add('d-none');
             btn.disabled = false;
             btn.innerHTML = '<i class="fa-solid fa-arrows-rotate me-1"></i>Refresh Metrics';
             empty.classList.remove('d-none');
-            empty.innerHTML = '<span class="text-danger">Error fetching metrics: ' + err.message + '</span>';
+            empty.innerHTML = '<span class="text-danger">Network error: ' + err.message + '</span>';
         });
 }
 
