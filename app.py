@@ -5441,14 +5441,17 @@ def admin_article_clear_cinemagraph_result(article_id):
 
 
 def _narrated_video_worker(article_id, cfg):
-    """Background thread: GPT script → OpenAI TTS → FFmpeg per-clip → FFmpeg concat → save MP4."""
-    fmt        = cfg.get("format",     "vertical")
-    voice      = cfg.get("voice",      "onyx")
-    tts_model  = cfg.get("tts_model",  "tts-1")
-    script_len = cfg.get("script_len", "medium")
-    kb_speed   = cfg.get("kb_speed",   "slow")
-    crf        = int(cfg.get("crf",    23))
-    fps        = int(cfg.get("fps",    25))
+    """Background thread: GPT script → OpenAI TTS → (optional Whisper for caption timing)
+    → FFmpeg per-clip → FFmpeg concat → save MP4."""
+    fmt           = cfg.get("format",        "vertical")
+    voice         = cfg.get("voice",         "onyx")
+    tts_model     = cfg.get("tts_model",     "tts-1")
+    script_len    = cfg.get("script_len",    "medium")
+    kb_speed      = cfg.get("kb_speed",      "slow")
+    crf           = int(cfg.get("crf",       23))
+    fps           = int(cfg.get("fps",       25))
+    captions_on   = bool(cfg.get("captions", True))
+    caption_style = cfg.get("caption_style", "tiktok")
 
     W, H         = (720, 1280) if fmt == "vertical" else (720, 720)
     render_fps   = 12   # Ken Burns on still images looks identical at 12fps vs 25fps
@@ -5573,6 +5576,34 @@ def _narrated_video_worker(article_id, cfg):
             audio_paths.append(audio_path)
             temp_files.append(audio_path)
 
+        # ── 2b. Whisper word-level timestamps for caption sync ─────────────────
+        # word_timings[i] = list of {'word': str, 'start': float, 'end': float}
+        # Empty list = fallback to estimated timing in _build_ass below.
+        word_timings = [[] for _ in segments]
+        if captions_on:
+            execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
+                    ("running:captions", article_id))
+            _log(f"Captions: on (style={caption_style}); transcribing TTS audio for word timing…")
+            for i, seg_audio in enumerate(audio_paths):
+                try:
+                    with open(seg_audio, "rb") as fh:
+                        tr = _openai_client.audio.transcriptions.create(
+                            file=fh, model="whisper-1",
+                            response_format="verbose_json",
+                            timestamp_granularities=["word"],
+                        )
+                    words = getattr(tr, "words", None) or []
+                    word_timings[i] = [
+                        {"word": (w.get("word") if isinstance(w, dict) else w.word),
+                         "start": float((w.get("start") if isinstance(w, dict) else w.start) or 0),
+                         "end":   float((w.get("end")   if isinstance(w, dict) else w.end)   or 0)}
+                        for w in words
+                    ]
+                    _log(f"Whisper {i+1}/{n_slides}: {len(word_timings[i])} word timestamps")
+                except Exception as _we:
+                    _log(f"Whisper {i+1} failed ({_we}); will use estimated timing for this clip")
+                _flush_log()
+
         # ── 3. FFmpeg binary ───────────────────────────────────────────────────
         import shutil
         ffmpeg_exe = shutil.which("ffmpeg")
@@ -5635,6 +5666,109 @@ def _narrated_video_worker(article_id, cfg):
                 _log(f"probe_duration failed: {e}")
             return 5.0
 
+        # ── 3b. ASS subtitle file builder (caption burn-in) ──────────────────
+        def _ass_time(t):
+            """Format seconds as ASS H:MM:SS.cs"""
+            t = max(0.0, float(t))
+            h = int(t // 3600)
+            m = int((t % 3600) // 60)
+            s = t - (h * 3600) - (m * 60)
+            return f"{h}:{m:02d}:{s:05.2f}"
+
+        def _build_ass_for_clip(idx, seg_text, words, audio_dur):
+            """Generate an ASS subtitle file for one clip. Returns Path or None."""
+            if not captions_on:
+                return None
+            # Decide font size and bottom margin based on canvas
+            if fmt == "vertical":
+                font_size_main = 56 if caption_style == "tiktok" else 40
+                margin_v       = int(H * 0.22)   # ~22% from bottom — clear of platform UI
+            else:
+                font_size_main = 46 if caption_style == "tiktok" else 34
+                margin_v       = int(H * 0.12)
+            outline_w  = 4 if caption_style == "tiktok" else 2
+            shadow_w   = 2 if caption_style == "tiktok" else 0
+            bold_flag  = -1 if caption_style == "tiktok" else 0  # ASS: -1 = true
+            primary    = "&H00FFFFFF"   # white text in BGRA hex (00 = opaque alpha)
+            outline    = "&H00000000"   # black outline
+
+            # Group into chunks of ~3 words (better readability than word-by-word)
+            chunk_size = 3
+            chunks = []  # list of {'text': str, 'start': float, 'end': float}
+
+            if words and len(words) > 0:
+                # Use real Whisper timings
+                for j in range(0, len(words), chunk_size):
+                    grp = words[j:j+chunk_size]
+                    text = " ".join((w["word"] or "").strip() for w in grp).strip()
+                    if not text:
+                        continue
+                    start = grp[0]["start"]
+                    end   = grp[-1]["end"]
+                    if end <= start:
+                        end = start + 0.6
+                    chunks.append({"text": text, "start": start, "end": end})
+            else:
+                # Fallback: distribute evenly across audio duration
+                tokens = [t for t in seg_text.split() if t]
+                if not tokens:
+                    return None
+                n_chunks = max(1, (len(tokens) + chunk_size - 1) // chunk_size)
+                per_chunk = max(0.4, audio_dur / n_chunks)
+                for j in range(n_chunks):
+                    grp = tokens[j*chunk_size:(j+1)*chunk_size]
+                    if not grp:
+                        continue
+                    chunks.append({
+                        "text": " ".join(grp),
+                        "start": j * per_chunk,
+                        "end":   min(audio_dur, (j + 1) * per_chunk - 0.05),
+                    })
+
+            if not chunks:
+                return None
+
+            # Build ASS file
+            ass_path = video_dir / f"captions_{idx+1}_{ts}.ass"
+            temp_files.append(ass_path)
+            header = (
+                "[Script Info]\n"
+                "ScriptType: v4.00+\n"
+                "Collisions: Normal\n"
+                f"PlayResX: {W}\n"
+                f"PlayResY: {H}\n"
+                "ScaledBorderAndShadow: yes\n"
+                "WrapStyle: 2\n\n"
+                "[V4+ Styles]\n"
+                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
+                "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
+                "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+                f"Style: Main,Arial,{font_size_main},{primary},&H00FFFF00,{outline},&H64000000,"
+                f"{bold_flag},0,0,0,100,100,0,0,1,{outline_w},{shadow_w},2,40,40,{margin_v},1\n\n"
+                "[Events]\n"
+                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            )
+            events = []
+            for ck in chunks:
+                txt = ck["text"].replace("\\", "\\\\").replace("{", "(").replace("}", ")").replace("\n", " ")
+                # tiktok style adds a soft pop-in fade
+                fade = r"{\fad(80,60)}" if caption_style == "tiktok" else ""
+                events.append(
+                    f"Dialogue: 0,{_ass_time(ck['start'])},{_ass_time(ck['end'])},Main,,0,0,0,,{fade}{txt}"
+                )
+            ass_path.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
+            return ass_path
+
+        def _ffmpeg_subtitles_arg(ass_path):
+            """Return the FFmpeg subtitles= filter argument for a given ASS path.
+            Properly escapes Windows drive letters and backslashes for libavfilter."""
+            if not ass_path:
+                return ""
+            p = str(ass_path.resolve())
+            # libavfilter on Windows needs: drive colon escaped, backslashes doubled
+            esc = p.replace("\\", "/").replace(":", r"\:")
+            return f",subtitles='{esc}'"
+
         # ── 4. FFmpeg per-clip (cinemagraph or Ken Burns + audio) ────────────
         clip_paths = []
         for i, img_url in enumerate(images):
@@ -5659,6 +5793,10 @@ def _narrated_video_worker(article_id, cfg):
                 else:
                     _log(f"Clip {i+1}: cinemagraph not resolved ({cine_url}), falling back to Ken Burns")
 
+            # Build subtitle filter for this clip (ASS file, or empty string)
+            ass_path  = _build_ass_for_clip(i, segments[i], word_timings[i], dur_video)
+            subs_filt = _ffmpeg_subtitles_arg(ass_path)
+
             if use_cine:
                 # ── Cinemagraph: loop video + scale/crop to target size ───
                 S = max(W, H)
@@ -5666,7 +5804,9 @@ def _narrated_video_worker(article_id, cfg):
                     f"[0:v]fps={render_fps},"
                     f"scale={S}:{S}:flags=fast_bilinear,"
                     f"crop={W}:{H},"
-                    f"setsar=1[v]"
+                    f"setsar=1"
+                    f"{subs_filt}"
+                    f"[v]"
                 )
                 cmd = [
                     ffmpeg_exe, "-y",
@@ -5709,7 +5849,9 @@ def _narrated_video_worker(article_id, cfg):
                     f"scale={ZW}:{ZH}:force_original_aspect_ratio=increase:flags=fast_bilinear,"
                     f"crop={ZW}:{ZH},"
                     f"crop={W}:{H}:x='{px}':y='{py}',"
-                    f"setsar=1[v]"
+                    f"setsar=1"
+                    f"{subs_filt}"
+                    f"[v]"
                 )
                 cmd = [
                     ffmpeg_exe, "-y",

@@ -2180,12 +2180,33 @@
                     </div>
 
                     <!-- FPS -->
-                    <div class="mb-0">
+                    <div class="mb-3">
                         <label class="form-label fw-semibold small text-uppercase text-muted" for="nv-fps">FPS</label>
                         <select class="form-select form-select-sm mt-1" id="nv-fps" style="max-width:90px;">
                             <option value="25" selected>25</option>
                             <option value="30">30</option>
                         </select>
+                    </div>
+
+                    <!-- Captions -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">Captions</label>
+                        <div class="form-check form-switch mt-1">
+                            <input class="form-check-input" type="checkbox" id="nv-captions" checked
+                                   onchange="document.getElementById('nv-caption-style-wrap').classList.toggle('d-none', !this.checked)">
+                            <label class="form-check-label small" for="nv-captions">Burn captions into video (works on every platform)</label>
+                        </div>
+                    </div>
+
+                    <!-- Caption Style -->
+                    <div class="mb-0" id="nv-caption-style-wrap">
+                        <label class="form-label fw-semibold small text-uppercase text-muted">Caption Style</label>
+                        <div class="btn-group btn-group-sm mt-1 d-flex" role="group">
+                            <input type="radio" class="btn-check" name="nv-caption-style" id="nv-cap-tiktok" value="tiktok" checked>
+                            <label class="btn btn-outline-secondary" for="nv-cap-tiktok">TikTok / Reels (bold, yellow highlight)</label>
+                            <input type="radio" class="btn-check" name="nv-caption-style" id="nv-cap-clean" value="clean">
+                            <label class="btn btn-outline-secondary" for="nv-cap-clean">Clean (white, minimal)</label>
+                        </div>
                     </div>
 
                 </div>
@@ -11700,14 +11721,16 @@ function narratedGenerate() {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
-            format:     document.querySelector('input[name="nv-format"]:checked')?.value    || 'vertical',
-            voice:      document.getElementById('nv-voice')?.value                          || 'onyx',
-            tts_model:  document.querySelector('input[name="nv-tts-model"]:checked')?.value || 'tts-1',
-            script_len: document.querySelector('input[name="nv-script"]:checked')?.value   || 'medium',
-            kb_speed:   document.querySelector('input[name="nv-kb"]:checked')?.value        || 'slow',
-            speed:      parseFloat(document.querySelector('input[name="nv-speed"]:checked')?.value || '1.35'),
-            crf:        parseInt(document.querySelector('input[name="nv-crf"]:checked')?.value || '23'),
-            fps:        parseInt(document.getElementById('nv-fps')?.value                   || '25'),
+            format:        document.querySelector('input[name="nv-format"]:checked')?.value    || 'vertical',
+            voice:         document.getElementById('nv-voice')?.value                          || 'onyx',
+            tts_model:     document.querySelector('input[name="nv-tts-model"]:checked')?.value || 'tts-1',
+            script_len:    document.querySelector('input[name="nv-script"]:checked')?.value   || 'medium',
+            kb_speed:      document.querySelector('input[name="nv-kb"]:checked')?.value        || 'slow',
+            speed:         parseFloat(document.querySelector('input[name="nv-speed"]:checked')?.value || '1.35'),
+            crf:           parseInt(document.querySelector('input[name="nv-crf"]:checked')?.value || '23'),
+            fps:           parseInt(document.getElementById('nv-fps')?.value                   || '25'),
+            captions:      document.getElementById('nv-captions')?.checked !== false,
+            caption_style: document.querySelector('input[name="nv-caption-style"]:checked')?.value || 'tiktok',
         }),
     })
     .then(r => r.json())
