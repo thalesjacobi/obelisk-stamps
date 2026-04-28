@@ -14616,11 +14616,37 @@ def admin_refresh_engagement(article_id):
     totals['orders'] = orders_total
     totals['revenue'] = round(revenue_total, 2)
 
+    # Filter out platforms that aren't actually being used.
+    # A platform is "active" if any of: it has rows in posting_log for this
+    # article, has any non-zero engagement metric, has link clicks, or has
+    # attributed orders.
+    try:
+        plog_rows = query_all(
+            "SELECT DISTINCT platform FROM posting_log WHERE article_id = %s",
+            (article_id,))
+        published_platforms = {row[0] for row in (plog_rows or []) if row[0]}
+    except Exception:
+        published_platforms = set()
+
+    def _platform_is_active(p, metrics):
+        if p in published_platforms:
+            return True
+        if (metrics.get('link_clicks') or 0) > 0:
+            return True
+        if any((metrics.get(k) or 0) > 0 for k in METRIC_KEYS):
+            return True
+        if (orders_by_platform.get(p) or 0) > 0:
+            return True
+        return False
+
+    platforms = {p: m for p, m in platforms.items() if _platform_is_active(p, m)}
+    by_ct_filtered = [r for r in by_content_type.values() if r['platform'] in platforms]
+
     return jsonify({'ok': True,
                     'totals': totals,
                     'platforms': platforms,
                     'details': results,
-                    'by_content_type': list(by_content_type.values()),
+                    'by_content_type': by_ct_filtered,
                     'revenue_by_platform': revenue_by_platform,
                     'orders_by_platform': orders_by_platform,
                     'platform_errors': platform_errors + comment_errors,
@@ -14739,11 +14765,34 @@ def admin_get_engagement(article_id):
     totals['orders'] = orders_total
     totals['revenue'] = round(revenue_total, 2)
 
+    # Filter out platforms that aren't actually being used.
+    try:
+        plog_rows = query_all(
+            "SELECT DISTINCT platform FROM posting_log WHERE article_id = %s",
+            (article_id,))
+        published_platforms = {row[0] for row in (plog_rows or []) if row[0]}
+    except Exception:
+        published_platforms = set()
+
+    def _platform_is_active(p, metrics):
+        if p in published_platforms:
+            return True
+        if (metrics.get('link_clicks') or 0) > 0:
+            return True
+        if any((metrics.get(k) or 0) > 0 for k in METRIC_KEYS):
+            return True
+        if (orders_by_platform.get(p) or 0) > 0:
+            return True
+        return False
+
+    platforms = {p: m for p, m in platforms.items() if _platform_is_active(p, m)}
+    by_ct_filtered = [r for r in by_content_type.values() if r['platform'] in platforms]
+
     return jsonify({
         'totals': totals,
         'platforms': platforms,
         'details': details,
-        'by_content_type': list(by_content_type.values()),
+        'by_content_type': by_ct_filtered,
         'revenue_by_platform': revenue_by_platform,
         'orders_by_platform': orders_by_platform,
         'fetched_at': fetched_at,
