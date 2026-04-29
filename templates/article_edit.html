@@ -1455,7 +1455,7 @@
     <div class="card mb-3" id="cinemagraph-card">
         <div class="card-header position-relative pe-5">
             <h5 class="mb-0">Cinemagraph Generator</h5>
-            <p class="text-muted small mb-2 mt-1">
+            <p class="text-muted small mb-2 mt-1" id="cinemagraph-model-subtitle">
                 Each slide animated via Luma Ray-2 (5 s loop). ~5–15 min.
             </p>
             <!-- Locked placeholder: visible until carousel images exist -->
@@ -1485,6 +1485,24 @@
                     <li>
                         <button type="button" class="dropdown-item small"
                                 onclick="openCinemagraphPromptModal()">View Cinemagraph Prompt</button>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Video Model</h6></li>
+                    <li>
+                        <button type="button" id="cine-model-luma-btn"
+                                class="dropdown-item small d-flex align-items-center gap-2"
+                                onclick="setCinemagraphModel('luma')">
+                            <span id="cine-model-luma-check" style="width:1em;">&#10003;</span>
+                            Luma Ray-2
+                        </button>
+                    </li>
+                    <li>
+                        <button type="button" id="cine-model-runway-btn"
+                                class="dropdown-item small d-flex align-items-center gap-2"
+                                onclick="setCinemagraphModel('runway')">
+                            <span id="cine-model-runway-check" style="width:1em;"></span>
+                            Runway Gen-4 Turbo
+                        </button>
                     </li>
                     <li><hr class="dropdown-divider"></li>
                     <li><h6 class="dropdown-header">Instagram</h6></li>
@@ -11977,6 +11995,21 @@ let _cineEditIdx         = null;  // slide index open in edit modal
 let _cinemagraphUnlocked = false; // true once carousel images exist
 let _cineRerunningIdx    = null;  // slot currently being re-run (prevents old URL restoring)
 let _cinemagraphGenerating = false; // true while a full generation run is in progress
+let _cineVideoModel      = 'luma'; // "luma" or "runway" — selected via burger menu
+
+function setCinemagraphModel(model) {
+    _cineVideoModel = (model === 'runway') ? 'runway' : 'luma';
+    // Update checkmarks
+    document.getElementById('cine-model-luma-check').textContent   = (_cineVideoModel === 'luma')   ? '✓' : '';
+    document.getElementById('cine-model-runway-check').textContent = (_cineVideoModel === 'runway') ? '✓' : '';
+    // Update subtitle
+    var sub = document.getElementById('cinemagraph-model-subtitle');
+    if (sub) {
+        sub.textContent = (_cineVideoModel === 'runway')
+            ? 'Each slide animated via Runway Gen-4 Turbo (5 s loop). ~5–15 min.'
+            : 'Each slide animated via Luma Ray-2 (5 s loop). ~5–15 min.';
+    }
+}
 
 function cinemagraphUnlock() {
     _cinemagraphUnlocked = true;
@@ -12440,7 +12473,7 @@ function cinemagraphGenerate() {
     fetch('/admin/articles/' + ARTICLE_ID + '/generate-cinemagraphs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompts: _cinePrompts }),
+        body: JSON.stringify({ prompts: _cinePrompts, video_model: _cineVideoModel }),
     })
     .then(r => r.json())
     .then(d => {
@@ -12657,7 +12690,7 @@ function cinemagraphRerunSlide() {
     fetch('/admin/articles/' + ARTICLE_ID + '/regenerate-cinemagraph-slide', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slide_idx: idx, prompt: prompt }),
+        body: JSON.stringify({ slide_idx: idx, prompt: prompt, video_model: _cineVideoModel }),
     })
     .then(r => r.json())
     .then(d => {

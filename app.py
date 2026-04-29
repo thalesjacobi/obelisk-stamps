@@ -157,6 +157,26 @@ else:
     if not LUMAAI_API_KEY:
         print("INFO: LUMAAI_API_KEY not set — Luma cinemagraph generation disabled")
 
+try:
+    from runwayml import RunwayML as _RunwayML
+except ImportError:
+    _RunwayML = None
+
+RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY", "")
+_runway_client = None
+_runway_enabled = False
+
+if RUNWAY_API_KEY and _RunwayML:
+    try:
+        _runway_client = _RunwayML(api_key=RUNWAY_API_KEY)
+        _runway_enabled = True
+        print("Runway AI enabled")
+    except Exception as e:
+        print(f"WARNING: Runway AI init failed: {e}")
+else:
+    if not RUNWAY_API_KEY:
+        print("INFO: RUNWAY_API_KEY not set — Runway cinemagraph generation disabled")
+
 
 def _is_luma_billing_error(exc):
     """Non-transient Luma errors — stop immediately instead of retrying."""
@@ -186,6 +206,37 @@ def _luma_poll_task(gen_id):
     mp4_url = gen.assets.video if state == "completed" and gen.assets else None
     reason = gen.failure_reason if state == "failed" else ""
     return state, mp4_url, reason or ""
+
+
+def _runway_create_task(image_url, prompt_text):
+    """Submit an image-to-video task to Runway Gen-4 Turbo. Returns task ID."""
+    task = _runway_client.image_to_video.create(
+        model="gen4_turbo",
+        prompt_image=image_url,
+        prompt_text=prompt_text or "gentle subtle motion",
+        duration=5,
+        ratio="960:960",  # 1:1 square, matches Luma output
+    )
+    return task.id
+
+
+def _runway_poll_task(task_id):
+    """Poll a Runway task. Returns (state, mp4_url_or_None, failure_reason).
+
+    Normalises Runway status (PENDING/RUNNING/SUCCEEDED/FAILED) to the same
+    vocabulary the cinemagraph worker expects from _luma_poll_task.
+    """
+    task = _runway_client.tasks.retrieve(task_id)
+    status = task.status  # PENDING, RUNNING, SUCCEEDED, FAILED, CANCELLED
+    if status == "SUCCEEDED":
+        mp4_url = task.output[0] if task.output else None
+        return "completed", mp4_url, ""
+    elif status in ("FAILED", "CANCELLED"):
+        reason = getattr(task, "failure", None) or getattr(task, "error", None) or status
+        return "failed", None, str(reason)
+    else:
+        # PENDING / RUNNING → return normalised lower-case for status display
+        return status.lower(), None, ""
 
 
 # --- Google Cloud Storage (optional — for persistent file hosting) ---
@@ -6144,8 +6195,9 @@ def admin_article_stop_narrated_video(article_id):
 
 
 def _cinemagraph_worker(article_id, images, prompts=None,
-                        slot_indices=None, existing_urls=None):
-    """Background thread: Luma AI per carousel slide → store MP4 GCS URLs in DB.
+                        slot_indices=None, existing_urls=None,
+                        video_model="luma"):
+    """Background thread: AI image-to-video per carousel slide → store MP4 GCS URLs in DB.
 
     Args:
         images:         list of source image URLs to generate clips for
@@ -6154,7 +6206,19 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                         in the 10-slot cinemagraph array (e.g. [0, 3] means we
                         are generating clips for slots 1 and 4 only)
         existing_urls:  full 10-slot cinemagraph URL array (to merge new results into)
+        video_model:    "luma" or "runway"
     """
+    # Route to the correct provider functions
+    if video_model == "runway":
+        _create_fn = _runway_create_task
+        _poll_fn   = _runway_poll_task
+        _model_label = "Runway Gen-4 Turbo (1:1, 5s)"
+        _provider  = "Runway"
+    else:
+        _create_fn = _luma_create_task
+        _poll_fn   = _luma_poll_task
+        _model_label = "Luma Ray-2 (1:1, 5s)"
+        _provider  = "Luma"
     n = len(images)
     ts = int(time.time())
     status_key = f"cinemagraph_status_{article_id}"
@@ -6220,18 +6284,18 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                 break
             _set_status(f"running:{i}/{n}")
             _flush_log()
-            _log(f"slide {slide_num} ({i+1}/{n}) submitting to Luma")
+            _log(f"slide {slide_num} ({i+1}/{n}) submitting to {_provider}")
 
-            # Resolve image URL for Luma (needs public URL)
+            # Resolve image URL for AI provider (needs public URL)
             if img_url.startswith("https://"):
-                luma_img_url = img_url
+                ai_img_url = img_url
                 _log(f"slide {slide_num} using GCS URL")
             else:
                 img_path = resolve_image_to_local_path(img_url)
                 if img_path and img_path.exists():
                     gcs_obj = f"articles/{article_id}/temp/slide_{slide_num}_{ts}.jpg"
-                    luma_img_url = upload_to_gcs(img_path, gcs_obj, content_type="image/jpeg")
-                    if not luma_img_url:
+                    ai_img_url = upload_to_gcs(img_path, gcs_obj, content_type="image/jpeg")
+                    if not ai_img_url:
                         _log(f"slide {slide_num} local image upload to GCS failed")
                         continue
                     _log(f"slide {slide_num} using local file → uploaded to GCS")
@@ -6242,18 +6306,18 @@ def _cinemagraph_worker(article_id, images, prompts=None,
             slide_prompt = (prompts[i] if prompts and i < len(prompts) and prompts[i] else None) or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
             _log(f"slide {slide_num} prompt: {slide_prompt[:80]}")
             try:
-                gen_id = _luma_create_task(luma_img_url, slide_prompt)
-                _log(f"slide {slide_num} Luma gen_id={gen_id}")
+                gen_id = _create_fn(ai_img_url, slide_prompt)
+                _log(f"slide {slide_num} {_provider} gen_id={gen_id}")
             except Exception as e:
-                _log(f"slide {slide_num} Luma submit FAILED: {e}")
-                if _is_luma_billing_error(e):
+                _log(f"slide {slide_num} {_provider} submit FAILED: {e}")
+                if video_model == "luma" and _is_luma_billing_error(e):
                     _log("Non-transient billing error — skipping remaining slides")
                     billing_abort = True
                     billing_abort_msg = str(e)
                     break
                 continue
 
-            # Poll Luma until the clip is ready
+            # Poll until the clip is ready
             mp4_url = None
             poll_count = 0
             last_sub_status = None
@@ -6264,23 +6328,23 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                     break
                 poll_count += 1
                 try:
-                    luma_status, mp4_url, status_msg = _luma_poll_task(gen_id)
+                    ai_status, mp4_url, status_msg = _poll_fn(gen_id)
                 except Exception as e:
                     _log(f"slide {slide_num} poll error: {e}")
                     break
-                if luma_status == "completed":
-                    _log(f"slide {slide_num} ({i+1}/{n}) Luma SUCCEEDED after {poll_count} polls")
+                if ai_status == "completed":
+                    _log(f"slide {slide_num} ({i+1}/{n}) {_provider} SUCCEEDED after {poll_count} polls")
                     break
-                elif luma_status == "failed":
-                    _log(f"slide {slide_num} ({i+1}/{n}) Luma FAILED (reason: {status_msg})")
+                elif ai_status == "failed":
+                    _log(f"slide {slide_num} ({i+1}/{n}) {_provider} FAILED (reason: {status_msg})")
                     mp4_url = None
                     break
                 else:
-                    _log(f"slide {slide_num} still generating (poll {poll_count}, status={luma_status})")
-                    if luma_status != last_sub_status:
-                        _set_status(f"running:{i}/{n}:{luma_status}")
+                    _log(f"slide {slide_num} still generating (poll {poll_count}, status={ai_status})")
+                    if ai_status != last_sub_status:
+                        _set_status(f"running:{i}/{n}:{ai_status}")
                         _flush_log()
-                        last_sub_status = luma_status
+                        last_sub_status = ai_status
 
             if mp4_url:
                 try:
@@ -6327,7 +6391,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
 
         if billing_abort:
             _log(f"ABORTED — billing error after {new_succeeded}/{n} new clips: {billing_abort_msg}")
-            _set_result(f"error:Luma billing — not enough credits to complete generation")
+            _set_result(f"error:{_provider} billing — not enough credits to complete generation")
         elif consecutive_failures >= 3:
             _log(f"ABORTED — {consecutive_failures} consecutive failures after {new_succeeded}/{n} new clips")
             _set_result(f"error:Aborted after {consecutive_failures} consecutive failures — check logs for details")
@@ -6362,7 +6426,7 @@ def _cinemagraph_worker(article_id, images, prompts=None,
         # ──────────────────────────────────────────────────────────────────────
         summary = "\n".join(log_lines) if log_lines else "No log output"
         _add_activity_log(article_id, "Cinemagraph generation",
-                          "Model: luma ray-2 (1:1, 5s)\n" + summary,
+                          f"Model: {_model_label}\n" + summary,
                           component="cinemagraph")
 
 
@@ -6370,9 +6434,17 @@ def _cinemagraph_worker(article_id, images, prompts=None,
 @login_required
 @admin_required
 def admin_article_generate_cinemagraphs(article_id):
-    """Start a background thread for per-slide cinemagraph generation via Luma AI."""
-    if not _luma_enabled:
-        return jsonify({"error": "Luma AI not configured. Set LUMAAI_API_KEY."}), 400
+    """Start a background thread for per-slide cinemagraph generation (Luma or Runway)."""
+    body_pre = request.get_json(silent=True) or {}
+    video_model = (body_pre.get("video_model") or "luma").lower()
+
+    if video_model == "runway":
+        if not _runway_enabled:
+            return jsonify({"error": "Runway AI not configured. Set RUNWAY_API_KEY."}), 400
+    else:
+        video_model = "luma"
+        if not _luma_enabled:
+            return jsonify({"error": "Luma AI not configured. Set LUMAAI_API_KEY."}), 400
 
     status_key = f"cinemagraph_status_{article_id}"
     current_status = get_setting(status_key)
@@ -6390,7 +6462,7 @@ def admin_article_generate_cinemagraphs(article_id):
     # Pad to 10 so indexing is safe
     all_images = (all_images + [None] * 10)[:10]
 
-    body = request.get_json(silent=True) or {}
+    body = body_pre  # already parsed above
     global_prompt = (body.get("global_prompt") or "").strip()
     incoming_prompts = body.get("prompts") or []  # per-slide list from client
 
@@ -6434,7 +6506,8 @@ def admin_article_generate_cinemagraphs(article_id):
         target=_cinemagraph_worker,
         args=(article_id, empty_images, empty_prompts),
         kwargs=dict(slot_indices=empty_indices,
-                    existing_urls=existing_cine_padded),
+                    existing_urls=existing_cine_padded,
+                    video_model=video_model),
         daemon=True,
     )
     t.start()
@@ -6455,8 +6528,18 @@ def admin_article_cancel_cinemagraphs(article_id):
     return jsonify({"cancelled": True})
 
 
-def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
+def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, video_model="luma"):
     """Background thread: regenerate a single cinemagraph slide."""
+    if video_model == "runway":
+        _create_fn = _runway_create_task
+        _poll_fn   = _runway_poll_task
+        _model_label = "Runway Gen-4 Turbo (1:1, 5s)"
+        _provider  = "Runway"
+    else:
+        _create_fn = _luma_create_task
+        _poll_fn   = _luma_poll_task
+        _model_label = "Luma Ray-2 (1:1, 5s)"
+        _provider  = "Luma"
     ts = int(time.time())
     status_key = f"cinemagraph_status_{article_id}"
 
@@ -6484,18 +6567,18 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
                 pass
 
     try:
-        _log(f"re-running slide {slide_idx + 1} with prompt: {prompt[:80]}")
+        _log(f"re-running slide {slide_idx + 1} with {_provider}, prompt: {prompt[:80]}")
 
-        # Resolve image URL for Luma (needs public URL)
+        # Resolve image URL for AI provider (needs public URL)
         if img_url.startswith("https://"):
-            luma_img_url = img_url
+            ai_img_url = img_url
             _log("using GCS URL")
         else:
             img_path = resolve_image_to_local_path(img_url)
             if img_path and img_path.exists():
                 gcs_obj = f"articles/{article_id}/temp/slide_{slide_idx + 1}_{ts}.jpg"
-                luma_img_url = upload_to_gcs(img_path, gcs_obj, content_type="image/jpeg")
-                if not luma_img_url:
+                ai_img_url = upload_to_gcs(img_path, gcs_obj, content_type="image/jpeg")
+                if not ai_img_url:
                     _log("local image upload to GCS failed")
                     return
                 _log("using local file → uploaded to GCS")
@@ -6505,17 +6588,17 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
 
         slide_prompt = prompt or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
         try:
-            gen_id = _luma_create_task(luma_img_url, slide_prompt)
-            _log(f"Luma gen_id={gen_id}")
+            gen_id = _create_fn(ai_img_url, slide_prompt)
+            _log(f"{_provider} gen_id={gen_id}")
             _flush_log()
         except Exception as e:
-            if _is_luma_billing_error(e):
-                _log(f"Luma submit FAILED (billing/credits): {e}")
+            if video_model == "luma" and _is_luma_billing_error(e):
+                _log(f"{_provider} submit FAILED (billing/credits): {e}")
             else:
-                _log(f"Luma submit FAILED: {e}")
+                _log(f"{_provider} submit FAILED: {e}")
             return
 
-        # Poll Luma until ready
+        # Poll until ready
         mp4_url = None
         poll_count = 0
         last_sub_status = None
@@ -6523,22 +6606,22 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
             time.sleep(6)
             poll_count += 1
             try:
-                luma_status, mp4_url, status_msg = _luma_poll_task(gen_id)
+                ai_status, mp4_url, status_msg = _poll_fn(gen_id)
             except Exception as e:
                 _log(f"poll error: {e}")
                 break
-            if luma_status == "completed":
+            if ai_status == "completed":
                 _log(f"SUCCEEDED after {poll_count} polls")
                 break
-            elif luma_status == "failed":
+            elif ai_status == "failed":
                 _log(f"FAILED (reason: {status_msg})")
                 mp4_url = None
                 break
             else:
-                _log(f"still generating (poll {poll_count}, status={luma_status})")
-                if luma_status != last_sub_status:
+                _log(f"still generating (poll {poll_count}, status={ai_status})")
+                if ai_status != last_sub_status:
                     _flush_log()
-                    last_sub_status = luma_status
+                    last_sub_status = ai_status
 
         if mp4_url:
             r = http_requests.get(mp4_url, timeout=120)
@@ -6592,7 +6675,7 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
         # Activity log entry
         summary = "\n".join(log_lines) if log_lines else "No log output"
         _add_activity_log(article_id, f"Cinemagraph re-run slide {slide_idx + 1}",
-                          "Model: luma ray-2 (1:1, 5s)\n" + summary,
+                          f"Model: {_model_label}\n" + summary,
                           component="cinemagraph")
 
 
@@ -6600,16 +6683,23 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt):
 @login_required
 @admin_required
 def admin_article_regenerate_cinemagraph_slide(article_id):
-    """Re-run Luma AI for a single cinemagraph slide."""
-    if not _luma_enabled:
-        return jsonify({"error": "Luma AI not configured. Set LUMAAI_API_KEY."}), 400
+    """Re-run AI image-to-video for a single cinemagraph slide (Luma or Runway)."""
+    body = request.get_json(silent=True) or {}
+    video_model = (body.get("video_model") or "luma").lower()
+
+    if video_model == "runway":
+        if not _runway_enabled:
+            return jsonify({"error": "Runway AI not configured. Set RUNWAY_API_KEY."}), 400
+    else:
+        video_model = "luma"
+        if not _luma_enabled:
+            return jsonify({"error": "Luma AI not configured. Set LUMAAI_API_KEY."}), 400
 
     status_key = f"cinemagraph_status_{article_id}"
     current_status = get_setting(status_key)
     if current_status:
         return jsonify({"error": "already_running"}), 409
 
-    body = request.get_json(silent=True) or {}
     slide_idx = body.get("slide_idx")
     prompt    = (body.get("prompt") or "").strip() or get_setting(f'cinemagraph_prompt_{article_id}') or get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
 
@@ -6664,6 +6754,7 @@ def admin_article_regenerate_cinemagraph_slide(article_id):
     t = threading.Thread(
         target=_cinemagraph_slide_worker,
         args=(article_id, slide_idx, images[slide_idx], prompt),
+        kwargs=dict(video_model=video_model),
         daemon=True,
     )
     t.start()

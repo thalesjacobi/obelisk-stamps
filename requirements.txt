@@ -41,7 +41,7 @@ chromadb>=0.4.0
 
 # Video generation (narrated MP4 + AI explainer)
 imageio-ffmpeg>=0.5.1
-# runwayml>=0.1.0  # replaced by Luma AI
+runwayml>=1.0.0
 lumaai>=1.0.0
 
 # Google Cloud Storage (persistent file hosting)
