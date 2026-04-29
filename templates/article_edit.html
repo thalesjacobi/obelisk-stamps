@@ -10885,10 +10885,11 @@ function buildRunItem(run, expandIt) {
                 </div>
                 </div><!-- /smc-tumblr -->
         </div>`;
-    /* Set caption default after DOM is built (avoids HTML-escaping issues in textarea) */
+    /* Set caption after DOM is built (avoids HTML-escaping issues in textarea).
+       Use the saved posted caption if available, otherwise fall back to title + URL. */
     var defaultCaption = [ARTICLE_TITLE, ARTICLE_URL ? '\n' + ARTICLE_URL : ''].filter(Boolean).join('\n');
     var captionEl = item.querySelector('#nv-ig-' + run.ts + '-caption');
-    if (captionEl) captionEl.value = defaultCaption;
+    if (captionEl) captionEl.value = (run.ig_caption && run.ig_caption.trim()) ? run.ig_caption : defaultCaption;
     var ytTitleEl = item.querySelector('#nv-yt-' + run.ts + '-title');
     if (ytTitleEl && ARTICLE_TITLE) ytTitleEl.value = ARTICLE_TITLE;
     var vimeoTitleEl = item.querySelector('#nv-vimeo-' + run.ts + '-title');

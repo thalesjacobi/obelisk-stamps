@@ -5452,6 +5452,12 @@ def admin_article_video_data(article_id):
     cinemagraph_created_at   = json.loads(cinemagraph_created_at_raw)   if cinemagraph_created_at_raw   else []
     cinemagraph_status   = get_setting(f"cinemagraph_status_{article_id}")
     cinemagraph_result   = get_setting(f"cinemagraph_result_{article_id}")
+    # Enrich each run with the saved posted captions (stored in site_settings after posting)
+    for run in narrated_runs:
+        run_ts = run.get("ts")
+        if run_ts:
+            run["ig_caption"] = get_setting(f"ig_narrated_caption_{article_id}_{run_ts}") or ""
+
     return jsonify({
         "narrated_url":           narrated_url or None,
         "narrated_script":        narrated_script,
