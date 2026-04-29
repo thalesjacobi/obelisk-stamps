@@ -4117,12 +4117,35 @@ def admin_articles():
         "SELECT id, title, slug, is_published, published_at, updated_at "
         "FROM articles ORDER BY updated_at DESC"
     )
+
+    # Per-article link clicks (human-filtered)
+    click_rows = query_all(
+        "SELECT article_id, SUM(click_count_human) FROM short_links GROUP BY article_id"
+    ) or []
+    clicks_by_article = {r[0]: int(r[1] or 0) for r in click_rows}
+
+    # Per-article engagement totals (latest snapshot only — avoid double-counting history)
+    eng_rows = query_all("""
+        SELECT e.article_id,
+               SUM(e.likes + e.views + e.shares + e.comments) AS total
+        FROM article_engagement e
+        INNER JOIN (
+            SELECT article_id, MAX(fetched_at) AS max_fa
+            FROM article_engagement
+            GROUP BY article_id
+        ) latest ON e.article_id = latest.article_id AND e.fetched_at = latest.max_fa
+        GROUP BY e.article_id
+    """) or []
+    engagement_by_article = {r[0]: int(r[1] or 0) for r in eng_rows}
+
     article_list = [
         {
             "id": r[0], "title": r[1], "slug": r[2],
             "is_published": bool(r[3]),
             "published_at": r[4].strftime("%d %b %Y") if r[4] else None,
             "updated_at": r[5].strftime("%d %b %Y %H:%M") if r[5] else None,
+            "link_clicks": clicks_by_article.get(r[0], 0),
+            "engagement":  engagement_by_article.get(r[0], 0),
         }
         for r in rows
     ]
