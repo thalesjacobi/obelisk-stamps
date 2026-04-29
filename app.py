@@ -15051,20 +15051,26 @@ def admin_get_engagement(article_id):
             fa = d['fetched_at']
             fetched_at = fa.strftime("%Y-%m-%dT%H:%M:%SZ") if hasattr(fa, 'strftime') else str(fa)
 
-    # Short-link clicks per platform
-    link_clicks_total = 0
+    # Short-link clicks per platform — human-filtered (click_count_human) and raw total
+    link_clicks_total = 0   # human-filtered
+    link_clicks_raw   = 0   # all hits incl. bots
     try:
         link_rows = query_all(
-            "SELECT platform, click_count FROM short_links WHERE article_id = %s",
+            "SELECT platform, click_count, click_count_human FROM short_links WHERE article_id = %s",
             (article_id,))
         for lr in (link_rows or []):
-            plat, clicks = lr[0], int(lr[1] or 0)
-            link_clicks_total += clicks
+            plat       = lr[0]
+            raw_clicks = int(lr[1] or 0)
+            hum_clicks = int(lr[2] or 0)
+            link_clicks_total += hum_clicks
+            link_clicks_raw   += raw_clicks
             if plat not in platforms:
                 platforms[plat] = {k: 0 for k in METRIC_KEYS}
                 platforms[plat]['content_types'] = []
-                platforms[plat]['link_clicks'] = 0
-            platforms[plat]['link_clicks'] = clicks
+                platforms[plat]['link_clicks']     = 0
+                platforms[plat]['link_clicks_raw'] = 0
+            platforms[plat]['link_clicks']     = hum_clicks
+            platforms[plat]['link_clicks_raw'] = raw_clicks
     except Exception as _le:
         print(f"[Engagement] short_links lookup failed: {_le}", flush=True)
 

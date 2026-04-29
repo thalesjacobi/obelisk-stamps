@@ -1596,6 +1596,9 @@
                     <label for="cine-ig-caption" class="form-label small text-muted mb-0">Caption<span class="ig-caption-tooltip" data-tip="If you wish to delete this post and start over, you will need to delete the post directly on Instagram, then come back here, click the button &#39;Check if post is still live&#39;, and if it&#39;s no longer found on Instagram, an Archive option will appear. After being archived, this post will be visible below for your records, and you will be free to post another one again.">?</span></label>
                     <a href="#" class="small ms-auto ig-section-link" id="cine-ig-generate-caption-link"
                        onclick="event.preventDefault(); generateIgCaption('cine')">Generate caption <span class="text-muted">(~$0.01)</span></a>
+                    <span class="text-muted small mx-1">·</span>
+                    <a href="#" class="small ig-section-link"
+                       onclick="event.preventDefault(); copyCaptionFromCarousel()">Copy from carousel</a>
                 </div>
                 <textarea id="cine-ig-caption" class="form-control form-control-sm" rows="3"
                           placeholder="Write your caption here… #stamps #philately"
@@ -2856,10 +2859,18 @@ function loadEngagement() {
         .then(data => {
             // Render if there's engagement data, OR link clicks, OR orders
             var hasDetails  = data.details && data.details.length > 0;
-            var hasClicks   = (data.totals && (data.totals.link_clicks || 0) > 0);
+            var hasClicks   = (data.totals && (data.totals.link_clicks_raw || data.totals.link_clicks || 0) > 0);
             var hasOrders   = (data.totals && (data.totals.orders || 0) > 0);
             if (hasDetails || hasClicks || hasOrders) {
                 renderEngagement(data);
+                // Mark as cached so user knows this is persisted data, not a live fetch
+                var updatedEl = document.getElementById('engagement-updated');
+                if (updatedEl && data.fetched_at) {
+                    var d = new Date(data.fetched_at);
+                    updatedEl.textContent = 'Last updated: ' +
+                        d.toLocaleDateString() + ', ' + d.toLocaleTimeString() +
+                        ' (cached — click Refresh Metrics to fetch live data)';
+                }
             }
         })
         .catch(() => {});
@@ -3230,6 +3241,16 @@ function updateIgCharCount(mode) {
     const lbl = document.getElementById(_igId(mode, 'char-count'));
     if (!ta || !lbl) return;
     lbl.textContent = ta.value.length + ' / 2200';
+}
+
+function copyCaptionFromCarousel() {
+    var src = document.getElementById('car-ig-caption');
+    var dst = document.getElementById('cine-ig-caption');
+    if (!src || !dst) return;
+    var txt = src.value.trim();
+    if (!txt) { alert('No carousel caption to copy — generate or write one first.'); return; }
+    dst.value = txt;
+    updateIgCharCount('cine');
 }
 
 function generateIgCaption(mode) {
