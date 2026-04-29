@@ -370,7 +370,7 @@
                                 <th class="text-end">Comments</th>
                                 <th class="text-end" title="Saves / bookmarks (Instagram, Pinterest)">Saves</th>
                                 <th class="text-end" style="cursor:help"
-                                    title="When you generate a caption for a platform, we mint a unique tracked short URL (obelisk-stamps.com/a/XXXX) for that platform and put it in the caption. Every time someone clicks that link, we increment the counter. So this is the real number of people who clicked the link in your post for THIS platform — independent of whatever the platform itself reports.">Link Clicks <i class="fa-regular fa-circle-question text-muted ms-1" style="font-size:.75em"></i></th>
+                                    title="Clicks on the tracked short URL (obelisk-stamps.com/a/XXXX) we mint for each platform when you generate its caption. Hits from known bots and link-preview crawlers (Facebook's external hit, LinkedInBot, Slackbot, etc.) are filtered out. The raw total including bots is shown in parentheses.">Link Clicks <i class="fa-regular fa-circle-question text-muted ms-1" style="font-size:.75em"></i></th>
                                 <th class="text-end" title="Impressions (where reported)">Impr.</th>
                                 <th class="text-end" title="Unique users reached (where reported)">Reach</th>
                                 <th class="text-end" title="Orders attributed via UTM tag for this platform">Orders</th>
@@ -2918,6 +2918,17 @@ function renderEngagement(data) {
         var orderCell  = ordersForP > 0
             ? _fmtNum(ordersForP) + (revForP > 0 ? ' <span class="text-muted">(' + _fmtMoney(revForP) + ')</span>' : '')
             : '<span class="text-muted">—</span>';
+        // Show human clicks; if raw differs, append the bot delta in muted text
+        var humanClicks = d.link_clicks || 0;
+        var rawClicks   = d.link_clicks_raw || humanClicks;
+        var clicksCell  = '<span style="color:#20c997">' + _fmtNum(humanClicks) + '</span>';
+        if (rawClicks > humanClicks) {
+            clicksCell += ' <span class="text-muted" title="Total hits incl. ' +
+                          (rawClicks - humanClicks) + ' bot/crawler ' +
+                          (rawClicks - humanClicks === 1 ? 'hit' : 'hits') +
+                          ' (link-preview fetchers, etc.)">(+' +
+                          (rawClicks - humanClicks) + ')</span>';
+        }
         rows += '<tr>' +
             '<td><i class="' + (_PLATFORM_ICONS[p]||'') + ' me-1"></i>' + (_PLATFORM_NAMES[p]||p) + '</td>' +
             '<td class="text-end">' + _fmtNum(d.likes) + '</td>' +
@@ -2925,7 +2936,7 @@ function renderEngagement(data) {
             '<td class="text-end">' + _fmtNum(d.shares) + '</td>' +
             '<td class="text-end">' + _fmtNum(d.comments) + '</td>' +
             '<td class="text-end">' + _fmtNum(d.saves) + '</td>' +
-            '<td class="text-end fw-semibold" style="color:#20c997">' + _fmtNum(d.link_clicks) + '</td>' +
+            '<td class="text-end fw-semibold">' + clicksCell + '</td>' +
             '<td class="text-end">' + ((d.impressions||0) ? _fmtNum(d.impressions) : '<span class="text-muted">—</span>') + '</td>' +
             '<td class="text-end">' + ((d.reach||0) ? _fmtNum(d.reach) : '<span class="text-muted">—</span>') + '</td>' +
             '<td class="text-end">' + orderCell + '</td>' +
@@ -2933,6 +2944,13 @@ function renderEngagement(data) {
     });
     tbody.innerHTML = rows || '<tr><td colspan="10" class="text-center text-muted py-3">No platform data yet.</td></tr>';
 
+    var humanTot = totals.link_clicks || 0;
+    var rawTot   = totals.link_clicks_raw || humanTot;
+    var totClicksCell = '<span style="color:#20c997">' + _fmtNum(humanTot) + '</span>';
+    if (rawTot > humanTot) {
+        totClicksCell += ' <span class="text-muted fw-normal" title="Bots filtered out">(+' +
+                         (rawTot - humanTot) + ')</span>';
+    }
     tfoot.innerHTML = '<tr class="fw-bold">' +
         '<td>Total</td>' +
         '<td class="text-end">' + _fmtNum(totals.likes) + '</td>' +
@@ -2940,7 +2958,7 @@ function renderEngagement(data) {
         '<td class="text-end">' + _fmtNum(totals.shares) + '</td>' +
         '<td class="text-end">' + _fmtNum(totals.comments) + '</td>' +
         '<td class="text-end">' + _fmtNum(totals.saves) + '</td>' +
-        '<td class="text-end" style="color:#20c997">' + _fmtNum(totals.link_clicks) + '</td>' +
+        '<td class="text-end">' + totClicksCell + '</td>' +
         '<td class="text-end">' + ((totals.impressions||0) ? _fmtNum(totals.impressions) : '—') + '</td>' +
         '<td class="text-end">' + ((totals.reach||0) ? _fmtNum(totals.reach) : '—') + '</td>' +
         '<td class="text-end">' + ((totals.orders||0)

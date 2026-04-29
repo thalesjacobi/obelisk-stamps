@@ -1232,11 +1232,24 @@ def init_site_settings():
         platform VARCHAR(20) NOT NULL,
         target_url VARCHAR(1000) NOT NULL,
         click_count INT DEFAULT 0,
+        click_count_human INT DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_code (code),
         UNIQUE KEY uk_article_platform (article_id, platform)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     conn.commit()
+    # Migration: add click_count_human if missing (for existing installs)
+    try:
+        cur.execute("""
+            SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'short_links'
+              AND COLUMN_NAME = 'click_count_human'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE short_links ADD COLUMN click_count_human INT DEFAULT 0")
+            conn.commit()
+    except Exception as _e:
+        print(f"short_links.click_count_human migration: {_e}")
     # Add UTM attribution columns to orders table if not present
     try:
         cur.execute("""
@@ -2357,13 +2370,52 @@ def articles():
     return render_template("articles.html", articles=article_list)
 
 
+# Bot/crawler User-Agent patterns. Hits matching these still get redirected
+# (so link previews still work) but don't increment the human click counter.
+_BOT_UA_PATTERNS = (
+    "facebookexternalhit", "facebookcatalog", "meta-externalagent",
+    "twitterbot", "linkedinbot", "slackbot", "discordbot", "pinterestbot",
+    "applebot", "telegrambot", "whatsapp", "googlebot", "bingbot",
+    "yandex", "duckduckbot", "baiduspider", "sogou", "exabot",
+    "ahrefsbot", "semrushbot", "mj12bot", "dotbot", "rogerbot", "screaming",
+    "petalbot", "amazonbot", "claudebot", "gptbot", "ccbot", "perplexitybot",
+    "redditbot", "tumblr", "bluesky", "mastodon",
+    "headlesschrome", "phantomjs", "puppeteer", "playwright",
+    "python-requests", "python-urllib", "go-http-client", "java/", "okhttp",
+    "curl/", "wget/", "libwww-perl", "httpclient", "httpx",
+    "preview", "fetcher", "validator", "checker", "monitor", "scanner",
+    "uptime", "pingdom", "newrelic",
+)
+
+def _is_bot_user_agent(ua: str) -> bool:
+    """True if the User-Agent looks like a crawler / link preview bot."""
+    if not ua:
+        return True   # absent UA → treat as bot
+    ua = ua.lower()
+    return any(pat in ua for pat in _BOT_UA_PATTERNS)
+
+
 @app.route("/a/<code>")
 def short_link_redirect(code):
-    """301 redirect from short URL to full article with UTM params."""
+    """301 redirect from short URL to full article with UTM params.
+
+    We track two click counters:
+      • click_count        — every hit (incl. crawlers/preview bots)
+      • click_count_human  — only hits that don't look like bots/crawlers
+    The redirect itself always succeeds, so link previews still generate.
+    """
     row = query_one("SELECT target_url FROM short_links WHERE code = %s", (code,))
     if not row:
         return render_template("404.html"), 404
-    execute("UPDATE short_links SET click_count = click_count + 1 WHERE code = %s", (code,))
+    ua    = request.headers.get("User-Agent", "")
+    isbot = _is_bot_user_agent(ua)
+    if isbot:
+        execute("UPDATE short_links SET click_count = click_count + 1 WHERE code = %s",
+                (code,))
+    else:
+        execute("UPDATE short_links SET click_count = click_count + 1, "
+                "click_count_human = click_count_human + 1 WHERE code = %s",
+                (code,))
     from urllib.parse import urlparse, parse_qs
     params = parse_qs(urlparse(row[0]).query)
     if params.get('utm_source'):
@@ -5679,50 +5731,89 @@ def _narrated_video_worker(article_id, cfg):
             """Generate an ASS subtitle file for one clip. Returns Path or None."""
             if not captions_on:
                 return None
-            # Decide font size and bottom margin based on canvas
+            # Sentence-pair captions are longer — use smaller fonts so they fit
+            # comfortably without covering the image.
             if fmt == "vertical":
-                font_size_main = 56 if caption_style == "tiktok" else 40
-                margin_v       = int(H * 0.22)   # ~22% from bottom — clear of platform UI
+                font_size_main = 40 if caption_style == "tiktok" else 32
+                margin_v       = int(H * 0.18)   # bottom margin (clear of platform UI)
+                margin_lr      = int(W * 0.06)   # side margins so wrap doesn't hit edges
             else:
-                font_size_main = 46 if caption_style == "tiktok" else 34
-                margin_v       = int(H * 0.12)
-            outline_w  = 4 if caption_style == "tiktok" else 2
+                font_size_main = 34 if caption_style == "tiktok" else 28
+                margin_v       = int(H * 0.10)
+                margin_lr      = int(W * 0.06)
+            outline_w  = 3 if caption_style == "tiktok" else 2
             shadow_w   = 2 if caption_style == "tiktok" else 0
             bold_flag  = -1 if caption_style == "tiktok" else 0  # ASS: -1 = true
             primary    = "&H00FFFFFF"   # white text in BGRA hex (00 = opaque alpha)
             outline    = "&H00000000"   # black outline
 
-            # Group into chunks of ~3 words (better readability than word-by-word)
-            chunk_size = 3
+            # Group into pairs of sentences so captions stay on screen long enough to read.
+            # Sentence boundary detection: split on . ! ? followed by whitespace or end.
+            import re as _re_cap
+
+            def _split_sentences(text):
+                if not text:
+                    return []
+                # Keep terminal punctuation attached to the sentence
+                parts = _re_cap.split(r'(?<=[.!?])\s+', text.strip())
+                return [p.strip() for p in parts if p.strip()]
+
+            sentences = _split_sentences(seg_text)
+            if not sentences:
+                return None
+            # Group every 2 sentences
+            sent_groups = []
+            for j in range(0, len(sentences), 2):
+                sent_groups.append(" ".join(sentences[j:j+2]))
+
             chunks = []  # list of {'text': str, 'start': float, 'end': float}
 
             if words and len(words) > 0:
-                # Use real Whisper timings
-                for j in range(0, len(words), chunk_size):
-                    grp = words[j:j+chunk_size]
-                    text = " ".join((w["word"] or "").strip() for w in grp).strip()
-                    if not text:
+                # Map Whisper words to sentence groups by counting words per group
+                def _word_count(s):
+                    return len([t for t in _re_cap.findall(r"\S+", s) if t])
+
+                idx = 0
+                total_words = len(words)
+                for grp_text in sent_groups:
+                    wc = _word_count(grp_text)
+                    if wc <= 0:
                         continue
-                    start = grp[0]["start"]
-                    end   = grp[-1]["end"]
+                    # Clamp to remaining word count so we don't run off the end
+                    wc = min(wc, total_words - idx)
+                    if wc <= 0:
+                        # Whisper has fewer words than expected — fall back to estimate
+                        break
+                    grp_words = words[idx:idx+wc]
+                    start = grp_words[0]["start"]
+                    end   = grp_words[-1]["end"]
                     if end <= start:
-                        end = start + 0.6
-                    chunks.append({"text": text, "start": start, "end": end})
+                        end = start + 0.8
+                    chunks.append({"text": grp_text, "start": start, "end": end})
+                    idx += wc
+
+                # If Whisper had fewer words than the script, distribute remaining groups
+                # evenly across the rest of the audio
+                if idx < total_words and len(chunks) < len(sent_groups):
+                    last_end = chunks[-1]["end"] if chunks else 0.0
+                    remaining = sent_groups[len(chunks):]
+                    span = max(0.4, audio_dur - last_end)
+                    per = span / max(1, len(remaining))
+                    for k, grp_text in enumerate(remaining):
+                        chunks.append({
+                            "text": grp_text,
+                            "start": last_end + k * per,
+                            "end":   min(audio_dur, last_end + (k + 1) * per - 0.05),
+                        })
             else:
-                # Fallback: distribute evenly across audio duration
-                tokens = [t for t in seg_text.split() if t]
-                if not tokens:
-                    return None
-                n_chunks = max(1, (len(tokens) + chunk_size - 1) // chunk_size)
-                per_chunk = max(0.4, audio_dur / n_chunks)
-                for j in range(n_chunks):
-                    grp = tokens[j*chunk_size:(j+1)*chunk_size]
-                    if not grp:
-                        continue
+                # No Whisper timings — distribute groups evenly across audio_dur
+                n = len(sent_groups)
+                per = max(0.5, audio_dur / max(1, n))
+                for j, grp_text in enumerate(sent_groups):
                     chunks.append({
-                        "text": " ".join(grp),
-                        "start": j * per_chunk,
-                        "end":   min(audio_dur, (j + 1) * per_chunk - 0.05),
+                        "text": grp_text,
+                        "start": j * per,
+                        "end":   min(audio_dur, (j + 1) * per - 0.05),
                     })
 
             if not chunks:
@@ -5738,13 +5829,13 @@ def _narrated_video_worker(article_id, cfg):
                 f"PlayResX: {W}\n"
                 f"PlayResY: {H}\n"
                 "ScaledBorderAndShadow: yes\n"
-                "WrapStyle: 2\n\n"
+                "WrapStyle: 0\n\n"   # smart wrap (lines roughly equal length)
                 "[V4+ Styles]\n"
                 "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
                 "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
                 "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
                 f"Style: Main,Arial,{font_size_main},{primary},&H00FFFF00,{outline},&H64000000,"
-                f"{bold_flag},0,0,0,100,100,0,0,1,{outline_w},{shadow_w},2,40,40,{margin_v},1\n\n"
+                f"{bold_flag},0,0,0,100,100,0,0,1,{outline_w},{shadow_w},2,{margin_lr},{margin_lr},{margin_v},1\n\n"
                 "[Events]\n"
                 "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
             )
@@ -14711,20 +14802,28 @@ def admin_refresh_engagement(article_id):
         for k in METRIC_KEYS:
             by_content_type[ct_key][k] += r.get(k, 0)
 
-    # Short-link clicks per platform (the user's "clicks on the links" metric)
-    link_clicks_total = 0
+    # Short-link clicks per platform — split into total (incl. bots) and human-only.
+    # The "Link Clicks" metric the UI shows is the human-filtered number;
+    # the raw total is also returned so the UI can display it as a tooltip.
+    link_clicks_total = 0       # human-filtered total (used as the headline)
+    link_clicks_raw   = 0       # raw total incl. crawlers
     try:
         link_rows = query_all(
-            "SELECT platform, click_count FROM short_links WHERE article_id = %s",
+            "SELECT platform, click_count, click_count_human FROM short_links WHERE article_id = %s",
             (article_id,))
         for lr in (link_rows or []):
-            plat, clicks = lr[0], int(lr[1] or 0)
-            link_clicks_total += clicks
+            plat       = lr[0]
+            raw_clicks = int(lr[1] or 0)
+            hum_clicks = int(lr[2] or 0)
+            link_clicks_total += hum_clicks
+            link_clicks_raw   += raw_clicks
             if plat not in platforms:
                 platforms[plat] = {k: 0 for k in METRIC_KEYS}
                 platforms[plat]['content_types'] = []
                 platforms[plat]['link_clicks'] = 0
-            platforms[plat]['link_clicks'] = clicks
+                platforms[plat]['link_clicks_raw'] = 0
+            platforms[plat]['link_clicks']     = hum_clicks
+            platforms[plat]['link_clicks_raw'] = raw_clicks
     except Exception as _le:
         print(f"[Engagement] short_links lookup failed: {_le}", flush=True)
 
@@ -14754,8 +14853,9 @@ def admin_refresh_engagement(article_id):
     except Exception as _re:
         print(f"[Engagement] orders attribution lookup failed: {_re}", flush=True)
 
-    totals['link_clicks'] = link_clicks_total
-    totals['orders'] = orders_total
+    totals['link_clicks']     = link_clicks_total   # human-filtered
+    totals['link_clicks_raw'] = link_clicks_raw     # all hits incl. bots
+    totals['orders']  = orders_total
     totals['revenue'] = round(revenue_total, 2)
 
     # Filter out platforms that aren't actually being used.
@@ -14903,8 +15003,9 @@ def admin_get_engagement(article_id):
     except Exception as _re:
         print(f"[Engagement] orders attribution lookup failed: {_re}", flush=True)
 
-    totals['link_clicks'] = link_clicks_total
-    totals['orders'] = orders_total
+    totals['link_clicks']     = link_clicks_total   # human-filtered
+    totals['link_clicks_raw'] = link_clicks_raw     # all hits incl. bots
+    totals['orders']  = orders_total
     totals['revenue'] = round(revenue_total, 2)
 
     # Filter out platforms that aren't actually being used.
