@@ -10596,6 +10596,52 @@ def _pinterest_headers():
     }
 
 
+def _is_pinterest_auth_error(resp):
+    """True if a Pinterest API response indicates an auth failure (revoked/expired token)."""
+    if resp is None:
+        return False
+    if resp.status_code in (401, 403):
+        return True
+    try:
+        body = resp.json()
+    except Exception:
+        return False
+    # Pinterest returns {"code": 2, "message": "Authentication failed.", "status": "failure"}
+    if isinstance(body, dict):
+        if body.get("code") == 2:
+            return True
+        msg = (body.get("message") or "").lower()
+        if "authentication failed" in msg or "invalid_token" in msg or "unauthorized" in msg:
+            return True
+    return False
+
+
+def _pinterest_request(method, url, **kwargs):
+    """Make a Pinterest API request with automatic token-refresh + retry on auth failure.
+
+    On auth error (401/403/code 2), refreshes the token and retries the request once.
+    Always uses fresh _pinterest_headers() so a refreshed token takes effect immediately.
+    Returns the requests.Response object (the final attempt).
+    """
+    import requests as _req
+    method = method.upper()
+    # Inject auth headers (caller may add extra headers via kwargs['headers'])
+    extra_headers = kwargs.pop("headers", None) or {}
+    headers = {**_pinterest_headers(), **extra_headers}
+    resp = _req.request(method, url, headers=headers, **kwargs)
+    if _is_pinterest_auth_error(resp):
+        print(f"[Pinterest] Auth error on {method} {url} — attempting token refresh + retry", flush=True)
+        new_token = _refresh_pinterest_token()
+        if new_token:
+            headers = {**_pinterest_headers(), **extra_headers}
+            resp = _req.request(method, url, headers=headers, **kwargs)
+            if _is_pinterest_auth_error(resp):
+                print(f"[Pinterest] Auth still failing after refresh — user must re-connect", flush=True)
+        else:
+            print(f"[Pinterest] No refresh token available — user must re-connect via /admin/pinterest-connect", flush=True)
+    return resp
+
+
 def _post_carousel_pinterest_worker(article_id, caption, component):
     """Background thread: compose carousel images and post as Pinterest pin(s)."""
     # UTM tracking: replace plain article URL with Pinterest-tagged version
@@ -10785,14 +10831,18 @@ def _post_narrated_pinterest_worker(article_id, video_url, caption, run_ts):
 
         # 1. Register media upload with Pinterest
         _set_status("running:register")
-        resp = _req.post(f"{_PINTEREST_API_URL}/media", headers=_pinterest_headers(),
-                         json={"media_type": "video"}, timeout=30)
+        resp = _pinterest_request("POST", f"{_PINTEREST_API_URL}/media",
+                                  json={"media_type": "video"}, timeout=30)
         media_data = resp.json()
         media_id       = media_data.get("media_id")
         upload_url     = media_data.get("upload_url")
         upload_params  = media_data.get("upload_parameters") or {}
         if not media_id or not upload_url:
-            _set_result(f"error:Media registration failed: {media_data}")
+            if _is_pinterest_auth_error(resp):
+                _set_result("error:Pinterest authentication failed. Re-connect Pinterest in the Admin panel "
+                            "(/admin/pinterest-connect) — your access token is expired or revoked.")
+            else:
+                _set_result(f"error:Media registration failed: {media_data}")
             return
         print(f"[Pinterest] Media registered: {media_id}", flush=True)
 
@@ -10821,8 +10871,8 @@ def _post_narrated_pinterest_worker(article_id, video_url, caption, run_ts):
         _set_status("running:poll")
         for attempt in range(90):
             _time_mod.sleep(5)
-            resp_status = _req.get(f"{_PINTEREST_API_URL}/media/{media_id}",
-                                   headers=_pinterest_headers(), timeout=15)
+            resp_status = _pinterest_request("GET", f"{_PINTEREST_API_URL}/media/{media_id}",
+                                             timeout=15)
             status_data = resp_status.json()
             media_status = status_data.get("status", "")
             print(f"[Pinterest] Media status ({attempt+1}): {media_status}", flush=True)
@@ -10851,13 +10901,16 @@ def _post_narrated_pinterest_worker(article_id, video_url, caption, run_ts):
         if article_link:
             payload["link"] = article_link
 
-        resp_pin = _req.post(f"{_PINTEREST_API_URL}/pins",
-                             headers=_pinterest_headers(),
-                             json=payload, timeout=30)
+        resp_pin = _pinterest_request("POST", f"{_PINTEREST_API_URL}/pins",
+                                      json=payload, timeout=30)
         pin_data = resp_pin.json()
         pin_id   = pin_data.get("id")
         if not pin_id:
-            _set_result(f"error:Pin creation failed: {pin_data}")
+            if _is_pinterest_auth_error(resp_pin):
+                _set_result("error:Pinterest authentication failed during pin creation. "
+                            "Re-connect Pinterest in the Admin panel.")
+            else:
+                _set_result(f"error:Pin creation failed: {pin_data}")
             return
 
         permalink = f"https://www.pinterest.com/pin/{pin_id}/"
@@ -11322,8 +11375,55 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
             _set_result("error:Video processing timed out after 5 minutes")
             return
 
-        video_id = sdata.get("data", {}).get("video_id", publish_id)
-        permalink = f"https://www.tiktok.com/@/video/{video_id}"
+        # TikTok's *correct* field for the public post ID is "publicaly_available_post_id"
+        # (yes, the typo is in their API). It's an array, populated only when the app is
+        # audited / approved for direct posting. In sandbox/unaudited mode, the video lands
+        # in the user's drafts and this field is empty — there is no public URL.
+        public_post_ids = sdata.get("data", {}).get("publicaly_available_post_id") or []
+        public_id       = public_post_ids[0] if public_post_ids else None
+
+        if not public_id:
+            # Sandbox / unaudited mode: video is in drafts, not public.
+            # Save publish_id for our records but tell the user clearly.
+            execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                    "ON DUPLICATE KEY UPDATE value = %s",
+                    (f"tiktok_narrated_video_id_{article_id}_{run_ts}",
+                     publish_id, publish_id))
+            _set_result(
+                "warn:Video uploaded to TikTok drafts only — no public URL was returned. "
+                "This usually means your TikTok app is in unaudited / sandbox mode. "
+                "Open TikTok on your phone, find the draft and publish it manually, "
+                "or apply for production audit at developers.tiktok.com.")
+            _add_activity_log(article_id, "TikTok Narrated Video — Draft Only",
+                              f"publish_id={publish_id}\nrun_ts={run_ts}\n"
+                              "Sandbox mode: no publicaly_available_post_id returned.",
+                              component="narrated")
+            return
+
+        # Fetch the authenticated user's username so we can build a working permalink
+        username = get_setting("tiktok_username") or ""
+        if not username:
+            try:
+                ui_resp = _req.get(
+                    f"{_TIKTOK_API_URL}/user/info/?fields=open_id,union_id,display_name",
+                    headers={"Authorization": f"Bearer {TIKTOK_ACCESS_TOKEN}"},
+                    timeout=15)
+                ui_data = ui_resp.json().get("data", {}).get("user", {}) or {}
+                # `display_name` is the human-readable name; the real handle is via /user/info/
+                # with fields=username (only available in some versions). We persist whatever
+                # we get so subsequent posts skip this lookup.
+                fetched = ui_data.get("display_name") or ""
+                if fetched:
+                    username = fetched
+                    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                            "ON DUPLICATE KEY UPDATE value = %s",
+                            ("tiktok_username", username, username))
+            except Exception as _ue:
+                print(f"[TikTok] user/info fetch failed: {_ue}", flush=True)
+
+        video_id  = public_id
+        permalink = (f"https://www.tiktok.com/@{username}/video/{video_id}"
+                     if username else f"https://www.tiktok.com/video/{video_id}")
 
         execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
                 "ON DUPLICATE KEY UPDATE value = %s",
@@ -12185,19 +12285,47 @@ def _post_narrated_bluesky_worker(article_id, video_url, caption, run_ts):
     try:
         jwt, did = _bluesky_auth()
 
+        # ── Get a service-auth token for the video upload service ──────────────
+        # video.bsky.app is a separate service from bsky.social; the regular
+        # session JWT is rejected with 401. Bluesky requires a short-lived
+        # service token issued via com.atproto.server.getServiceAuth with
+        # aud=did:web:video.bsky.app and lxm=app.bsky.video.uploadVideo.
+        _set_status("running:auth")
+        sa_resp = _req.get(
+            "https://bsky.social/xrpc/com.atproto.server.getServiceAuth",
+            params={"aud": "did:web:video.bsky.app",
+                    "lxm": "app.bsky.video.uploadVideo",
+                    "exp": int(_time_mod.time()) + 30 * 60},  # 30-minute token
+            headers={"Authorization": f"Bearer {jwt}"},
+            timeout=15)
+        if sa_resp.status_code != 200:
+            _set_result(f"error:Failed to obtain Bluesky video service token "
+                        f"(HTTP {sa_resp.status_code}): {sa_resp.text[:200]}")
+            return
+        service_token = sa_resp.json().get("token", "")
+        if not service_token:
+            _set_result(f"error:No service token in response: {sa_resp.text[:200]}")
+            return
+        print(f"[Bluesky] Got video service token (len={len(service_token)})", flush=True)
+
         # 1. Download video
         _set_status("running:download")
         resp_dl = _req.get(video_url, timeout=120)
         resp_dl.raise_for_status()
         video_bytes = resp_dl.content
 
-        # 2. Upload video to Bluesky video service
+        # 2. Upload video to Bluesky video service using the SERVICE TOKEN
         _set_status("running:upload")
         resp = _req.post(
             f"https://video.bsky.app/xrpc/app.bsky.video.uploadVideo?did={did}&name=video.mp4",
-            headers={"Authorization": f"Bearer {jwt}",
+            headers={"Authorization": f"Bearer {service_token}",
                      "Content-Type": "video/mp4"},
             data=video_bytes, timeout=120)
+        if resp.status_code == 409:
+            # Already uploaded — surface a helpful error
+            _set_result(f"error:Bluesky says this video was already uploaded "
+                        f"(HTTP 409). Try posting a freshly-generated narrated video.")
+            return
         resp.raise_for_status()
         job_data = resp.json()
         job_id = job_data.get("jobId", "")
@@ -12206,14 +12334,15 @@ def _post_narrated_bluesky_worker(article_id, video_url, caption, run_ts):
             return
         print(f"[Bluesky] Video upload job: {job_id}", flush=True)
 
-        # 3. Poll job status
+        # 3. Poll job status (no auth required on this endpoint, but pass the
+        #    service token defensively in case Bluesky tightens the policy)
         _set_status("running:poll")
         blob_ref = None
         for attempt in range(60):
             _time_mod.sleep(5)
             resp = _req.get("https://video.bsky.app/xrpc/app.bsky.video.getJobStatus",
                             params={"jobId": job_id},
-                            headers={"Authorization": f"Bearer {jwt}"},
+                            headers={"Authorization": f"Bearer {service_token}"},
                             timeout=15)
             status_data = resp.json()
             job_state = status_data.get("jobStatus", {}).get("state", "")
