@@ -205,11 +205,18 @@ def _is_luma_billing_error(exc):
 
 
 # Luma migrated from the old Dream Machine API (api.lumalabs.ai/dream-machine/v1)
-# to the new Agents platform (agents.lumalabs.ai/v1). New API keys (the luma-api-…
-# format issued by platform.lumalabs.ai) ONLY work with the new endpoint. The old
-# `lumaai` Python SDK still hits the deprecated endpoint, so we bypass it and
-# call the new API directly via raw HTTP.
-_LUMA_AGENTS_BASE = "https://agents.lumalabs.ai/v1"
+# to the new Agents platform (agents.lumalabs.ai). New API keys (the luma-api-…
+# format issued by platform.lumalabs.ai) ONLY work with the new platform. The old
+# `lumaai` Python SDK still hits the deprecated host, so we bypass it and call
+# the new API directly via raw HTTP.
+#
+# Two distinct endpoints on the new host:
+#   - agents.lumalabs.ai/v1/generations           → images only (model uni-1)
+#   - agents.lumalabs.ai/dream-machine/v1/generations → Dream Machine (video, ray-2)
+# The same API key authenticates both. Image attempt at /v1/ returns 422
+# "Input should be 'image' or 'image_edit'", which is how we discovered video
+# requires the dream-machine sub-path.
+_LUMA_VIDEO_BASE = "https://agents.lumalabs.ai/dream-machine/v1"
 
 
 def _luma_auth_headers():
@@ -223,17 +230,18 @@ def _luma_auth_headers():
 
 
 def _luma_create_task(image_url, prompt_text):
-    """Submit an image-to-video task to the Luma Agents API. Returns generation ID."""
+    """Submit an image-to-video task to Luma Dream Machine. Returns generation ID."""
     import requests as _req
+    # Body shape matches the old Dream Machine SDK: no `type` field, just
+    # model + keyframes + aspect_ratio + duration.
     body = {
         "prompt": prompt_text or "gentle subtle motion",
         "model": "ray-2",
-        "type": "video",
         "aspect_ratio": "1:1",
         "duration": "5s",
         "keyframes": {"frame0": {"type": "image", "url": image_url}},
     }
-    resp = _req.post(f"{_LUMA_AGENTS_BASE}/generations",
+    resp = _req.post(f"{_LUMA_VIDEO_BASE}/generations",
                      headers=_luma_auth_headers(),
                      json=body, timeout=30)
     if resp.status_code >= 400:
@@ -248,14 +256,14 @@ def _luma_create_task(image_url, prompt_text):
 
 
 def _luma_poll_task(gen_id):
-    """Poll a Luma Agents generation. Returns (state, mp4_url_or_None, failure_reason).
+    """Poll a Luma Dream Machine generation. Returns (state, mp4_url_or_None, failure_reason).
 
     Normalises the state vocabulary so the cinemagraph worker (which speaks the
     old Dream Machine vocabulary: queued / dreaming / completed / failed) keeps
     working unchanged.
     """
     import requests as _req
-    resp = _req.get(f"{_LUMA_AGENTS_BASE}/generations/{gen_id}",
+    resp = _req.get(f"{_LUMA_VIDEO_BASE}/generations/{gen_id}",
                     headers=_luma_auth_headers(), timeout=15)
     if resp.status_code >= 400:
         raise RuntimeError(f"Luma poll failed (HTTP {resp.status_code}): {resp.text[:500]}")
