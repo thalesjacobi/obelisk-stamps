@@ -16,6 +16,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:  # Allow manual deploys (e.g. to refresh env var secrets)
 
 jobs:
   deploy:
