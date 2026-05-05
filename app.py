@@ -4052,6 +4052,48 @@ def admin_user_activity(user_id):
 # ------------------------------------------------------------
 # ADMIN — SETTINGS
 # ------------------------------------------------------------
+@app.route("/admin/test-luma")
+@login_required
+@admin_required
+def admin_test_luma():
+    """Diagnostic: verify what LUMAAI_API_KEY the running process has and whether
+    Luma accepts it. Hit this URL in a browser after a deploy to confirm the
+    rotated key actually made it into Cloud Run.
+
+    Shows only the first 6 + last 4 chars of the key so it isn't fully exposed.
+    """
+    import requests as _req
+    raw = os.getenv("LUMAAI_API_KEY", "")
+    info = {
+        "env_var_set": bool(raw),
+        "length": len(raw),
+        "has_leading_whitespace": raw != raw.lstrip(),
+        "has_trailing_whitespace": raw != raw.rstrip(),
+        "has_quotes": raw.startswith('"') or raw.startswith("'") or raw.endswith('"') or raw.endswith("'"),
+        "preview": (raw[:6] + "…" + raw[-4:]) if len(raw) >= 10 else "(too short or empty)",
+        "client_initialized": bool(_luma_enabled),
+    }
+
+    # Hit Luma's credits endpoint — cheapest auth-only check
+    if raw:
+        try:
+            resp = _req.get(
+                "https://api.lumalabs.ai/dream-machine/v1/generations/credits",
+                headers={"Authorization": f"Bearer {raw.strip()}"},
+                timeout=15,
+            )
+            info["luma_http_status"] = resp.status_code
+            info["luma_response"]    = resp.text[:500]
+            info["auth_works"]       = (resp.status_code == 200)
+        except Exception as _e:
+            info["luma_error"] = str(_e)
+    else:
+        info["auth_works"] = False
+        info["luma_response"] = "LUMAAI_API_KEY env var is empty in the running process"
+
+    return jsonify(info)
+
+
 @app.route("/admin/settings")
 @login_required
 @admin_required
