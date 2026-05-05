@@ -204,24 +204,91 @@ def _is_luma_billing_error(exc):
     ])
 
 
+# Luma migrated from the old Dream Machine API (api.lumalabs.ai/dream-machine/v1)
+# to the new Agents platform (agents.lumalabs.ai/v1). New API keys (the luma-api-…
+# format issued by platform.lumalabs.ai) ONLY work with the new endpoint. The old
+# `lumaai` Python SDK still hits the deprecated endpoint, so we bypass it and
+# call the new API directly via raw HTTP.
+_LUMA_AGENTS_BASE = "https://agents.lumalabs.ai/v1"
+
+
+def _luma_auth_headers():
+    """Return Authorization headers for the Luma Agents API.
+    Strips whitespace defensively in case the secret value picked up stray spaces."""
+    return {
+        "Authorization": f"Bearer {LUMAAI_API_KEY.strip()}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
 def _luma_create_task(image_url, prompt_text):
-    """Submit an image-to-video task to Luma. Returns generation ID."""
-    gen = _luma_client.generations.create(
-        prompt=prompt_text or "gentle subtle motion",
-        model="ray-2",
-        keyframes={"frame0": {"type": "image", "url": image_url}},
-        aspect_ratio="1:1",
-        duration="5s",
-    )
-    return gen.id
+    """Submit an image-to-video task to the Luma Agents API. Returns generation ID."""
+    import requests as _req
+    body = {
+        "prompt": prompt_text or "gentle subtle motion",
+        "model": "ray-2",
+        "type": "video",
+        "aspect_ratio": "1:1",
+        "duration": "5s",
+        "keyframes": {"frame0": {"type": "image", "url": image_url}},
+    }
+    resp = _req.post(f"{_LUMA_AGENTS_BASE}/generations",
+                     headers=_luma_auth_headers(),
+                     json=body, timeout=30)
+    if resp.status_code >= 400:
+        # Surface the full error body so the worker's exception handler can classify
+        # auth vs billing vs validation errors correctly.
+        raise RuntimeError(f"Luma create task failed (HTTP {resp.status_code}): {resp.text[:500]}")
+    data = resp.json()
+    gen_id = data.get("id")
+    if not gen_id:
+        raise RuntimeError(f"Luma create task: no id in response: {data}")
+    return gen_id
 
 
 def _luma_poll_task(gen_id):
-    """Poll a Luma generation. Returns (state, mp4_url_or_None, failure_reason)."""
-    gen = _luma_client.generations.get(id=gen_id)
-    state = gen.state  # "queued", "dreaming", "completed", "failed"
-    mp4_url = gen.assets.video if state == "completed" and gen.assets else None
-    reason = gen.failure_reason if state == "failed" else ""
+    """Poll a Luma Agents generation. Returns (state, mp4_url_or_None, failure_reason).
+
+    Normalises the state vocabulary so the cinemagraph worker (which speaks the
+    old Dream Machine vocabulary: queued / dreaming / completed / failed) keeps
+    working unchanged.
+    """
+    import requests as _req
+    resp = _req.get(f"{_LUMA_AGENTS_BASE}/generations/{gen_id}",
+                    headers=_luma_auth_headers(), timeout=15)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Luma poll failed (HTTP {resp.status_code}): {resp.text[:500]}")
+    data = resp.json()
+
+    raw_state = (data.get("state") or data.get("status") or "queued").lower()
+    # Normalise: most non-terminal states map to "dreaming" so the worker just
+    # keeps polling. Terminal states are "completed" and "failed".
+    if raw_state in ("completed", "complete", "succeeded", "success"):
+        state = "completed"
+    elif raw_state in ("failed", "fail", "cancelled", "canceled", "error"):
+        state = "failed"
+    else:
+        # queued / pending / running / processing / dreaming → keep polling
+        state = raw_state
+
+    mp4_url = None
+    if state == "completed":
+        # The new API may return the URL under different keys depending on type.
+        assets = data.get("assets") or {}
+        mp4_url = (assets.get("video")
+                   or data.get("video_url")
+                   or data.get("video")
+                   or data.get("url")
+                   or data.get("output_url"))
+
+    reason = ""
+    if state == "failed":
+        reason = (data.get("failure_reason")
+                  or data.get("error")
+                  or data.get("message")
+                  or "")
+
     return state, mp4_url, reason or ""
 
 
@@ -4074,17 +4141,27 @@ def admin_test_luma():
         "client_initialized": bool(_luma_enabled),
     }
 
-    # Hit Luma's credits endpoint — cheapest auth-only check
+    # Test against the NEW Luma Agents API (agents.lumalabs.ai). The old
+    # Dream Machine endpoint at api.lumalabs.ai is deprecated and rejects
+    # the new luma-api-… key format with "Not authenticated".
     if raw:
         try:
-            resp = _req.get(
-                "https://api.lumalabs.ai/dream-machine/v1/generations/credits",
-                headers={"Authorization": f"Bearer {raw.strip()}"},
+            # A tiny image-generation request is the cheapest auth-only check
+            # supported by the new API. We don't actually need the result; we
+            # only care whether auth passes.
+            resp = _req.post(
+                "https://agents.lumalabs.ai/v1/generations",
+                headers={"Authorization": f"Bearer {raw.strip()}",
+                         "Content-Type": "application/json"},
+                json={"prompt": "auth check", "model": "uni-1",
+                      "type": "image", "output_format": "png"},
                 timeout=15,
             )
+            info["luma_endpoint"]   = "agents.lumalabs.ai/v1/generations"
             info["luma_http_status"] = resp.status_code
             info["luma_response"]    = resp.text[:500]
-            info["auth_works"]       = (resp.status_code == 200)
+            # 2xx (success) or 402 (insufficient credits) both prove the key works.
+            info["auth_works"]       = resp.status_code in (200, 201, 202, 402)
         except Exception as _e:
             info["luma_error"] = str(_e)
     else:
