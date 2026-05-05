@@ -178,12 +178,29 @@ else:
         print("INFO: RUNWAY_API_KEY not set — Runway cinemagraph generation disabled")
 
 
+def _is_luma_auth_error(exc):
+    """True if the Luma error indicates a bad/missing API token (401, "not authenticated")."""
+    msg_lower = str(exc).lower()
+    if "401" in msg_lower or "not authenticated" in msg_lower or "unauthorized" in msg_lower:
+        return True
+    if "invalid" in msg_lower and ("token" in msg_lower or "api key" in msg_lower):
+        return True
+    return False
+
+
 def _is_luma_billing_error(exc):
-    """Non-transient Luma errors — stop immediately instead of retrying."""
+    """Non-transient Luma errors related to credits/billing — stop immediately instead of retrying.
+
+    Note: this used to also catch generic 403s, but Luma returns 403 for both
+    "no credits" and "bad token" — so a literal "403" check mis-fires on auth
+    issues. We now look only at billing-specific phrases.
+    """
+    if _is_luma_auth_error(exc):
+        return False  # Auth issue, not billing — let the caller surface it differently
     msg_lower = str(exc).lower()
     return any(phrase in msg_lower for phrase in [
         "insufficient", "credits", "billing", "quota", "balance",
-        "permissiondenied", "403",
+        "permissiondenied",
     ])
 
 
@@ -6339,6 +6356,13 @@ def _cinemagraph_worker(article_id, images, prompts=None,
                 _log(f"slide {slide_num} {_provider} gen_id={gen_id}")
             except Exception as e:
                 _log(f"slide {slide_num} {_provider} submit FAILED: {e}")
+                if video_model == "luma" and _is_luma_auth_error(e):
+                    _log("Non-transient AUTH error — invalid LUMAAI_API_KEY. Aborting.")
+                    billing_abort = True
+                    billing_abort_msg = ("auth: Luma API key was rejected (Not authenticated). "
+                                         "Verify LUMAAI_API_KEY in GitHub Secrets matches the key "
+                                         "shown on platform.lumalabs.ai, then redeploy.")
+                    break
                 if video_model == "luma" and _is_luma_billing_error(e):
                     _log("Non-transient billing error — skipping remaining slides")
                     billing_abort = True
@@ -6419,8 +6443,13 @@ def _cinemagraph_worker(article_id, images, prompts=None,
             _flush_log()
 
         if billing_abort:
-            _log(f"ABORTED — billing error after {new_succeeded}/{n} new clips: {billing_abort_msg}")
-            _set_result(f"error:{_provider} billing — not enough credits to complete generation")
+            if billing_abort_msg.startswith("auth:"):
+                _log(f"ABORTED — auth error after {new_succeeded}/{n} new clips: {billing_abort_msg}")
+                _set_result(f"error:{_provider} authentication failed — check that the API key in "
+                            "GitHub Secrets is current and redeploy.")
+            else:
+                _log(f"ABORTED — billing error after {new_succeeded}/{n} new clips: {billing_abort_msg}")
+                _set_result(f"error:{_provider} billing — not enough credits to complete generation")
         elif consecutive_failures >= 3:
             _log(f"ABORTED — {consecutive_failures} consecutive failures after {new_succeeded}/{n} new clips")
             _set_result(f"error:Aborted after {consecutive_failures} consecutive failures — check logs for details")
@@ -6621,7 +6650,9 @@ def _cinemagraph_slide_worker(article_id, slide_idx, img_url, prompt, video_mode
             _log(f"{_provider} gen_id={gen_id}")
             _flush_log()
         except Exception as e:
-            if video_model == "luma" and _is_luma_billing_error(e):
+            if video_model == "luma" and _is_luma_auth_error(e):
+                _log(f"{_provider} submit FAILED (auth — invalid LUMAAI_API_KEY): {e}")
+            elif video_model == "luma" and _is_luma_billing_error(e):
                 _log(f"{_provider} submit FAILED (billing/credits): {e}")
             else:
                 _log(f"{_provider} submit FAILED: {e}")
