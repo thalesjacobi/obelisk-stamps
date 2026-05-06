@@ -16182,26 +16182,74 @@ def _generate_carousel_for_article_sync(article_id):
             _time.sleep(5)
             continue
 
-    final_total = sum(1 for i in existing_images[:10] if i)
-    print(f"[CarouselSync] Article {article_id}: done. generated={generated_this_run}, total={final_total}/10, "
+    # CRITICAL: re-read from DB to verify what's ACTUALLY stored. The in-memory
+    # `existing_images` list is unreliable if a concurrent process (e.g. a stale
+    # background thread from a previous deploy) is also writing to this row.
+    verify_row = query_one("SELECT carousel_images FROM articles WHERE id = %s", (article_id,))
+    verify_imgs = json.loads(verify_row[0]) if verify_row and verify_row[0] else []
+    db_total = sum(1 for u in verify_imgs[:10] if u)
+    in_memory_total = sum(1 for i in existing_images[:10] if i)
+
+    if db_total != in_memory_total:
+        print(f"[CarouselSync] Article {article_id}: DB/memory MISMATCH! "
+              f"in_memory={in_memory_total}, db={db_total}. Trusting DB.", flush=True)
+
+    print(f"[CarouselSync] Article {article_id}: done. generated={generated_this_run}, "
+          f"db_total={db_total}/10, in_memory_total={in_memory_total}/10, "
           f"attempted={attempted}, errors={len(errors)}", flush=True)
+
     # Build a concise fatal message if nothing was generated this run AND nothing pre-existed
     fatal = None
-    if generated_this_run == 0 and pre_total == 0:
+    if db_total == 0:
         if errors:
             sample = errors[0]["error"]
             fatal = (f"All {attempted} DALL-E calls failed. First error: {sample[:160]}"
                      + ("…" if len(sample) > 160 else ""))
+        elif in_memory_total > 0:
+            fatal = (f"DALL-E reported success for {in_memory_total} images but the database "
+                     f"shows 0 images stored. Possible stale background thread overwriting "
+                     f"data — try re-running.")
         else:
             fatal = "No images were generated and no DALL-E call was made."
     return {
-        "ok": generated_this_run > 0 or final_total > 0,
+        "ok": db_total > 0,
         "generated": generated_this_run,
-        "total": final_total,
+        "total": db_total,            # ← TRUTH from DB, not in-memory
+        "in_memory_total": in_memory_total,
         "attempted": attempted,
         "errors": errors,
         "fatal": fatal,
     }
+
+
+@app.route("/admin/debug/article-carousel/<int:article_id>")
+@login_required
+@admin_required
+def admin_debug_article_carousel(article_id):
+    """Dump the raw carousel data for an article so we can see EXACTLY what's
+    stored in the DB. Use this when the badge says one thing and the edit
+    page says another — this endpoint is the ground truth."""
+    row = query_one(
+        "SELECT id, slug, title, carousel_prompts, carousel_images, carousel_punchlines, "
+        "carousel_style, carousel_created_at FROM articles WHERE id = %s",
+        (article_id,))
+    if not row:
+        return jsonify({"error": f"Article {article_id} not found"}), 404
+    images = json.loads(row[4]) if row[4] else []
+    prompts = json.loads(row[3]) if row[3] else []
+    punchlines = json.loads(row[5]) if row[5] else []
+    return jsonify({
+        "article_id": row[0],
+        "slug": row[1],
+        "title": row[2],
+        "carousel_images_raw_length_bytes": len(row[4] or ""),
+        "carousel_images_url_count": sum(1 for u in images if u),
+        "carousel_images": images,
+        "carousel_prompts_count": sum(1 for p in prompts if p),
+        "carousel_punchlines_count": sum(1 for p in punchlines if p),
+        "carousel_style": row[6],
+        "batch_status": get_setting(f"carousel_batch_status_{article_id}") or "idle",
+    })
 
 
 @app.route("/admin/article-pipeline/bulk-action", methods=["POST"])
