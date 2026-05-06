@@ -11500,6 +11500,16 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
                 "ON DUPLICATE KEY UPDATE value = %s", (result_key, v, v))
         execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
 
+    # Heartbeat log so we can see the worker thread actually started executing.
+    # (If "TikTok Upload Started" appears but this doesn't, the thread crashed
+    #  before the try block — e.g. import error, or the threading dispatch failed.)
+    try:
+        _add_activity_log(article_id, "TikTok Worker Thread Running",
+                          f"run_ts={run_ts}\nWorker entered try block, beginning init request.",
+                          component="narrated")
+    except Exception as _le:
+        print(f"[TikTok] heartbeat log write failed: {_le}", flush=True)
+
     try:
         headers = {
             "Authorization": f"Bearer {TIKTOK_ACCESS_TOKEN}",
@@ -11703,6 +11713,10 @@ def admin_post_narrated_to_tiktok(article_id):
         return jsonify({"error": "Already posting this video."}), 409
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    _add_activity_log(article_id, "TikTok Upload Started",
+                      f"run_ts={run_ts}\nvideo_url={video_url[:200]}\n"
+                      f"caption_length={len(caption)} chars",
+                      component="narrated")
     threading.Thread(target=_post_narrated_tiktok_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
