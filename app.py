@@ -4977,21 +4977,19 @@ def admin_article_carousel_images(article_id):
 @login_required
 @admin_required
 def admin_batch_generate_carousels():
-    """Queue carousel generation for up to 10 draft articles.
+    """Validate up to 10 draft article IDs and clear any stale status keys.
 
-    Each article is processed sequentially in a background thread so the
-    admin panel can return immediately.  Progress per article is tracked via
-    the existing carousel status keys so the user can monitor each article
-    individually from its edit page.
+    The actual generation is driven from the browser one article at a time
+    via /admin/articles/<id>/batch-generate-one.  This avoids the Cloud
+    Run problem where a background thread can be killed when the instance
+    scales down, leaving status stuck at 'running' forever.
     """
     data = request.get_json() or {}
     article_ids = data.get("article_ids") or []
     if not article_ids:
         return jsonify({"error": "No article IDs provided."}), 400
-    # Hard cap at 10
     article_ids = [int(i) for i in article_ids[:10]]
 
-    # Verify all IDs belong to draft articles owned by this installation
     valid_ids = []
     for aid in article_ids:
         row = query_one("SELECT id FROM articles WHERE id = %s AND is_published = 0", (aid,))
@@ -5000,63 +4998,65 @@ def admin_batch_generate_carousels():
     if not valid_ids:
         return jsonify({"error": "None of the selected IDs are valid draft articles."}), 400
 
-    def _batch_worker(ids):
-        for aid in ids:
-            try:
-                print(f"[BatchCarousel] Starting carousel generation for article {aid}", flush=True)
-                # Mark as running so the edit page shows progress
-                execute(
-                    "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-                    "ON DUPLICATE KEY UPDATE value = %s",
-                    (f"carousel_batch_status_{aid}", "running", "running"),
-                )
+    # Clear any stale status keys from previous (possibly stuck) runs
+    for aid in valid_ids:
+        execute("DELETE FROM site_settings WHERE `key` = %s", (f"carousel_batch_status_{aid}",))
 
-                # Snapshot how many images existed BEFORE the run, so we can detect
-                # whether the sync function actually created anything.
-                pre_row = query_one("SELECT carousel_images FROM articles WHERE id = %s", (aid,))
-                pre_imgs = json.loads(pre_row[0]) if pre_row and pre_row[0] else []
-                pre_count = sum(1 for u in pre_imgs[:10] if u)
-
-                _generate_carousel_for_article_sync(aid)
-
-                post_row = query_one("SELECT carousel_images FROM articles WHERE id = %s", (aid,))
-                post_imgs = json.loads(post_row[0]) if post_row and post_row[0] else []
-                post_count = sum(1 for u in post_imgs[:10] if u)
-                generated = post_count - pre_count
-
-                if post_count == 0:
-                    # Nothing generated and nothing pre-existing — the sync function
-                    # silently failed (storyboard error, all DALL-E calls failed, etc).
-                    msg = "No images were generated. Check Cloud Run logs for OpenAI/DALL-E errors."
-                    execute(
-                        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-                        "ON DUPLICATE KEY UPDATE value = %s",
-                        (f"carousel_batch_status_{aid}", f"error:{msg}", f"error:{msg}"),
-                    )
-                    print(f"[BatchCarousel] FAILED for article {aid}: 0 images after run", flush=True)
-                else:
-                    status_val = f"done:{post_count}/10"
-                    execute(
-                        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-                        "ON DUPLICATE KEY UPDATE value = %s",
-                        (f"carousel_batch_status_{aid}", status_val, status_val),
-                    )
-                    print(f"[BatchCarousel] Done for article {aid}: {post_count}/10 images "
-                          f"(+{generated} new this run)", flush=True)
-            except Exception as _e:
-                import traceback as _tb
-                print(f"[BatchCarousel] Error on article {aid}: {_e}\n{_tb.format_exc()}", flush=True)
-                try:
-                    execute(
-                        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-                        "ON DUPLICATE KEY UPDATE value = %s",
-                        (f"carousel_batch_status_{aid}", f"error:{_e}", f"error:{_e}"),
-                    )
-                except Exception:
-                    pass
-
-    threading.Thread(target=_batch_worker, args=(valid_ids,), daemon=True).start()
     return jsonify({"ok": True, "queued": len(valid_ids), "article_ids": valid_ids})
+
+
+@app.route("/admin/articles/<int:article_id>/batch-generate-one", methods=["POST"])
+@login_required
+@admin_required
+def admin_batch_generate_one(article_id):
+    """Run carousel generation for ONE article synchronously and return the
+    detailed result. Designed to be called sequentially from the browser
+    so each article gets a dedicated HTTP request — no stuck background
+    threads, no instance-scaling weirdness.
+
+    Cloud Run request timeout for this app is 3600s; a single article takes
+    ~3 min worst case, so we fit comfortably.
+    """
+    row = query_one("SELECT id, title FROM articles WHERE id = %s AND is_published = 0",
+                    (article_id,))
+    if not row:
+        return jsonify({"ok": False, "fatal": "Article not found or already published."}), 404
+
+    status_key = f"carousel_batch_status_{article_id}"
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (status_key, "running", "running"))
+    print(f"[BatchOne] Article {article_id} ({row[1][:60]!r}): starting…", flush=True)
+
+    try:
+        result = _generate_carousel_for_article_sync(article_id)
+    except Exception as _e:
+        import traceback as _tb
+        print(f"[BatchOne] Article {article_id}: unexpected exception: {_e}\n{_tb.format_exc()}",
+              flush=True)
+        execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE value = %s",
+                (status_key, f"error:{_e}", f"error:{_e}"))
+        return jsonify({"ok": False, "fatal": str(_e)[:300], "generated": 0,
+                        "total": 0, "errors": []}), 500
+
+    if not result:
+        # Backwards compat — should not happen with new return contract
+        result = {"ok": False, "fatal": "Sync function returned no result",
+                  "generated": 0, "total": 0, "attempted": 0, "errors": []}
+
+    if result.get("ok") and result.get("total", 0) > 0:
+        status_val = f"done:{result['total']}/10"
+    else:
+        msg = result.get("fatal") or "No images were generated."
+        # Truncate so the badge tooltip stays sensible
+        status_val = f"error:{msg[:240]}"
+
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (status_key, status_val, status_val))
+    print(f"[BatchOne] Article {article_id}: final status = {status_val}", flush=True)
+    return jsonify(result)
 
 
 @app.route("/admin/batch-carousel-status", methods=["POST"])
@@ -5070,6 +5070,18 @@ def admin_batch_carousel_status():
     for aid in ids:
         result[aid] = get_setting(f"carousel_batch_status_{aid}") or "idle"
     return jsonify(result)
+
+
+@app.route("/admin/batch-carousel-clear", methods=["POST"])
+@login_required
+@admin_required
+def admin_batch_carousel_clear():
+    """Clear stuck/stale batch status entries for the given article IDs."""
+    data = request.get_json() or {}
+    ids = [int(i) for i in (data.get("article_ids") or [])]
+    for aid in ids:
+        execute("DELETE FROM site_settings WHERE `key` = %s", (f"carousel_batch_status_{aid}",))
+    return jsonify({"ok": True, "cleared": len(ids)})
 
 
 @app.route("/admin/articles/<int:article_id>/generate-carousel", methods=["POST"])
@@ -16011,19 +16023,32 @@ def _generate_article_from_queue(queue_id):
 
 
 def _generate_carousel_for_article_sync(article_id):
-    """Synchronous carousel generation for pipeline use. Generates storyboard + DALL-E images."""
+    """Synchronous carousel generation for pipeline use. Generates storyboard + DALL-E images.
+
+    Returns a dict:
+      {
+        "ok": bool,                # True only if at least one image was generated
+        "generated": int,          # images created in this run
+        "total": int,              # total images now stored on the article (out of 10)
+        "attempted": int,          # how many DALL-E calls we attempted
+        "errors": [{"slot": i, "error": "..."}, ...],
+        "fatal": "..." | None,     # set if we never got past storyboard / openai missing / no row
+      }
+    """
     import time as _time
 
     if not _openai_client:
         print(f"[CarouselSync] Article {article_id}: OpenAI client not configured — aborting", flush=True)
-        return
+        return {"ok": False, "generated": 0, "total": 0, "attempted": 0, "errors": [],
+                "fatal": "OpenAI client is not configured (OPENAI_API_KEY missing)"}
 
     row = query_one(
         "SELECT title, content, slug, carousel_prompts, carousel_images, carousel_punchlines, "
         "carousel_style, carousel_created_at FROM articles WHERE id = %s", (article_id,))
     if not row:
         print(f"[CarouselSync] Article {article_id}: not found in DB", flush=True)
-        return
+        return {"ok": False, "generated": 0, "total": 0, "attempted": 0, "errors": [],
+                "fatal": f"Article {article_id} not found"}
 
     title = row[0] or ""
     content = row[1] or ""
@@ -16037,9 +16062,10 @@ def _generate_carousel_for_article_sync(article_id):
 
     target_count = 10
     empty_slots = [i for i in range(target_count) if i >= len(existing_images) or not existing_images[i]]
+    pre_total = sum(1 for u in existing_images[:target_count] if u)
     if not empty_slots:
         print(f"[CarouselSync] Article {article_id}: all 10 slots already filled — nothing to do", flush=True)
-        return
+        return {"ok": True, "generated": 0, "total": pre_total, "attempted": 0, "errors": [], "fatal": None}
     print(f"[CarouselSync] Article {article_id}: {len(empty_slots)} empty slots to fill (title={title[:60]!r})", flush=True)
 
     n_needed = len(empty_slots)
@@ -16083,7 +16109,8 @@ def _generate_carousel_for_article_sync(article_id):
     except Exception as e:
         import traceback as _tb
         print(f"[CarouselSync] Article {article_id}: Storyboard generation failed: {e}\n{_tb.format_exc()}", flush=True)
-        return
+        return {"ok": False, "generated": 0, "total": pre_total, "attempted": 0,
+                "errors": [], "fatal": f"Storyboard (GPT) failed: {str(e)[:300]}"}
 
     while len(existing_prompts) < target_count:
         existing_prompts.append("")
@@ -16095,6 +16122,9 @@ def _generate_carousel_for_article_sync(article_id):
         existing_created.append("")
 
     scene_idx = 0
+    attempted = 0
+    generated_this_run = 0
+    errors = []
     for slot in empty_slots:
         if scene_idx >= len(scenes):
             break
@@ -16102,6 +16132,7 @@ def _generate_carousel_for_article_sync(article_id):
         prompt = scene.get("prompt", "")
         punchline = scene.get("punchline", "")
         scene_idx += 1
+        attempted += 1
 
         try:
             dalle_resp = _openai_client.images.generate(
@@ -16141,14 +16172,36 @@ def _generate_carousel_for_article_sync(article_id):
                  active_style, json.dumps(existing_created), article_id)
             )
 
+            generated_this_run += 1
             _time.sleep(12)
 
         except Exception as e:
-            print(f"[Pipeline] DALL-E failed for slot {slot}: {e}")
+            err_str = str(e)[:200]
+            print(f"[CarouselSync] Article {article_id} slot {slot}: DALL-E failed: {err_str}", flush=True)
+            errors.append({"slot": slot, "error": err_str})
             _time.sleep(5)
             continue
 
-    print(f"[Pipeline] Carousel done for article {article_id}: {sum(1 for i in existing_images[:10] if i)} images")
+    final_total = sum(1 for i in existing_images[:10] if i)
+    print(f"[CarouselSync] Article {article_id}: done. generated={generated_this_run}, total={final_total}/10, "
+          f"attempted={attempted}, errors={len(errors)}", flush=True)
+    # Build a concise fatal message if nothing was generated this run AND nothing pre-existed
+    fatal = None
+    if generated_this_run == 0 and pre_total == 0:
+        if errors:
+            sample = errors[0]["error"]
+            fatal = (f"All {attempted} DALL-E calls failed. First error: {sample[:160]}"
+                     + ("…" if len(sample) > 160 else ""))
+        else:
+            fatal = "No images were generated and no DALL-E call was made."
+    return {
+        "ok": generated_this_run > 0 or final_total > 0,
+        "generated": generated_this_run,
+        "total": final_total,
+        "attempted": attempted,
+        "errors": errors,
+        "fatal": fatal,
+    }
 
 
 @app.route("/admin/article-pipeline/bulk-action", methods=["POST"])

@@ -521,6 +521,9 @@
                 <button type="button" class="btn btn-sm btn-primary" id="draft-batch-generate-btn" onclick="draftBatchGenerate()" disabled>
                     <i class="fa-solid fa-images me-1"></i>Generate Carousels
                 </button>
+                <button type="button" class="btn btn-sm btn-outline-danger d-none" id="draft-batch-cancel-btn" onclick="draftBatchCancel()">
+                    <i class="fa-solid fa-stop me-1"></i>Cancel
+                </button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="draftClearSelection()">Clear</button>
                 <span id="draft-batch-status" class="small text-muted"></span>
             </div>
@@ -1566,8 +1569,12 @@ function saveIgCaptionPromptSettings() {
 {% endif %}
 
 // ── Draft Batch Carousel Generation ──────────────────────────────────────
-var _batchPollIds = [];   // article IDs currently being polled
-var _batchPollTimer = null;
+// Browser-driven queue: one HTTP request per article, sequential.  Avoids
+// the Cloud Run "background thread killed when instance scales down" trap.
+var _batchQueue = [];        // remaining article IDs to process
+var _batchTotal = 0;         // total IDs in this run (for X/Y progress)
+var _batchActiveCtrl = null; // AbortController for the in-flight request
+var _batchCancelled = false;
 
 function draftSelectionChanged() {
     var cbs = document.querySelectorAll('.draft-select-cb:checked');
@@ -1578,13 +1585,12 @@ function draftSelectionChanged() {
     var allCb = document.getElementById('draft-select-all');
 
     if (countEl) countEl.textContent = count;
-    if (bar) bar.classList.toggle('d-none', count === 0);
-    if (bar) bar.classList.toggle('d-flex', count > 0);
-    if (btn) btn.disabled = count === 0;
+    if (bar) bar.classList.toggle('d-none', count === 0 && _batchQueue.length === 0);
+    if (bar) bar.classList.toggle('d-flex', count > 0 || _batchQueue.length > 0);
+    if (btn) btn.disabled = count === 0 || _batchQueue.length > 0;
 
-    // Enforce max 10: disable unchecked boxes once limit reached
     document.querySelectorAll('.draft-select-cb:not(:checked)').forEach(function(cb) {
-        cb.disabled = count >= 10;
+        cb.disabled = count >= 10 || _batchQueue.length > 0;
     });
     var total = document.querySelectorAll('.draft-select-cb').length;
     if (allCb) {
@@ -1614,61 +1620,108 @@ function _draftSetRowStatus(id, status) {
     var cell = document.getElementById('draft-status-' + id);
     var row  = document.getElementById('draft-row-' + id);
     if (!cell) return;
+    // Reset row tinting on every transition
+    if (row) { row.classList.remove('table-primary', 'table-success', 'table-danger'); }
+
     if (status === 'running') {
         cell.innerHTML = '<span class="badge bg-primary" style="font-size:.7rem">'
             + '<span class="spinner-border spinner-border-sm me-1" style="width:.6rem;height:.6rem;border-width:.1em"></span>'
             + 'Generating…</span>';
         if (row) row.classList.add('table-primary');
+    } else if (status === 'queued') {
+        cell.innerHTML = '<span class="badge bg-secondary" style="font-size:.7rem">Queued</span>';
+    } else if (status === 'cancelled') {
+        cell.innerHTML = '<span class="badge bg-warning text-dark" style="font-size:.7rem">Cancelled</span>';
     } else if (status === 'done' || (status && status.startsWith('done:'))) {
-        // status may be "done" or "done:N/10"
         var label = 'Done';
         if (status.startsWith('done:')) { label = 'Done (' + status.slice(5) + ')'; }
-        cell.innerHTML = '<span class="badge bg-success" style="font-size:.7rem"><i class="fa-solid fa-check me-1"></i>' + label + '</span>';
-        if (row) { row.classList.remove('table-primary'); row.classList.add('table-success'); }
+        cell.innerHTML = '<span class="badge bg-success" style="font-size:.7rem"><i class="fa-solid fa-check me-1"></i>'
+            + label + '</span> '
+            + '<a href="/admin/articles/' + id + '/edit" class="small ms-1">view</a>';
+        if (row) row.classList.add('table-success');
     } else if (status && status.startsWith('error:')) {
-        cell.innerHTML = '<span class="badge bg-danger" style="font-size:.7rem" title="' + status.slice(6) + '">Error</span>';
-        if (row) { row.classList.remove('table-primary'); row.classList.add('table-danger'); }
+        var msg = status.slice(6);
+        var safe = msg.replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        cell.innerHTML = '<span class="badge bg-danger" style="font-size:.7rem;cursor:help" title="' + safe + '">Error</span>'
+            + ' <button type="button" class="btn btn-link btn-sm p-0 small text-decoration-none" onclick="draftRetryArticle(' + id + ')">retry</button>'
+            + ' <span class="small text-danger ms-1" style="word-break:break-word">' + (msg.length > 90 ? msg.slice(0, 90) + '…' : msg) + '</span>';
+        if (row) row.classList.add('table-danger');
     }
 }
 
-function _draftPollBatch() {
-    if (!_batchPollIds.length) return;
-    fetch('/admin/batch-carousel-status', {
+function _updateBatchProgressBar() {
+    var statusEl = document.getElementById('draft-batch-status');
+    var btn = document.getElementById('draft-batch-generate-btn');
+    var cancelBtn = document.getElementById('draft-batch-cancel-btn');
+
+    if (_batchQueue.length === 0 && _batchTotal === 0) {
+        // Nothing in flight
+        if (cancelBtn) cancelBtn.classList.add('d-none');
+        if (btn) btn.disabled = false;
+        return;
+    }
+
+    var done = _batchTotal - _batchQueue.length;
+    if (statusEl) {
+        if (_batchQueue.length > 0) {
+            statusEl.innerHTML = '<span class="text-primary">'
+                + '<span class="spinner-border spinner-border-sm me-1" style="width:.75rem;height:.75rem;border-width:.12em"></span>'
+                + 'Article ' + (done + (_batchCancelled ? 0 : 1)) + ' / ' + _batchTotal + ' — keep this tab open</span>';
+        } else {
+            statusEl.innerHTML = '<span class="text-success"><i class="fa-solid fa-check me-1"></i>'
+                + 'Batch complete (' + _batchTotal + ' article' + (_batchTotal !== 1 ? 's' : '') + ' processed)</span>';
+        }
+    }
+    if (cancelBtn) cancelBtn.classList.toggle('d-none', _batchQueue.length === 0);
+    if (btn) btn.disabled = _batchQueue.length > 0;
+}
+
+function _processNextInQueue() {
+    if (_batchCancelled) {
+        // Mark remaining as cancelled and finish
+        _batchQueue.forEach(function(id) { _draftSetRowStatus(id, 'cancelled'); });
+        _batchQueue = [];
+        _updateBatchProgressBar();
+        _batchTotal = 0;
+        return;
+    }
+    if (_batchQueue.length === 0) {
+        _updateBatchProgressBar();
+        _batchTotal = 0;
+        return;
+    }
+
+    var id = _batchQueue[0];
+    _draftSetRowStatus(id, 'running');
+    _updateBatchProgressBar();
+
+    _batchActiveCtrl = new AbortController();
+    fetch('/admin/articles/' + id + '/batch-generate-one', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({article_ids: _batchPollIds})
+        body: '{}',
+        signal: _batchActiveCtrl.signal
     })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-        var stillRunning = [];
-        var doneCount = 0;
-        _batchPollIds.forEach(function(id) {
-            var st = d[id] || 'idle';
-            _draftSetRowStatus(id, st);
-            if (st === 'running' || st === 'idle') { stillRunning.push(id); }
-            else if (st === 'done' || st.startsWith('done:')) { doneCount++; }
-        });
-        // Update action bar counter
-        var statusEl = document.getElementById('draft-batch-status');
-        if (statusEl && _batchPollIds.length) {
-            var total = _batchPollIds.length;
-            var done  = total - stillRunning.length;
-            if (stillRunning.length > 0) {
-                statusEl.innerHTML = '<span class="text-primary"><span class="spinner-border spinner-border-sm me-1" style="width:.75rem;height:.75rem;border-width:.12em"></span>'
-                    + done + ' / ' + total + ' complete…</span>';
-            } else {
-                statusEl.innerHTML = '<span class="text-success"><i class="fa-solid fa-check me-1"></i>All ' + total + ' done!</span>';
-            }
-        }
-        if (stillRunning.length > 0) {
-            _batchPollTimer = setTimeout(_draftPollBatch, 5000);
+    .then(function(r) { return r.json().then(function(d) { return {status: r.status, data: d}; }); })
+    .then(function(resp) {
+        var d = resp.data || {};
+        if (d.ok && (d.total || 0) > 0) {
+            _draftSetRowStatus(id, 'done:' + d.total + '/10');
         } else {
-            _batchPollIds = [];
+            var msg = d.fatal || (d.errors && d.errors.length ? d.errors[0].error : 'Unknown failure');
+            _draftSetRowStatus(id, 'error:' + msg);
         }
+        _batchQueue.shift();
+        _processNextInQueue();
     })
-    .catch(function() {
-        // retry silently
-        _batchPollTimer = setTimeout(_draftPollBatch, 8000);
+    .catch(function(e) {
+        if (_batchCancelled) {
+            _draftSetRowStatus(id, 'cancelled');
+        } else {
+            _draftSetRowStatus(id, 'error:Network error: ' + (e && e.message ? e.message : e));
+        }
+        _batchQueue.shift();
+        _processNextInQueue();
     });
 }
 
@@ -1676,14 +1729,11 @@ function draftBatchGenerate() {
     var ids = Array.from(document.querySelectorAll('.draft-select-cb:checked'))
                    .map(function(cb) { return parseInt(cb.dataset.id); });
     if (!ids.length) return;
-    if (!confirm('Generate carousels for ' + ids.length + ' article' + (ids.length > 1 ? 's' : '') + '?\nThis uses DALL-E 3 (~$0.40/article) and may take several minutes.')) return;
+    if (!confirm('Generate carousels for ' + ids.length + ' article' + (ids.length > 1 ? 's' : '') + '?\n'
+        + 'Each takes ~2-3 min and uses DALL-E 3 (~$0.40 each).\n'
+        + 'Keep this browser tab OPEN — closing it will stop the batch.')) return;
 
-    var btn = document.getElementById('draft-batch-generate-btn');
-    var statusEl = document.getElementById('draft-batch-status');
-    if (btn) btn.disabled = true;
-    document.querySelectorAll('.draft-select-cb').forEach(function(cb) { cb.disabled = true; });
-    if (statusEl) statusEl.innerHTML = '<span class="text-muted">Queuing…</span>';
-
+    // Tell server which IDs we're about to process (it clears stale statuses)
     fetch('/admin/batch-generate-carousels', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1691,33 +1741,56 @@ function draftBatchGenerate() {
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
-        if (d.ok) {
-            // Mark all rows as queued immediately
-            ids.forEach(function(id) { _draftSetRowStatus(id, 'running'); });
-            // Start polling
-            _batchPollIds = ids.slice();
-            if (_batchPollTimer) clearTimeout(_batchPollTimer);
-            _batchPollTimer = setTimeout(_draftPollBatch, 4000);
-            draftClearSelection();
-            // Keep bar visible to show progress
-            var bar = document.getElementById('draft-batch-bar');
-            if (bar) { bar.classList.remove('d-none'); bar.classList.add('d-flex'); }
-            var countEl = document.getElementById('draft-sel-count');
-            if (countEl) countEl.textContent = '0';
-        } else {
-            if (statusEl) statusEl.innerHTML = '<span class="text-danger">Error: ' + (d.error || 'Unknown') + '</span>';
-            if (btn) btn.disabled = false;
-            document.querySelectorAll('.draft-select-cb').forEach(function(cb) { cb.disabled = false; });
+        if (!d.ok) {
+            alert('Could not start batch: ' + (d.error || 'unknown'));
+            return;
         }
+        var validIds = d.article_ids || ids;
+        // Clear selection UI but keep the bar visible during processing
+        draftClearSelection();
+        validIds.forEach(function(id) { _draftSetRowStatus(id, 'queued'); });
+        _batchQueue = validIds.slice();
+        _batchTotal = validIds.length;
+        _batchCancelled = false;
+        var bar = document.getElementById('draft-batch-bar');
+        if (bar) { bar.classList.remove('d-none'); bar.classList.add('d-flex'); }
+        _processNextInQueue();
     })
     .catch(function(e) {
-        if (statusEl) statusEl.innerHTML = '<span class="text-danger">Network error</span>';
-        if (btn) btn.disabled = false;
-        document.querySelectorAll('.draft-select-cb').forEach(function(cb) { cb.disabled = false; });
+        alert('Network error starting batch: ' + e);
     });
 }
 
-// Resume polling on page load if any article is mid-generation
+function draftBatchCancel() {
+    if (!_batchQueue.length) return;
+    if (!confirm('Stop the batch? The article currently being generated will finish, '
+        + 'but the remaining ' + Math.max(0, _batchQueue.length - 1) + ' will be skipped.')) return;
+    _batchCancelled = true;
+    if (_batchActiveCtrl) {
+        // Don't actually abort the in-flight request — let it finish so its
+        // article completes properly. The cancellation only stops the QUEUE.
+    }
+    var statusEl = document.getElementById('draft-batch-status');
+    if (statusEl) statusEl.innerHTML = '<span class="text-warning">Cancelling after current article…</span>';
+}
+
+function draftRetryArticle(id) {
+    if (_batchQueue.length > 0) {
+        alert('A batch is currently running. Wait for it to finish, then retry.');
+        return;
+    }
+    _draftSetRowStatus(id, 'queued');
+    _batchQueue = [id];
+    _batchTotal = 1;
+    _batchCancelled = false;
+    var bar = document.getElementById('draft-batch-bar');
+    if (bar) { bar.classList.remove('d-none'); bar.classList.add('d-flex'); }
+    _processNextInQueue();
+}
+
+// On page load, restore any historical results so the user sees them
+// (and clears stale "running" entries from the old broken background-thread
+//  implementation by treating them as cancelled).
 document.addEventListener('DOMContentLoaded', function() {
     var allIds = Array.from(document.querySelectorAll('.draft-select-cb')).map(function(cb) { return parseInt(cb.dataset.id); });
     if (!allIds.length) return;
@@ -1728,20 +1801,25 @@ document.addEventListener('DOMContentLoaded', function() {
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
-        var resumeIds = [];
+        var staleIds = [];
         allIds.forEach(function(id) {
             var st = d[id] || 'idle';
-            if (st === 'running') { _draftSetRowStatus(id, 'running'); resumeIds.push(id); }
-            else if (st === 'done' || st.startsWith('done:')) { _draftSetRowStatus(id, st); }
-            else if (st && st.startsWith('error:')) { _draftSetRowStatus(id, st); }
+            if (st === 'running') {
+                // Stale — old background thread is dead. Show as cancelled and clear.
+                _draftSetRowStatus(id, 'cancelled');
+                staleIds.push(id);
+            } else if (st === 'done' || st.startsWith('done:')) {
+                _draftSetRowStatus(id, st);
+            } else if (st && st.startsWith('error:')) {
+                _draftSetRowStatus(id, st);
+            }
         });
-        if (resumeIds.length) {
-            _batchPollIds = resumeIds;
-            var bar = document.getElementById('draft-batch-bar');
-            if (bar) { bar.classList.remove('d-none'); bar.classList.add('d-flex'); }
-            var statusEl = document.getElementById('draft-batch-status');
-            if (statusEl) statusEl.innerHTML = '<span class="text-primary"><span class="spinner-border spinner-border-sm me-1" style="width:.75rem;height:.75rem;border-width:.12em"></span>Generating ' + resumeIds.length + ' article' + (resumeIds.length > 1 ? 's' : '') + '…</span>';
-            _batchPollTimer = setTimeout(_draftPollBatch, 4000);
+        if (staleIds.length) {
+            fetch('/admin/batch-carousel-clear', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({article_ids: staleIds})
+            }).catch(function() {});
         }
     })
     .catch(function() {});
