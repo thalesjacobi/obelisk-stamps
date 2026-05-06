@@ -4973,6 +4973,66 @@ def admin_article_carousel_images(article_id):
                      "created_at": created_at, "archived_meta": archived_meta})
 
 
+@app.route("/admin/batch-generate-carousels", methods=["POST"])
+@login_required
+@admin_required
+def admin_batch_generate_carousels():
+    """Queue carousel generation for up to 10 draft articles.
+
+    Each article is processed sequentially in a background thread so the
+    admin panel can return immediately.  Progress per article is tracked via
+    the existing carousel status keys so the user can monitor each article
+    individually from its edit page.
+    """
+    data = request.get_json() or {}
+    article_ids = data.get("article_ids") or []
+    if not article_ids:
+        return jsonify({"error": "No article IDs provided."}), 400
+    # Hard cap at 10
+    article_ids = [int(i) for i in article_ids[:10]]
+
+    # Verify all IDs belong to draft articles owned by this installation
+    valid_ids = []
+    for aid in article_ids:
+        row = query_one("SELECT id FROM articles WHERE id = %s AND is_published = 0", (aid,))
+        if row:
+            valid_ids.append(aid)
+    if not valid_ids:
+        return jsonify({"error": "None of the selected IDs are valid draft articles."}), 400
+
+    def _batch_worker(ids):
+        for aid in ids:
+            try:
+                print(f"[BatchCarousel] Starting carousel generation for article {aid}", flush=True)
+                # Mark as running so the edit page shows progress
+                execute(
+                    "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                    "ON DUPLICATE KEY UPDATE value = %s",
+                    (f"carousel_batch_status_{aid}", "running", "running"),
+                )
+                _generate_carousel_for_article_sync(aid)
+                execute(
+                    "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                    "ON DUPLICATE KEY UPDATE value = %s",
+                    (f"carousel_batch_status_{aid}", "done", "done"),
+                )
+                print(f"[BatchCarousel] Done for article {aid}", flush=True)
+            except Exception as _e:
+                import traceback as _tb
+                print(f"[BatchCarousel] Error on article {aid}: {_e}\n{_tb.format_exc()}", flush=True)
+                try:
+                    execute(
+                        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE value = %s",
+                        (f"carousel_batch_status_{aid}", f"error:{_e}", f"error:{_e}"),
+                    )
+                except Exception:
+                    pass
+
+    threading.Thread(target=_batch_worker, args=(valid_ids,), daemon=True).start()
+    return jsonify({"ok": True, "queued": len(valid_ids), "article_ids": valid_ids})
+
+
 @app.route("/admin/articles/<int:article_id>/generate-carousel", methods=["POST"])
 @login_required
 @admin_required

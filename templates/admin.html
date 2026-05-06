@@ -514,17 +514,36 @@
             <!-- Drafts -->
             <div class="tab-pane fade" id="articles-drafts" role="tabpanel">
             {% set drafts = articles | rejectattr('is_published') | list %}
+
+            <!-- Batch action bar (hidden until selection) -->
+            <div id="draft-batch-bar" class="d-none align-items-center gap-3 mb-3 p-2 border rounded bg-light">
+                <span class="small text-muted"><span id="draft-sel-count">0</span> / 10 selected</span>
+                <button type="button" class="btn btn-sm btn-primary" id="draft-batch-generate-btn" onclick="draftBatchGenerate()" disabled>
+                    <i class="fa-solid fa-images me-1"></i>Generate Carousels
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="draftClearSelection()">Clear</button>
+                <span id="draft-batch-status" class="small text-muted"></span>
+            </div>
+
             <div class="table-responsive">
                 <table class="table table-hover align-middle">
                     <thead class="table-light">
                         <tr>
+                            <th style="width:36px;">
+                                <input type="checkbox" class="form-check-input mt-0" id="draft-select-all" title="Select / deselect all visible" onchange="draftToggleAll(this.checked)">
+                            </th>
                             <th>Title</th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for a in drafts %}
-                        <tr>
+                        <tr id="draft-row-{{ a.id }}">
+                            <td>
+                                <input type="checkbox" class="form-check-input mt-0 draft-select-cb"
+                                       data-id="{{ a.id }}" data-title="{{ a.title | e }}"
+                                       onchange="draftSelectionChanged()">
+                            </td>
                             <td>{{ a.title }}</td>
                             <td>
                                 <a href="/admin/articles/{{ a.id }}/edit" class="btn btn-outline-secondary btn-sm">Edit</a>
@@ -532,7 +551,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="2" class="text-center text-muted py-4">No drafts.</td>
+                            <td colspan="3" class="text-center text-muted py-4">No drafts.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -1542,5 +1561,91 @@ function saveIgCaptionPromptSettings() {
     .catch(() => { status.textContent = 'Network error.'; status.className = 'ms-3 small text-danger'; });
 }
 {% endif %}
+
+// ── Draft Batch Carousel Generation ──────────────────────────────────────
+function draftSelectionChanged() {
+    var cbs = document.querySelectorAll('.draft-select-cb:checked');
+    var count = cbs.length;
+    var countEl = document.getElementById('draft-sel-count');
+    var bar = document.getElementById('draft-batch-bar');
+    var btn = document.getElementById('draft-batch-generate-btn');
+    var allCb = document.getElementById('draft-select-all');
+
+    if (countEl) countEl.textContent = count;
+    if (bar) bar.classList.toggle('d-none', count === 0);
+    if (bar) bar.classList.toggle('d-flex', count > 0);
+    if (btn) btn.disabled = count === 0;
+
+    // Enforce max 10: disable unchecked boxes once limit reached
+    document.querySelectorAll('.draft-select-cb:not(:checked)').forEach(function(cb) {
+        cb.disabled = count >= 10;
+    });
+    // Update select-all state
+    var total = document.querySelectorAll('.draft-select-cb').length;
+    if (allCb) {
+        allCb.checked = count > 0 && count === total;
+        allCb.indeterminate = count > 0 && count < total;
+    }
+}
+
+function draftToggleAll(checked) {
+    var cbs = document.querySelectorAll('.draft-select-cb');
+    var selected = 0;
+    cbs.forEach(function(cb) {
+        if (checked && selected < 10 && !cb.disabled) {
+            cb.checked = true;
+            selected++;
+        } else if (!checked) {
+            cb.checked = false;
+        }
+    });
+    draftSelectionChanged();
+}
+
+function draftClearSelection() {
+    document.querySelectorAll('.draft-select-cb').forEach(function(cb) {
+        cb.checked = false;
+        cb.disabled = false;
+    });
+    var allCb = document.getElementById('draft-select-all');
+    if (allCb) { allCb.checked = false; allCb.indeterminate = false; }
+    draftSelectionChanged();
+}
+
+function draftBatchGenerate() {
+    var ids = Array.from(document.querySelectorAll('.draft-select-cb:checked'))
+                   .map(function(cb) { return parseInt(cb.dataset.id); });
+    if (!ids.length) return;
+    if (!confirm('Generate carousels for ' + ids.length + ' article' + (ids.length > 1 ? 's' : '') + '? This will use DALL-E 3 and may take several minutes.')) return;
+
+    var btn = document.getElementById('draft-batch-generate-btn');
+    var statusEl = document.getElementById('draft-batch-status');
+    if (btn) btn.disabled = true;
+    document.querySelectorAll('.draft-select-cb').forEach(function(cb) { cb.disabled = true; });
+    if (statusEl) statusEl.textContent = 'Queuing…';
+
+    fetch('/admin/batch-generate-carousels', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({article_ids: ids})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.ok) {
+            if (statusEl) statusEl.innerHTML =
+                '<span class="text-success"><i class="fa-solid fa-check me-1"></i>' +
+                d.queued + ' article' + (d.queued !== 1 ? 's' : '') + ' queued. ' +
+                'Open each article to monitor progress.</span>';
+            draftClearSelection();
+        } else {
+            if (statusEl) statusEl.innerHTML = '<span class="text-danger">Error: ' + (d.error || 'Unknown error') + '</span>';
+            if (btn) btn.disabled = false;
+        }
+    })
+    .catch(function(e) {
+        if (statusEl) statusEl.innerHTML = '<span class="text-danger">Network error: ' + e + '</span>';
+        if (btn) btn.disabled = false;
+    });
+}
 </script>
 {% endblock %}
