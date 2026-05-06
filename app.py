@@ -5623,7 +5623,8 @@ def admin_article_video_data(article_id):
     for run in narrated_runs:
         run_ts = run.get("ts")
         if run_ts:
-            run["ig_caption"] = get_setting(f"ig_narrated_caption_{article_id}_{run_ts}") or ""
+            run["ig_caption"]      = get_setting(f"ig_narrated_caption_{article_id}_{run_ts}")      or ""
+            run["threads_caption"] = get_setting(f"threads_narrated_caption_{article_id}_{run_ts}") or ""
 
     return jsonify({
         "narrated_url":           narrated_url or None,
@@ -7162,7 +7163,16 @@ def _upload_to_youtube_worker(article_id, video_url, title, desc, run_ts, refres
         token_data = token_resp.json()
         access_token = token_data.get("access_token")
         if not access_token:
-            _set_result(f"error:Failed to get access token: {token_data.get('error_description', token_data)}")
+            token_error = token_data.get("error", "")
+            if token_error in ("invalid_grant", "token_revoked"):
+                # Stale refresh token — clear it so the UI shows "Reconnect YouTube"
+                try:
+                    execute("DELETE FROM site_settings WHERE `key` = %s", ("youtube_refresh_token",))
+                except Exception:
+                    pass
+                _set_result("error:reconnect:YouTube authorization has expired. Please reconnect YouTube in the Admin panel.")
+            else:
+                _set_result(f"error:Failed to get access token: {token_data.get('error_description', token_data)}")
             _add_activity_log(article_id, "YouTube Upload Failed",
                               f"Token refresh failed: {token_data}", component="narrated")
             return

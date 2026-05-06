@@ -10891,6 +10891,12 @@ function buildRunItem(run, expandIt) {
     var defaultCaption = [ARTICLE_TITLE, ARTICLE_URL ? '\n' + ARTICLE_URL : ''].filter(Boolean).join('\n');
     var captionEl = item.querySelector('#nv-ig-' + run.ts + '-caption');
     if (captionEl) captionEl.value = (run.ig_caption && run.ig_caption.trim()) ? run.ig_caption : defaultCaption;
+    var threadsCaptionEl = item.querySelector('#nv-threads-' + run.ts + '-caption');
+    if (threadsCaptionEl) {
+        threadsCaptionEl.value = (run.threads_caption && run.threads_caption.trim()) ? run.threads_caption : defaultCaption;
+        var threadsCountEl = item.querySelector('#nv-threads-' + run.ts + '-count');
+        if (threadsCountEl) threadsCountEl.textContent = threadsCaptionEl.value.length + ' / 500';
+    }
     var ytTitleEl = item.querySelector('#nv-yt-' + run.ts + '-title');
     if (ytTitleEl && ARTICLE_TITLE) ytTitleEl.value = ARTICLE_TITLE;
     var vimeoTitleEl = item.querySelector('#nv-vimeo-' + run.ts + '-title');
@@ -11386,13 +11392,26 @@ function pollYouTube(runTs, btn) {
             } else if (d.result && d.result.startsWith('done:')) {
                 showNvYtDone(runTs, d.result.slice(5));
             } else if (d.result && d.result.startsWith('error:')) {
-                var errMsg = d.result.slice(6);
+                var rawErr = d.result.slice(6);
                 var running = document.getElementById('nv-yt-' + runTs + '-running');
                 var resultEl = document.getElementById('nv-yt-' + runTs + '-result');
                 if (running) running.classList.add('d-none');
                 if (resultEl) {
-                    resultEl.innerHTML = '<div class="alert alert-danger py-2 px-3 small mb-0">' +
-                        '<strong>Upload failed:</strong> ' + errMsg + '</div>';
+                    var errHtml;
+                    if (rawErr.startsWith('reconnect:')) {
+                        var errMsg = rawErr.slice(10);
+                        errHtml = '<div class="alert alert-warning py-2 px-3 small mb-0 d-flex align-items-center gap-2">' +
+                            '<span>' + errMsg + '</span>' +
+                            '<a href="/admin/youtube-connect" class="btn btn-sm btn-warning ms-auto text-nowrap">Reconnect YouTube</a>' +
+                            '</div>';
+                        /* Hide post button — token is gone, clicking would fail again */
+                        var postBtn = document.getElementById('nv-yt-' + runTs + '-post-btn');
+                        if (postBtn) postBtn.disabled = true;
+                    } else {
+                        errHtml = '<div class="alert alert-danger py-2 px-3 small mb-0">' +
+                            '<strong>Upload failed:</strong> ' + rawErr + '</div>';
+                    }
+                    resultEl.innerHTML = errHtml;
                     resultEl.classList.remove('d-none');
                 }
                 if (btn) btn.disabled = false;
