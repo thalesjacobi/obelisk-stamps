@@ -11580,19 +11580,28 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
                               component="narrated")
             return
 
-        # Fetch the authenticated user's username so we can build a working permalink
+        # Fetch the authenticated user's @handle so we can build a working permalink.
+        # `username` is the real handle (e.g. "obelisk_stamps"); `display_name` is the
+        # human-readable name (e.g. "Obelisk Stamps") which must NOT be used in URLs.
         username = get_setting("tiktok_username") or ""
+        # Discard any previously-cached value that looks like a display name (has spaces)
+        if ' ' in username:
+            username = ""
         if not username:
             try:
                 ui_resp = _req.get(
-                    f"{_TIKTOK_API_URL}/user/info/?fields=open_id,union_id,display_name",
+                    f"{_TIKTOK_API_URL}/user/info/?fields=open_id,union_id,display_name,username",
                     headers={"Authorization": f"Bearer {TIKTOK_ACCESS_TOKEN}"},
                     timeout=15)
                 ui_data = ui_resp.json().get("data", {}).get("user", {}) or {}
-                # `display_name` is the human-readable name; the real handle is via /user/info/
-                # with fields=username (only available in some versions). We persist whatever
-                # we get so subsequent posts skip this lookup.
-                fetched = ui_data.get("display_name") or ""
+                # Prefer `username` (the real @handle); fall back to `display_name` only
+                # as a last resort (display_name can contain spaces / special chars that
+                # make the URL invalid — we'll URL-encode it just in case).
+                fetched = ui_data.get("username") or ""
+                if not fetched:
+                    import urllib.parse as _up
+                    raw_display = ui_data.get("display_name") or ""
+                    fetched = _up.quote(raw_display, safe="") if raw_display else ""
                 if fetched:
                     username = fetched
                     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
@@ -11602,6 +11611,8 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
                 print(f"[TikTok] user/info fetch failed: {_ue}", flush=True)
 
         video_id  = public_id
+        # https://www.tiktok.com/video/{id} works without a username and is always valid;
+        # the @username/video/{id} form is a nicer URL but requires the correct handle.
         permalink = (f"https://www.tiktok.com/@{username}/video/{video_id}"
                      if username else f"https://www.tiktok.com/video/{video_id}")
 
