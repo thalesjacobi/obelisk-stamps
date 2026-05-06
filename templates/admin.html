@@ -1619,8 +1619,11 @@ function _draftSetRowStatus(id, status) {
             + '<span class="spinner-border spinner-border-sm me-1" style="width:.6rem;height:.6rem;border-width:.1em"></span>'
             + 'Generating…</span>';
         if (row) row.classList.add('table-primary');
-    } else if (status === 'done') {
-        cell.innerHTML = '<span class="badge bg-success" style="font-size:.7rem"><i class="fa-solid fa-check me-1"></i>Done</span>';
+    } else if (status === 'done' || (status && status.startsWith('done:'))) {
+        // status may be "done" or "done:N/10"
+        var label = 'Done';
+        if (status.startsWith('done:')) { label = 'Done (' + status.slice(5) + ')'; }
+        cell.innerHTML = '<span class="badge bg-success" style="font-size:.7rem"><i class="fa-solid fa-check me-1"></i>' + label + '</span>';
         if (row) { row.classList.remove('table-primary'); row.classList.add('table-success'); }
     } else if (status && status.startsWith('error:')) {
         cell.innerHTML = '<span class="badge bg-danger" style="font-size:.7rem" title="' + status.slice(6) + '">Error</span>';
@@ -1643,7 +1646,7 @@ function _draftPollBatch() {
             var st = d[id] || 'idle';
             _draftSetRowStatus(id, st);
             if (st === 'running' || st === 'idle') { stillRunning.push(id); }
-            else if (st === 'done') { doneCount++; }
+            else if (st === 'done' || st.startsWith('done:')) { doneCount++; }
         });
         // Update action bar counter
         var statusEl = document.getElementById('draft-batch-status');
@@ -1729,7 +1732,7 @@ document.addEventListener('DOMContentLoaded', function() {
         allIds.forEach(function(id) {
             var st = d[id] || 'idle';
             if (st === 'running') { _draftSetRowStatus(id, 'running'); resumeIds.push(id); }
-            else if (st === 'done') { _draftSetRowStatus(id, 'done'); }
+            else if (st === 'done' || st.startsWith('done:')) { _draftSetRowStatus(id, st); }
             else if (st && st.startsWith('error:')) { _draftSetRowStatus(id, st); }
         });
         if (resumeIds.length) {

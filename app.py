@@ -5010,13 +5010,39 @@ def admin_batch_generate_carousels():
                     "ON DUPLICATE KEY UPDATE value = %s",
                     (f"carousel_batch_status_{aid}", "running", "running"),
                 )
+
+                # Snapshot how many images existed BEFORE the run, so we can detect
+                # whether the sync function actually created anything.
+                pre_row = query_one("SELECT carousel_images FROM articles WHERE id = %s", (aid,))
+                pre_imgs = json.loads(pre_row[0]) if pre_row and pre_row[0] else []
+                pre_count = sum(1 for u in pre_imgs[:10] if u)
+
                 _generate_carousel_for_article_sync(aid)
-                execute(
-                    "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-                    "ON DUPLICATE KEY UPDATE value = %s",
-                    (f"carousel_batch_status_{aid}", "done", "done"),
-                )
-                print(f"[BatchCarousel] Done for article {aid}", flush=True)
+
+                post_row = query_one("SELECT carousel_images FROM articles WHERE id = %s", (aid,))
+                post_imgs = json.loads(post_row[0]) if post_row and post_row[0] else []
+                post_count = sum(1 for u in post_imgs[:10] if u)
+                generated = post_count - pre_count
+
+                if post_count == 0:
+                    # Nothing generated and nothing pre-existing — the sync function
+                    # silently failed (storyboard error, all DALL-E calls failed, etc).
+                    msg = "No images were generated. Check Cloud Run logs for OpenAI/DALL-E errors."
+                    execute(
+                        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE value = %s",
+                        (f"carousel_batch_status_{aid}", f"error:{msg}", f"error:{msg}"),
+                    )
+                    print(f"[BatchCarousel] FAILED for article {aid}: 0 images after run", flush=True)
+                else:
+                    status_val = f"done:{post_count}/10"
+                    execute(
+                        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE value = %s",
+                        (f"carousel_batch_status_{aid}", status_val, status_val),
+                    )
+                    print(f"[BatchCarousel] Done for article {aid}: {post_count}/10 images "
+                          f"(+{generated} new this run)", flush=True)
             except Exception as _e:
                 import traceback as _tb
                 print(f"[BatchCarousel] Error on article {aid}: {_e}\n{_tb.format_exc()}", flush=True)
@@ -15988,10 +16014,15 @@ def _generate_carousel_for_article_sync(article_id):
     """Synchronous carousel generation for pipeline use. Generates storyboard + DALL-E images."""
     import time as _time
 
+    if not _openai_client:
+        print(f"[CarouselSync] Article {article_id}: OpenAI client not configured — aborting", flush=True)
+        return
+
     row = query_one(
         "SELECT title, content, slug, carousel_prompts, carousel_images, carousel_punchlines, "
         "carousel_style, carousel_created_at FROM articles WHERE id = %s", (article_id,))
     if not row:
+        print(f"[CarouselSync] Article {article_id}: not found in DB", flush=True)
         return
 
     title = row[0] or ""
@@ -16007,7 +16038,9 @@ def _generate_carousel_for_article_sync(article_id):
     target_count = 10
     empty_slots = [i for i in range(target_count) if i >= len(existing_images) or not existing_images[i]]
     if not empty_slots:
+        print(f"[CarouselSync] Article {article_id}: all 10 slots already filled — nothing to do", flush=True)
         return
+    print(f"[CarouselSync] Article {article_id}: {len(empty_slots)} empty slots to fill (title={title[:60]!r})", flush=True)
 
     n_needed = len(empty_slots)
     active_style = get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
@@ -16048,7 +16081,8 @@ def _generate_carousel_for_article_sync(article_id):
             storyboard_text = re.sub(r'\s*```$', '', storyboard_text)
         scenes = json.loads(storyboard_text.strip())
     except Exception as e:
-        print(f"[Pipeline] Storyboard failed: {e}")
+        import traceback as _tb
+        print(f"[CarouselSync] Article {article_id}: Storyboard generation failed: {e}\n{_tb.format_exc()}", flush=True)
         return
 
     while len(existing_prompts) < target_count:
