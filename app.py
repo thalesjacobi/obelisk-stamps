@@ -11527,11 +11527,19 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
         if data.get("error", {}).get("code") != "ok":
             err_msg = data.get("error", {}).get("message", "Init failed")
             _set_result(f"error:{err_msg}")
+            _add_activity_log(article_id, "TikTok Narrated Video Post Failed",
+                              f"Init failed (HTTP {resp.status_code})\n"
+                              f"Raw response:\n{json.dumps(data, indent=2)[:2000]}",
+                              component="narrated")
             return
 
         publish_id = data.get("data", {}).get("publish_id")
         if not publish_id:
             _set_result(f"error:No publish_id returned: {data}")
+            _add_activity_log(article_id, "TikTok Narrated Video Post Failed",
+                              f"No publish_id returned\n"
+                              f"Raw response:\n{json.dumps(data, indent=2)[:2000]}",
+                              component="narrated")
             return
 
         # 2. Poll status until complete
@@ -11550,9 +11558,18 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
             if status_val in ("FAILED", "PUBLISH_CANCELLED"):
                 fail_reason = sdata.get("data", {}).get("fail_reason", "Unknown error")
                 _set_result(f"error:{fail_reason}")
+                _add_activity_log(article_id, "TikTok Narrated Video Post Failed",
+                                  f"Status: {status_val}\nFail reason: {fail_reason}\n"
+                                  f"Raw response:\n{json.dumps(sdata, indent=2)[:2000]}",
+                                  component="narrated")
                 return
         else:
             _set_result("error:Video processing timed out after 5 minutes")
+            _add_activity_log(article_id, "TikTok Narrated Video Post Failed",
+                              f"Timed out after 5 minutes (publish_id={publish_id})\n"
+                              f"Last status: {status_val}\n"
+                              f"Last response:\n{json.dumps(sdata, indent=2)[:2000]}",
+                              component="narrated")
             return
 
         # TikTok's *correct* field for the public post ID is "publicaly_available_post_id"
@@ -11583,32 +11600,41 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
         # Fetch the authenticated user's @handle so we can build a working permalink.
         # `username` is the real handle (e.g. "obelisk_stamps"); `display_name` is the
         # human-readable name (e.g. "Obelisk Stamps") which must NOT be used in URLs.
-        username = get_setting("tiktok_username") or ""
+        cached_username = get_setting("tiktok_username") or ""
+        username = cached_username
         # Discard any previously-cached value that looks like a display name (has spaces)
         if ' ' in username:
             username = ""
-        if not username:
+        # Always re-fetch and log the raw user/info response so we can study the data.
+        # If the fetch returns a real handle, replace the cached value.
+        ui_status = None
+        ui_data_raw = None
+        ui_user = {}
+        try:
+            ui_resp = _req.get(
+                f"{_TIKTOK_API_URL}/user/info/?fields=open_id,union_id,display_name,username,avatar_url,profile_deep_link",
+                headers={"Authorization": f"Bearer {TIKTOK_ACCESS_TOKEN}"},
+                timeout=15)
+            ui_status = ui_resp.status_code
             try:
-                ui_resp = _req.get(
-                    f"{_TIKTOK_API_URL}/user/info/?fields=open_id,union_id,display_name,username",
-                    headers={"Authorization": f"Bearer {TIKTOK_ACCESS_TOKEN}"},
-                    timeout=15)
-                ui_data = ui_resp.json().get("data", {}).get("user", {}) or {}
-                # Prefer `username` (the real @handle); fall back to `display_name` only
-                # as a last resort (display_name can contain spaces / special chars that
-                # make the URL invalid — we'll URL-encode it just in case).
-                fetched = ui_data.get("username") or ""
-                if not fetched:
-                    import urllib.parse as _up
-                    raw_display = ui_data.get("display_name") or ""
-                    fetched = _up.quote(raw_display, safe="") if raw_display else ""
-                if fetched:
-                    username = fetched
-                    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-                            "ON DUPLICATE KEY UPDATE value = %s",
-                            ("tiktok_username", username, username))
-            except Exception as _ue:
-                print(f"[TikTok] user/info fetch failed: {_ue}", flush=True)
+                ui_data_raw = ui_resp.json()
+            except Exception:
+                ui_data_raw = {"_raw_text": ui_resp.text[:1000]}
+            ui_user = (ui_data_raw or {}).get("data", {}).get("user", {}) or {}
+            # Prefer `username` (the real @handle); fall back to `display_name`
+            fetched = ui_user.get("username") or ""
+            if not fetched:
+                import urllib.parse as _up
+                raw_display = ui_user.get("display_name") or ""
+                fetched = _up.quote(raw_display, safe="") if raw_display else ""
+            if fetched:
+                username = fetched
+                execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE value = %s",
+                        ("tiktok_username", username, username))
+        except Exception as _ue:
+            print(f"[TikTok] user/info fetch failed: {_ue}", flush=True)
+            ui_data_raw = {"_exception": str(_ue)}
 
         video_id  = public_id
         # https://www.tiktok.com/video/{id} works without a username and is always valid;
@@ -11626,10 +11652,25 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
                     (f"tiktok_narrated_caption_{article_id}_{run_ts}", caption, caption))
         except Exception:
             pass
-        _add_activity_log(article_id, "TikTok Narrated Video Posted",
-                          f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
-                          f"video_id={video_id}\nrun_ts={run_ts}",
-                          component="narrated")
+        # Rich diagnostic log — captures everything we need to study why the URL may 404
+        diag = {
+            "permalink_built": permalink,
+            "video_id": video_id,
+            "publish_id": publish_id,
+            "publicaly_available_post_id": public_post_ids,
+            "status_response_data": sdata.get("data"),
+            "username_used": username,
+            "username_cached_before_run": cached_username,
+            "user_info_http_status": ui_status,
+            "user_info_user_object": ui_user,
+            "user_info_full_response": ui_data_raw,
+        }
+        _add_activity_log(
+            article_id, "TikTok Narrated Video Posted",
+            f"<a href=\"{permalink}\" target=\"_blank\">{permalink}</a>\n"
+            f"video_id={video_id}\nrun_ts={run_ts}\n\n"
+            f"--- Diagnostic dump ---\n{json.dumps(diag, indent=2, default=str)[:3500]}",
+            component="narrated")
         try:
             log_social_post(article_id, 'tiktok', 'narrated', video_id, permalink, caption)
         except Exception:
