@@ -474,6 +474,20 @@
                         <i class="fa-brands fa-reddit" style="font-size:14px;width:16px;text-align:center"></i> Reddit
                     </label></li>
                     <!-- Telegram, Vimeo, Mastodon, VK, Tumblr hidden until configured -->
+                    <li><hr class="dropdown-divider my-1"></li>
+                    <li><p class="px-1 pt-1 pb-1 mb-1 border-bottom small fw-semibold text-muted" style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em">Show / Hide Components</p></li>
+                    <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-comp-carousel" onchange="toggleSmcComponent('carousel',this.checked)">
+                        <i class="fa-solid fa-images" style="font-size:13px;width:16px;text-align:center"></i> Carousel
+                    </label></li>
+                    <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-comp-cinemagraph" onchange="toggleSmcComponent('cinemagraph',this.checked)">
+                        <i class="fa-solid fa-film" style="font-size:13px;width:16px;text-align:center"></i> Cinemagraph
+                    </label></li>
+                    <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
+                        <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-comp-narrated" onchange="toggleSmcComponent('narrated',this.checked)">
+                        <i class="fa-solid fa-film" style="font-size:13px;width:16px;text-align:center"></i> Narrated Video
+                    </label></li>
                 </ul>
             </div>
             </div><!-- /d-flex button+kebab wrapper -->
@@ -516,7 +530,7 @@
             </div>
 
     <!-- Instagram Carousel Generator -->
-    <div class="card mb-3">
+    <div class="card mb-3" id="carousel-card">
         <div class="card-header position-relative d-flex align-items-center justify-content-between flex-wrap gap-2 pe-5">
             <div>
                 <h5 class="mb-0">Carousel Generator</h5>
@@ -3154,6 +3168,33 @@ function initSmcNetworkMenu() {
         if (cb) cb.checked = _smcEnabled(key);
     });
     applyAllSmcPrefs();
+}
+
+// ── Social Media Content — Component Visibility Prefs ────────────────────
+var _SMC_COMP_DEFAULTS = {carousel: true, cinemagraph: true, narrated: true};
+var _SMC_COMP_KEY = 'smcComponentPrefs';
+var _SMC_COMP_IDS = {carousel: 'carousel-card', cinemagraph: 'cinemagraph-card', narrated: 'narrated-video-card'};
+function _getSmcCompPrefs() { try { return JSON.parse(localStorage.getItem(_SMC_COMP_KEY)) || {}; } catch(e) { return {}; } }
+function _smcCompEnabled(key) { var p=_getSmcCompPrefs(); return p.hasOwnProperty(key) ? p[key] : true; }
+function toggleSmcComponent(key, enabled) {
+    var p = _getSmcCompPrefs(); p[key] = enabled;
+    localStorage.setItem(_SMC_COMP_KEY, JSON.stringify(p));
+    var el = document.getElementById(_SMC_COMP_IDS[key]);
+    if (el) el.style.display = enabled ? '' : 'none';
+}
+function applyAllSmcCompPrefs() {
+    Object.keys(_SMC_COMP_DEFAULTS).forEach(function(key) {
+        var enabled = _smcCompEnabled(key);
+        var el = document.getElementById(_SMC_COMP_IDS[key]);
+        if (el) el.style.display = enabled ? '' : 'none';
+    });
+}
+function initSmcComponentMenu() {
+    Object.keys(_SMC_COMP_DEFAULTS).forEach(function(key) {
+        var cb = document.getElementById('smc-toggle-comp-' + key);
+        if (cb) cb.checked = _smcCompEnabled(key);
+    });
+    applyAllSmcCompPrefs();
 }
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -9871,6 +9912,7 @@ document.addEventListener('DOMContentLoaded', function() {
         new bootstrap.Tooltip(el);
     });
     initSmcNetworkMenu();
+    initSmcComponentMenu();
     // Last-used captions from previous posts (empty string if never posted)
     var savedCaptions = {
         cine: {{ ig_cine_caption | tojson }},
