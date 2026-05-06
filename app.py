@@ -7600,27 +7600,53 @@ def _add_activity_log(article_id, title, content, component=None):
     """Append an entry to the article's activity log (stored in site_settings)."""
     import datetime as _dt
     key = f"ig_activity_log_{article_id}"
-    raw = get_setting(key)
+    try:
+        raw = get_setting(key)
+        entries = json.loads(raw) if raw else []
+        # Cap each entry's content to avoid hitting column size limits
+        if len(content) > 4000:
+            content = content[:4000] + "\n… (truncated)"
+        entry = {
+            "title":     title,
+            "timestamp": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "content":   content,
+        }
+        if component:
+            entry["component"] = component
+        entries.append(entry)
+        # Keep only the last 50 entries
+        entries = entries[-50:]
+        val = json.dumps(entries)
+        execute(
+            "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (key, val, val),
+        )
+        print(f"[ActivityLog] Wrote entry for article {article_id}: {title!r} (component={component})", flush=True)
+    except Exception as _le:
+        # Never let a logging failure crash the caller
+        import traceback as _tb
+        print(f"[ActivityLog] FAILED to write entry {title!r} for article {article_id}: {_le}", flush=True)
+        print(_tb.format_exc(), flush=True)
+
+
+@app.route("/admin/debug/activity-log/<int:article_id>")
+@login_required
+@admin_required
+def admin_debug_activity_log(article_id):
+    """Dump the raw activity log JSON for an article — bypasses any UI filtering.
+
+    Use to diagnose 'why is no log showing up?' when the panel filters by
+    component or when entries are silently dropped. Shows last 50 entries
+    in reverse-chronological order with no filtering.
+    """
+    raw = get_setting(f"ig_activity_log_{article_id}")
     entries = json.loads(raw) if raw else []
-    # Cap each entry's content to avoid hitting column size limits
-    if len(content) > 4000:
-        content = content[:4000] + "\n… (truncated)"
-    entry = {
-        "title":     title,
-        "timestamp": _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "content":   content,
-    }
-    if component:
-        entry["component"] = component
-    entries.append(entry)
-    # Keep only the last 50 entries
-    entries = entries[-50:]
-    val = json.dumps(entries)
-    execute(
-        "INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-        "ON DUPLICATE KEY UPDATE value = %s",
-        (key, val, val),
-    )
+    return jsonify({
+        "article_id": article_id,
+        "total_entries": len(entries),
+        "entries_reverse_chronological": list(reversed(entries)),
+    })
 
 
 def _ig_api_call(method, url, **kwargs):
@@ -11700,17 +11726,35 @@ def _post_narrated_tiktok_worker(article_id, video_url, caption, run_ts):
 @login_required
 @admin_required
 def admin_post_narrated_to_tiktok(article_id):
+    # Always log entry into this route so we can prove the click reached the server
+    _add_activity_log(article_id, "TikTok Route Hit",
+                      f"POST /post-narrated-to-tiktok received\n"
+                      f"TIKTOK_CONFIGURED={TIKTOK_CONFIGURED}",
+                      component="narrated")
     if not TIKTOK_CONFIGURED:
+        _add_activity_log(article_id, "TikTok Upload Rejected",
+                          "TIKTOK_CONFIGURED is False — credentials not set in env vars.",
+                          component="narrated")
         return jsonify({"error": "TikTok credentials not configured."}), 400
     data      = request.get_json() or {}
     video_url = data.get("video_url", "")
     caption   = data.get("caption", "")
     run_ts    = str(data.get("run_ts", "0"))
     if not video_url:
+        _add_activity_log(article_id, "TikTok Upload Rejected",
+                          "No video_url in request body.", component="narrated")
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"tiktok_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
+    existing_status = get_setting(status_key) or ""
+    if existing_status.startswith("running"):
+        _add_activity_log(article_id, "TikTok Upload Rejected (409)",
+                          f"Already posting this video. Existing status: {existing_status}\n"
+                          f"run_ts={run_ts}\n"
+                          "Clearing stale status so the next click can proceed.",
+                          component="narrated")
+        # Clear the stale status so the user's next click works
+        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+        return jsonify({"error": "Was already posting; cleared stale status — click again."}), 409
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
     _add_activity_log(article_id, "TikTok Upload Started",
