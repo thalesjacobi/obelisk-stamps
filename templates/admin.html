@@ -544,7 +544,10 @@
                                        data-id="{{ a.id }}" data-title="{{ a.title | e }}"
                                        onchange="draftSelectionChanged()">
                             </td>
-                            <td>{{ a.title }}</td>
+                            <td>
+                                {{ a.title }}
+                                <span id="draft-status-{{ a.id }}" class="ms-2"></span>
+                            </td>
                             <td>
                                 <a href="/admin/articles/{{ a.id }}/edit" class="btn btn-outline-secondary btn-sm">Edit</a>
                             </td>
@@ -1563,6 +1566,9 @@ function saveIgCaptionPromptSettings() {
 {% endif %}
 
 // ── Draft Batch Carousel Generation ──────────────────────────────────────
+var _batchPollIds = [];   // article IDs currently being polled
+var _batchPollTimer = null;
+
 function draftSelectionChanged() {
     var cbs = document.querySelectorAll('.draft-select-cb:checked');
     var count = cbs.length;
@@ -1580,7 +1586,6 @@ function draftSelectionChanged() {
     document.querySelectorAll('.draft-select-cb:not(:checked)').forEach(function(cb) {
         cb.disabled = count >= 10;
     });
-    // Update select-all state
     var total = document.querySelectorAll('.draft-select-cb').length;
     if (allCb) {
         allCb.checked = count > 0 && count === total;
@@ -1592,37 +1597,89 @@ function draftToggleAll(checked) {
     var cbs = document.querySelectorAll('.draft-select-cb');
     var selected = 0;
     cbs.forEach(function(cb) {
-        if (checked && selected < 10 && !cb.disabled) {
-            cb.checked = true;
-            selected++;
-        } else if (!checked) {
-            cb.checked = false;
-        }
+        if (checked && selected < 10 && !cb.disabled) { cb.checked = true; selected++; }
+        else if (!checked) { cb.checked = false; }
     });
     draftSelectionChanged();
 }
 
 function draftClearSelection() {
-    document.querySelectorAll('.draft-select-cb').forEach(function(cb) {
-        cb.checked = false;
-        cb.disabled = false;
-    });
+    document.querySelectorAll('.draft-select-cb').forEach(function(cb) { cb.checked = false; cb.disabled = false; });
     var allCb = document.getElementById('draft-select-all');
     if (allCb) { allCb.checked = false; allCb.indeterminate = false; }
     draftSelectionChanged();
+}
+
+function _draftSetRowStatus(id, status) {
+    var cell = document.getElementById('draft-status-' + id);
+    var row  = document.getElementById('draft-row-' + id);
+    if (!cell) return;
+    if (status === 'running') {
+        cell.innerHTML = '<span class="badge bg-primary" style="font-size:.7rem">'
+            + '<span class="spinner-border spinner-border-sm me-1" style="width:.6rem;height:.6rem;border-width:.1em"></span>'
+            + 'Generating…</span>';
+        if (row) row.classList.add('table-primary');
+    } else if (status === 'done') {
+        cell.innerHTML = '<span class="badge bg-success" style="font-size:.7rem"><i class="fa-solid fa-check me-1"></i>Done</span>';
+        if (row) { row.classList.remove('table-primary'); row.classList.add('table-success'); }
+    } else if (status && status.startsWith('error:')) {
+        cell.innerHTML = '<span class="badge bg-danger" style="font-size:.7rem" title="' + status.slice(6) + '">Error</span>';
+        if (row) { row.classList.remove('table-primary'); row.classList.add('table-danger'); }
+    }
+}
+
+function _draftPollBatch() {
+    if (!_batchPollIds.length) return;
+    fetch('/admin/batch-carousel-status', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({article_ids: _batchPollIds})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        var stillRunning = [];
+        var doneCount = 0;
+        _batchPollIds.forEach(function(id) {
+            var st = d[id] || 'idle';
+            _draftSetRowStatus(id, st);
+            if (st === 'running' || st === 'idle') { stillRunning.push(id); }
+            else if (st === 'done') { doneCount++; }
+        });
+        // Update action bar counter
+        var statusEl = document.getElementById('draft-batch-status');
+        if (statusEl && _batchPollIds.length) {
+            var total = _batchPollIds.length;
+            var done  = total - stillRunning.length;
+            if (stillRunning.length > 0) {
+                statusEl.innerHTML = '<span class="text-primary"><span class="spinner-border spinner-border-sm me-1" style="width:.75rem;height:.75rem;border-width:.12em"></span>'
+                    + done + ' / ' + total + ' complete…</span>';
+            } else {
+                statusEl.innerHTML = '<span class="text-success"><i class="fa-solid fa-check me-1"></i>All ' + total + ' done!</span>';
+            }
+        }
+        if (stillRunning.length > 0) {
+            _batchPollTimer = setTimeout(_draftPollBatch, 5000);
+        } else {
+            _batchPollIds = [];
+        }
+    })
+    .catch(function() {
+        // retry silently
+        _batchPollTimer = setTimeout(_draftPollBatch, 8000);
+    });
 }
 
 function draftBatchGenerate() {
     var ids = Array.from(document.querySelectorAll('.draft-select-cb:checked'))
                    .map(function(cb) { return parseInt(cb.dataset.id); });
     if (!ids.length) return;
-    if (!confirm('Generate carousels for ' + ids.length + ' article' + (ids.length > 1 ? 's' : '') + '? This will use DALL-E 3 and may take several minutes.')) return;
+    if (!confirm('Generate carousels for ' + ids.length + ' article' + (ids.length > 1 ? 's' : '') + '?\nThis uses DALL-E 3 (~$0.40/article) and may take several minutes.')) return;
 
     var btn = document.getElementById('draft-batch-generate-btn');
     var statusEl = document.getElementById('draft-batch-status');
     if (btn) btn.disabled = true;
     document.querySelectorAll('.draft-select-cb').forEach(function(cb) { cb.disabled = true; });
-    if (statusEl) statusEl.textContent = 'Queuing…';
+    if (statusEl) statusEl.innerHTML = '<span class="text-muted">Queuing…</span>';
 
     fetch('/admin/batch-generate-carousels', {
         method: 'POST',
@@ -1632,20 +1689,59 @@ function draftBatchGenerate() {
     .then(function(r) { return r.json(); })
     .then(function(d) {
         if (d.ok) {
-            if (statusEl) statusEl.innerHTML =
-                '<span class="text-success"><i class="fa-solid fa-check me-1"></i>' +
-                d.queued + ' article' + (d.queued !== 1 ? 's' : '') + ' queued. ' +
-                'Open each article to monitor progress.</span>';
+            // Mark all rows as queued immediately
+            ids.forEach(function(id) { _draftSetRowStatus(id, 'running'); });
+            // Start polling
+            _batchPollIds = ids.slice();
+            if (_batchPollTimer) clearTimeout(_batchPollTimer);
+            _batchPollTimer = setTimeout(_draftPollBatch, 4000);
             draftClearSelection();
+            // Keep bar visible to show progress
+            var bar = document.getElementById('draft-batch-bar');
+            if (bar) { bar.classList.remove('d-none'); bar.classList.add('d-flex'); }
+            var countEl = document.getElementById('draft-sel-count');
+            if (countEl) countEl.textContent = '0';
         } else {
-            if (statusEl) statusEl.innerHTML = '<span class="text-danger">Error: ' + (d.error || 'Unknown error') + '</span>';
+            if (statusEl) statusEl.innerHTML = '<span class="text-danger">Error: ' + (d.error || 'Unknown') + '</span>';
             if (btn) btn.disabled = false;
+            document.querySelectorAll('.draft-select-cb').forEach(function(cb) { cb.disabled = false; });
         }
     })
     .catch(function(e) {
-        if (statusEl) statusEl.innerHTML = '<span class="text-danger">Network error: ' + e + '</span>';
+        if (statusEl) statusEl.innerHTML = '<span class="text-danger">Network error</span>';
         if (btn) btn.disabled = false;
+        document.querySelectorAll('.draft-select-cb').forEach(function(cb) { cb.disabled = false; });
     });
 }
+
+// Resume polling on page load if any article is mid-generation
+document.addEventListener('DOMContentLoaded', function() {
+    var allIds = Array.from(document.querySelectorAll('.draft-select-cb')).map(function(cb) { return parseInt(cb.dataset.id); });
+    if (!allIds.length) return;
+    fetch('/admin/batch-carousel-status', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({article_ids: allIds})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        var resumeIds = [];
+        allIds.forEach(function(id) {
+            var st = d[id] || 'idle';
+            if (st === 'running') { _draftSetRowStatus(id, 'running'); resumeIds.push(id); }
+            else if (st === 'done') { _draftSetRowStatus(id, 'done'); }
+            else if (st && st.startsWith('error:')) { _draftSetRowStatus(id, st); }
+        });
+        if (resumeIds.length) {
+            _batchPollIds = resumeIds;
+            var bar = document.getElementById('draft-batch-bar');
+            if (bar) { bar.classList.remove('d-none'); bar.classList.add('d-flex'); }
+            var statusEl = document.getElementById('draft-batch-status');
+            if (statusEl) statusEl.innerHTML = '<span class="text-primary"><span class="spinner-border spinner-border-sm me-1" style="width:.75rem;height:.75rem;border-width:.12em"></span>Generating ' + resumeIds.length + ' article' + (resumeIds.length > 1 ? 's' : '') + '…</span>';
+            _batchPollTimer = setTimeout(_draftPollBatch, 4000);
+        }
+    })
+    .catch(function() {});
+});
 </script>
 {% endblock %}

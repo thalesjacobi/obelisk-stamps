@@ -5033,6 +5033,19 @@ def admin_batch_generate_carousels():
     return jsonify({"ok": True, "queued": len(valid_ids), "article_ids": valid_ids})
 
 
+@app.route("/admin/batch-carousel-status", methods=["POST"])
+@login_required
+@admin_required
+def admin_batch_carousel_status():
+    """Return carousel_batch_status for a list of article IDs."""
+    data = request.get_json() or {}
+    ids = [int(i) for i in (data.get("article_ids") or [])[:20]]
+    result = {}
+    for aid in ids:
+        result[aid] = get_setting(f"carousel_batch_status_{aid}") or "idle"
+    return jsonify(result)
+
+
 @app.route("/admin/articles/<int:article_id>/generate-carousel", methods=["POST"])
 @login_required
 @admin_required
