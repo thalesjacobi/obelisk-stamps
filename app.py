@@ -11007,10 +11007,16 @@ def _post_narrated_pinterest_worker(article_id, video_url, caption, run_ts):
         upload_params  = media_data.get("upload_parameters") or {}
         if not media_id or not upload_url:
             if _is_pinterest_auth_error(resp):
-                _set_result("error:Pinterest authentication failed. Re-connect Pinterest in the Admin panel "
-                            "(/admin/pinterest-connect) — your access token is expired or revoked.")
+                msg = ("Pinterest authentication failed. Re-connect Pinterest in the Admin panel "
+                       "(/admin/pinterest-connect) — your access token is expired or revoked.")
+                _set_result(f"error:reconnect:{msg}")
+                _add_activity_log(article_id, "Pinterest Narrated Video Post Failed",
+                                  f"Auth error (media register): HTTP {resp.status_code}\n{media_data}",
+                                  component="narrated")
             else:
                 _set_result(f"error:Media registration failed: {media_data}")
+                _add_activity_log(article_id, "Pinterest Narrated Video Post Failed",
+                                  f"Media registration error: {media_data}", component="narrated")
             return
         print(f"[Pinterest] Media registered: {media_id}", flush=True)
 
@@ -11075,10 +11081,16 @@ def _post_narrated_pinterest_worker(article_id, video_url, caption, run_ts):
         pin_id   = pin_data.get("id")
         if not pin_id:
             if _is_pinterest_auth_error(resp_pin):
-                _set_result("error:Pinterest authentication failed during pin creation. "
-                            "Re-connect Pinterest in the Admin panel.")
+                msg = ("Pinterest authentication failed during pin creation. "
+                       "Re-connect Pinterest in the Admin panel (/admin/pinterest-connect).")
+                _set_result(f"error:reconnect:{msg}")
+                _add_activity_log(article_id, "Pinterest Narrated Video Post Failed",
+                                  f"Auth error (pin create): HTTP {resp_pin.status_code}\n{pin_data}",
+                                  component="narrated")
             else:
                 _set_result(f"error:Pin creation failed: {pin_data}")
+                _add_activity_log(article_id, "Pinterest Narrated Video Post Failed",
+                                  f"Pin creation error: {pin_data}", component="narrated")
             return
 
         permalink = f"https://www.pinterest.com/pin/{pin_id}/"

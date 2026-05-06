@@ -7050,7 +7050,12 @@ function pollNvPinterestStatus(ts) {
             if (d.result && d.result.startsWith('done:')) {
                 showNvPinterestDone(ts, d.result.slice(5));
             } else if (d.result && d.result.startsWith('error:')) {
-                showNvPinterestError(ts, d.result.slice(6));
+                var rawPErr = d.result.slice(6);
+                if (rawPErr.startsWith('reconnect:')) {
+                    showNvPinterestReconnect(ts, rawPErr.slice(10));
+                } else {
+                    showNvPinterestError(ts, rawPErr);
+                }
             } else {
                 showNvPinterestRunning(ts, d.status || '');
                 pollNvPinterestStatus(ts);
@@ -7132,6 +7137,26 @@ function showNvPinterestError(ts, msg) {
     }
     var postBtn = document.getElementById(_nvPinterestId(ts, 'post-btn'));
     if (postBtn) postBtn.disabled = false;
+}
+
+function showNvPinterestReconnect(ts, msg) {
+    var area     = document.getElementById(_nvPinterestId(ts, 'status-area'));
+    var running  = document.getElementById(_nvPinterestId(ts, 'status-running'));
+    var progress = document.getElementById(_nvPinterestId(ts, 'progress-wrap'));
+    var result   = document.getElementById(_nvPinterestId(ts, 'result'));
+    if (!area) return;
+    area.classList.remove('d-none');
+    if (running) running.classList.add('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (result) {
+        result.classList.remove('d-none');
+        result.innerHTML = '<div class="alert alert-warning py-2 px-3 small mb-0 d-flex align-items-center gap-2">' +
+            '<span>' + msg + '</span>' +
+            '<a href="/admin/pinterest-connect" class="btn btn-sm btn-warning ms-auto text-nowrap">Reconnect Pinterest</a>' +
+            '</div>';
+    }
+    var postBtn = document.getElementById(_nvPinterestId(ts, 'post-btn'));
+    if (postBtn) postBtn.disabled = true;
 }
 
 function nvPinterestCheckPostLive(ts) {
