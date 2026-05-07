@@ -2171,6 +2171,31 @@ function saveArticle() {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
+            // Also persist the schedule field if the user typed a datetime
+            // and the article isn't being published right now
+            var schInput = document.getElementById('schedule-publish-input');
+            var saveSchedule = ARTICLE_ID && schInput && schInput.value && !payload.is_published;
+            if (saveSchedule) {
+                return fetch('/admin/articles/' + ARTICLE_ID + '/schedule-publish', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({scheduled_at: schInput.value})
+                })
+                .then(r2 => r2.json())
+                .then(d2 => {
+                    if (d2.ok) {
+                        var chipWhen = document.getElementById('schedule-chip-when');
+                        var chipView = document.getElementById('schedule-chip-view');
+                        var pickView = document.getElementById('schedule-pick-view');
+                        if (chipWhen) chipWhen.textContent = d2.scheduled_at_human;
+                        if (chipView) chipView.classList.remove('d-none');
+                        if (pickView) pickView.classList.add('d-none');
+                        showStatus('Saved + scheduled for ' + d2.scheduled_at_human + '.', true);
+                    } else {
+                        showStatus('Article saved, but schedule failed: ' + (d2.error || 'unknown'), false);
+                    }
+                });
+            }
             showStatus('Saved successfully.', true);
             // If this was a new article, redirect to its edit page
             if (!ARTICLE_ID && data.id) {
