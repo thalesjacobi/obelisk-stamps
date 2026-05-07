@@ -279,6 +279,38 @@
                     {% endif %}
                 </div>
 
+                {# Schedule publishing — only for drafts #}
+                {% if article and article.id and not article.is_published %}
+                <div class="col-auto" id="schedule-publish-wrap">
+                    <label class="form-label fw-semibold mb-1 small">
+                        Schedule publishing
+                        <span class="text-muted" style="cursor:help"
+                              data-bs-toggle="tooltip" data-bs-placement="top"
+                              title="Set a date &amp; time and the article will auto-publish when that moment is reached. Publishing happens during admin page visits — accuracy depends on traffic. For minute-precise timing, set up a Cloud Scheduler ping.">
+                            <i class="fa-regular fa-circle-question small"></i>
+                        </span>
+                    </label>
+                    {# View 1: Saved schedule (chip) #}
+                    <div id="schedule-chip-view" class="{% if not article.scheduled_publish_at_iso %}d-none{% endif %}">
+                        <span class="badge bg-info text-dark p-2" id="schedule-chip-text">
+                            <i class="fa-regular fa-calendar me-1"></i>
+                            Will publish on <span id="schedule-chip-when">{{ article.scheduled_publish_at_human }}</span>
+                        </span>
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" onclick="cancelScheduledPublish()" title="Cancel schedule">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    {# View 2: Pick a time #}
+                    <div id="schedule-pick-view" class="{% if article.scheduled_publish_at_iso %}d-none{% endif %} d-flex align-items-center gap-1">
+                        <input type="datetime-local" id="schedule-publish-input" class="form-control form-control-sm" style="max-width:200px;">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="saveScheduledPublish()">
+                            <i class="fa-regular fa-clock me-1"></i>Schedule
+                        </button>
+                    </div>
+                    <div id="schedule-error" class="text-danger small mt-1 d-none"></div>
+                </div>
+                {% endif %}
+
                 <!-- Slug -->
                 <div class="col">
                     <label class="form-label fw-semibold mb-1">Slug <span class="text-muted fw-normal small">(URL path)</span></label>
@@ -339,83 +371,6 @@
         </defs>
     </svg>
 
-    <!-- ── Engagement & Analytics ─────────────────────────────────────── -->
-    <div class="card mb-4">
-        <div class="card-header d-flex align-items-center gap-2">
-            <h5 class="mb-0"><i class="fa-solid fa-chart-line me-1"></i>Engagement &amp; Analytics</h5>
-            <button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="engagement-refresh-btn" onclick="refreshEngagement()">
-                <i class="fa-solid fa-arrows-rotate me-1"></i>Refresh Metrics
-            </button>
-        </div>
-        <div class="card-body">
-            <div id="engagement-loading" class="d-none text-center py-3">
-                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-                Fetching metrics from platform APIs...
-            </div>
-            <div id="engagement-empty" class="text-muted small text-center py-3">
-                No engagement data yet. Click <strong>Refresh Metrics</strong> to fetch from platform APIs.
-            </div>
-            <div id="engagement-content" class="d-none">
-                <!-- Totals row -->
-                <div class="d-flex flex-wrap gap-3 mb-3" id="engagement-totals"></div>
-                <!-- Platform breakdown table -->
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover mb-2" id="engagement-table">
-                        <thead>
-                            <tr>
-                                <th>Platform</th>
-                                <th class="text-end" title="Likes / reactions">Likes</th>
-                                <th class="text-end" title="Video views or post views (where reported)">Views</th>
-                                <th class="text-end" title="Shares / reposts">Shares</th>
-                                <th class="text-end">Comments</th>
-                                <th class="text-end" title="Saves / bookmarks (Instagram, Pinterest)">Saves</th>
-                                <th class="text-end" style="cursor:help"
-                                    title="Clicks on the tracked short URL (obelisk-stamps.com/a/XXXX) we mint for each platform when you generate its caption. Hits from known bots and link-preview crawlers (Facebook's external hit, LinkedInBot, Slackbot, etc.) are filtered out. The raw total including bots is shown in parentheses.">Link Clicks <i class="fa-regular fa-circle-question text-muted ms-1" style="font-size:.75em"></i></th>
-                                <th class="text-end" title="Impressions (where reported)">Impr.</th>
-                                <th class="text-end" title="Unique users reached (where reported)">Reach</th>
-                                <th class="text-end" title="Orders attributed via UTM tag for this platform">Orders</th>
-                            </tr>
-                        </thead>
-                        <tbody id="engagement-tbody"></tbody>
-                        <tfoot id="engagement-tfoot"></tfoot>
-                    </table>
-                </div>
-                <!-- Per content-type breakdown -->
-                <div id="engagement-by-ct-wrap" class="mb-2 d-none">
-                    <details>
-                        <summary class="small text-muted" style="cursor:pointer">
-                            <i class="fa-solid fa-layer-group me-1"></i>Per content-type breakdown
-                        </summary>
-                        <div class="table-responsive mt-2">
-                            <table class="table table-sm table-bordered small mb-0" id="engagement-by-ct-table">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Platform</th>
-                                        <th>Content</th>
-                                        <th class="text-end">Likes</th>
-                                        <th class="text-end">Views</th>
-                                        <th class="text-end">Shares</th>
-                                        <th class="text-end">Comments</th>
-                                        <th class="text-end">Saves</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="engagement-by-ct-tbody"></tbody>
-                            </table>
-                        </div>
-                    </details>
-                </div>
-                <div class="d-flex align-items-center gap-2">
-                    <small class="text-muted" id="engagement-updated"></small>
-                    {% if ga_measurement_id %}
-                    <a href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener" class="ms-auto small">
-                        <i class="fa-solid fa-chart-bar me-1"></i>Open Google Analytics
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- ══════════════════════════════════════════════════════════
          Social Media Content — Master Component
          ══════════════════════════════════════════════════════════ -->
@@ -431,7 +386,22 @@
                         style="font-size:1.4rem;text-decoration:none;letter-spacing:.15em"
                         data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
                         title="Show / hide social networks">&#8943;</button>
-                <ul class="dropdown-menu dropdown-menu-end shadow-sm p-2" style="min-width:210px">
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm p-2" style="min-width:240px">
+                    <li><p class="px-1 pt-0 pb-1 mb-1 border-bottom small fw-semibold text-muted" style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em">Workflow</p></li>
+                    <li>
+                        <span class="d-inline-block w-100" tabindex="0"
+                              data-bs-toggle="tooltip" data-bs-placement="left"
+                              title="This feature is not yet available">
+                            <button type="button" class="dropdown-item d-flex align-items-center gap-2 small rounded"
+                                    id="smc-workflow-btn"
+                                    style="opacity:.55;pointer-events:none"
+                                    disabled>
+                                <i class="fa-solid fa-play" style="font-size:13px;width:16px;text-align:center"></i>
+                                Accept images &amp; start workflow
+                            </button>
+                        </span>
+                    </li>
+                    <li><hr class="dropdown-divider my-1"></li>
                     <li><p class="px-1 pt-0 pb-1 mb-1 border-bottom small fw-semibold text-muted" style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em">Show / Hide Networks</p></li>
                     <li><label class="d-flex align-items-center gap-2 px-2 py-1 rounded small mb-0" style="cursor:pointer">
                         <input type="checkbox" class="form-check-input mt-0 flex-shrink-0" id="smc-toggle-ig" onchange="toggleSmcNetwork('ig',this.checked)">
@@ -493,22 +463,6 @@
             </div><!-- /d-flex button+kebab wrapper -->
         </div>
         <div class="card-body p-3">
-            <!-- Accept & Start Workflow Button -->
-            <div class="mb-3 d-flex align-items-center gap-2" id="smc-workflow-btn-wrap">
-                <button type="button" class="btn btn-success" id="smc-workflow-btn"
-                        onclick="smcWfConfirmStart()" disabled>
-                    <i class="fa-solid fa-play me-1"></i>Accept images &amp; start workflow
-                </button>
-                <span class="text-muted" style="cursor:help" id="smc-workflow-btn-tip">
-                    <i class="fa-solid fa-circle-exclamation text-warning"></i>
-                </span>
-                <span class="text-muted" style="cursor:help"
-                      data-bs-toggle="tooltip" data-bs-placement="right" data-bs-html="true"
-                      title="<strong>Automation Workflow</strong><br>1. Generate caption (OpenAI)<br>2. Post cinemagraph to Instagram<br>3. Post carousel images to Facebook &amp; LinkedIn<br>4. Generate narrated video<br>5. Post narrated video to all platforms<br><br>Disabled networks and unconfigured platforms are skipped automatically. You can pause or abort at any time.">
-                    <i class="fa-solid fa-circle-info"></i>
-                </span>
-            </div>
-
             <!-- Automation Workflow Progress Panel -->
             <div id="smc-workflow-panel" class="d-none border rounded p-3 bg-light mb-3">
                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -716,658 +670,6 @@
             {% endif %}
             </div><!-- /car-ig-body -->
             </div><!-- /smc-ig -->
-            <div data-smc-net="fb">
-            <!-- Facebook Carousel Posting -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="toggleFbSection('car')">
-                <i id="car-fb-icon" class="fa-brands fa-facebook smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to Facebook</span>
-                <svg id="car-fb-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-fb-body" class="d-none pt-1">
-                {% if fb_configured %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-fb-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from your Facebook Page. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" onclick="event.preventDefault(); copyIgCaptionToFb('car')">Copy from Instagram</a>
-                    </div>
-                    <textarea id="car-fb-caption" class="form-control form-control-sm" rows="3"
-                              placeholder="Write your Facebook caption…"
-                              maxlength="2200"
-                              oninput="document.getElementById('car-fb-char-count').textContent=this.value.length+' / 2200'"></textarea>
-                    <div class="text-end text-muted small" id="car-fb-char-count">0 / 2200</div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-fb-btn-row">
-                    <button type="button" class="btn btn-sm btn-dark" onclick="postToFacebook('car')" id="car-fb-post-btn">
-                        <i class="fa-brands fa-facebook me-1"></i>Post to Facebook
-                    </button>
-                </div>
-                <div id="car-fb-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="car-fb-status-running">
-                        <div class="spinner-border spinner-border-sm text-primary"></div>
-                        <span id="car-fb-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="car-fb-progress-wrap">
-                        <div id="car-fb-progress-bar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="car-fb-result" class="d-none small"></div>
-                    <div id="car-fb-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-fb-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="car-fb-history-list"></div>
-                    </div>
-                </div>
-                {% else %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    Facebook Page credentials not configured.
-                    Set <code>FB_PAGE_ID</code> and <code>FB_PAGE_ACCESS_TOKEN</code> in your environment.
-                </div>
-                {% endif %}
-            </div><!-- /car-fb-body -->
-            </div><!-- /smc-fb -->
-            <div data-smc-net="x">
-            <!-- X Carousel Posting -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="toggleXSection('car')">
-                <i id="car-x-icon" class="fa-brands fa-x-twitter smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to X</span>
-                <svg id="car-x-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-x-body" class="d-none pt-1">
-                {% if not x_configured %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    X credentials not configured.
-                    Set <code>X_API_KEY</code>, <code>X_API_SECRET</code>, <code>X_ACCESS_TOKEN</code>,
-                    and <code>X_ACCESS_TOKEN_SECRET</code> in your environment.
-                </div>
-                {% else %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-x-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from X. It will be saved below in Past Posts for your records.">?</span></label>
-                        <select class="form-select form-select-sm ms-auto ig-section-link" id="car-x-copy-link" style="width:auto;font-size:0.75rem;padding:.05rem 1.4rem .05rem .4rem;"
-                                onmousedown="_populateCaptionSourceSelect(this, 'car', 'x', 280)"
-                                onchange="_handleCaptionSourceChange(this, 'car', 'x', 280)">
-                            <option value="">Fill caption…</option>
-                        </select>
-                    </div>
-                    <textarea id="car-x-caption" class="form-control form-control-sm" rows="3"
-                              maxlength="280" placeholder="Write your X caption… #stamps #philately"
-                              oninput="document.getElementById('car-x-char-count').textContent=this.value.length+' / 280'"></textarea>
-                    <div class="text-end text-muted small mt-1" id="car-x-char-count">0 / 280</div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-x-btn-row">
-                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToX('car')" id="car-x-post-btn">
-                        <i class="fa-brands fa-x-twitter me-1"></i>Post to X
-                    </button>
-                </div>
-                <div id="car-x-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="car-x-status-running">
-                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
-                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
-                        <span id="car-x-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="car-x-progress-wrap">
-                        <div id="car-x-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="car-x-result" class="d-none small"></div>
-                    <div id="car-x-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-x-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="car-x-history-list"></div>
-                    </div>
-                </div>
-                {% endif %}
-            </div><!-- /car-x-body -->
-            </div><!-- /smc-x -->
-            <div data-smc-net="threads">
-            <!-- Threads Carousel Posting -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="toggleThreadsSection('car')">
-                <i id="car-threads-icon" class="fa-brands fa-threads smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to Threads</span>
-                <svg id="car-threads-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-threads-body" class="d-none pt-1">
-                {% if not threads_configured %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    Threads credentials not configured.
-                    Set <code>THREADS_USER_ID</code> and <code>THREADS_ACCESS_TOKEN</code> in your environment.
-                </div>
-                {% else %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-threads-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Archive post&#39; to archive it from Threads. It will be saved below in Past Posts for your records.">?</span></label>
-                        <select class="form-select form-select-sm ms-auto ig-section-link" id="car-threads-copy-link" style="width:auto;font-size:0.75rem;padding:.05rem 1.4rem .05rem .4rem;"
-                                onmousedown="_populateCaptionSourceSelect(this, 'car', 'threads', 500)"
-                                onchange="_handleCaptionSourceChange(this, 'car', 'threads', 500)">
-                            <option value="">Fill caption…</option>
-                        </select>
-                    </div>
-                    <textarea id="car-threads-caption" class="form-control form-control-sm" rows="3"
-                              maxlength="500" placeholder="Write your Threads caption… #stamps #philately"
-                              oninput="document.getElementById('car-threads-char-count').textContent=this.value.length+' / 500'"></textarea>
-                    <div class="text-end text-muted small mt-1" id="car-threads-char-count">0 / 500</div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-threads-btn-row">
-                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToThreads('car')" id="car-threads-post-btn">
-                        <i class="fa-brands fa-threads me-1"></i>Post to Threads
-                    </button>
-                </div>
-                <div id="car-threads-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="car-threads-status-running">
-                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
-                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
-                        <span id="car-threads-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="car-threads-progress-wrap">
-                        <div id="car-threads-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="car-threads-result" class="d-none small"></div>
-                    <div id="car-threads-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-threads-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="car-threads-history-list"></div>
-                    </div>
-                </div>
-                {% endif %}
-            </div><!-- /car-threads-body -->
-            </div><!-- /smc-threads -->
-            <div data-smc-net="pinterest">
-            <!-- Pinterest Carousel Posting -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="togglePinterestSection('car')">
-                <i id="car-pinterest-icon" class="fa-brands fa-pinterest smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to Pinterest</span>
-                <a href="/admin/pinterest-connect" class="small text-muted ms-auto me-2" style="font-size:0.7rem;white-space:nowrap" onclick="event.stopPropagation()" title="Reconnect Pinterest account">Reconnect</a>
-                <svg id="car-pinterest-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-pinterest-body" class="d-none pt-1">
-                {% if not pinterest_configured %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    Pinterest board ID not configured. Set <code>PINTEREST_BOARD_ID</code> as a GitHub Secret.
-                </div>
-                {% else %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-pinterest-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Pinterest. It will be saved below in Past Posts for your records.">?</span></label>
-                        <select class="form-select form-select-sm ms-auto ig-section-link" id="car-pinterest-copy-link" style="width:auto;font-size:0.75rem;padding:.05rem 1.4rem .05rem .4rem;"
-                                onmousedown="_populateCaptionSourceSelect(this, 'car', 'pinterest', 800)"
-                                onchange="_handleCaptionSourceChange(this, 'car', 'pinterest', 800)">
-                            <option value="">Fill caption…</option>
-                        </select>
-                    </div>
-                    <textarea id="car-pinterest-caption" class="form-control form-control-sm" rows="3"
-                              maxlength="800" placeholder="Write your Pinterest description… #stamps #philately"
-                              oninput="document.getElementById('car-pinterest-char-count').textContent=this.value.length+' / 800'"></textarea>
-                    <div class="text-end text-muted small mt-1" id="car-pinterest-char-count">0 / 800</div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-pinterest-btn-row">
-                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToPinterest('car')" id="car-pinterest-post-btn">
-                        <i class="fa-brands fa-pinterest me-1"></i>Post to Pinterest
-                    </button>
-                </div>
-                <div id="car-pinterest-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="car-pinterest-status-running">
-                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
-                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
-                        <span id="car-pinterest-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="car-pinterest-progress-wrap">
-                        <div id="car-pinterest-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="car-pinterest-result" class="d-none small"></div>
-                    <div id="car-pinterest-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-pinterest-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="car-pinterest-history-list"></div>
-                    </div>
-                </div>
-                {% endif %}
-            </div><!-- /car-pinterest-body -->
-            </div><!-- /smc-pinterest -->
-            <div data-smc-net="linkedin">
-            <!-- LinkedIn Carousel Posting -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="toggleLinkedinSection('car')">
-                <i id="car-linkedin-icon" class="fa-brands fa-linkedin smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to LinkedIn</span>
-                <svg id="car-linkedin-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-linkedin-body" class="d-none pt-1">
-                {% if not linkedin_configured %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    LinkedIn credentials not configured.
-                    Set <code>LINKEDIN_ACCESS_TOKEN</code> and <code>LINKEDIN_PERSON_URN</code> in your environment.
-                </div>
-                {% else %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-linkedin-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from LinkedIn. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" id="car-linkedin-copy-link"
-                           onclick="event.preventDefault(); copyIgCaptionToLinkedin('car')">Copy from Instagram</a>
-                    </div>
-                    <textarea id="car-linkedin-caption" class="form-control form-control-sm" rows="3"
-                              maxlength="3000" placeholder="Write your LinkedIn post… #stamps #philately"
-                              oninput="document.getElementById('car-linkedin-char-count').textContent=this.value.length+' / 3000'"></textarea>
-                    <div class="text-end text-muted small mt-1" id="car-linkedin-char-count">0 / 3000</div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-linkedin-btn-row">
-                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToLinkedin()" id="car-linkedin-post-btn">
-                        <i class="fa-brands fa-linkedin me-1"></i>Post to LinkedIn
-                    </button>
-                </div>
-                <div id="car-linkedin-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="car-linkedin-status-running">
-                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
-                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
-                        <span id="car-linkedin-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="car-linkedin-progress-wrap">
-                        <div id="car-linkedin-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="car-linkedin-result" class="d-none small"></div>
-                    <div id="car-linkedin-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-linkedin-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="car-linkedin-history-list"></div>
-                    </div>
-                </div>
-                {% endif %}
-            </div><!-- /car-linkedin-body -->
-            </div><!-- /smc-linkedin -->
-            <div data-smc-net="bluesky">
-            <!-- Bluesky Carousel Posting -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="toggleBlueskySection('car')">
-                <i id="car-bluesky-icon" class="fa-brands fa-bluesky smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to Bluesky</span>
-                <svg id="car-bluesky-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-bluesky-body" class="d-none pt-1">
-                {% if not bluesky_configured %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    Bluesky credentials not configured.
-                    Set <code>BLUESKY_HANDLE</code> and <code>BLUESKY_APP_PASSWORD</code> in your environment.
-                </div>
-                {% else %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-bluesky-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Bluesky. It will be saved below in Past Posts for your records.">?</span></label>
-                        <select class="form-select form-select-sm ms-auto ig-section-link" id="car-bluesky-copy-link" style="width:auto;font-size:0.75rem;padding:.05rem 1.4rem .05rem .4rem;"
-                                onmousedown="_populateCaptionSourceSelect(this, 'car', 'bluesky', 300)"
-                                onchange="_handleCaptionSourceChange(this, 'car', 'bluesky', 300)">
-                            <option value="">Fill caption…</option>
-                        </select>
-                    </div>
-                    <textarea id="car-bluesky-caption" class="form-control form-control-sm" rows="3"
-                              maxlength="300" placeholder="Write your Bluesky caption… #stamps #philately"
-                              oninput="document.getElementById('car-bluesky-char-count').textContent=this.value.length+' / 300'"></textarea>
-                    <div class="text-end text-muted small mt-1" id="car-bluesky-char-count">0 / 300</div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-bluesky-btn-row">
-                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToBluesky('car')" id="car-bluesky-post-btn">
-                        <i class="fa-brands fa-bluesky me-1"></i>Post to Bluesky
-                    </button>
-                </div>
-                <div id="car-bluesky-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="car-bluesky-status-running">
-                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
-                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
-                        <span id="car-bluesky-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="car-bluesky-progress-wrap">
-                        <div id="car-bluesky-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="car-bluesky-result" class="d-none small"></div>
-                    <div id="car-bluesky-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-bluesky-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="car-bluesky-history-list"></div>
-                    </div>
-                </div>
-                {% endif %}
-            </div><!-- /car-bluesky-body -->
-            </div><!-- /smc-bluesky -->
-            <div data-smc-net="reddit">
-            <!-- Reddit Carousel Posting -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="toggleRedditSection('car')">
-                <i id="car-reddit-icon" class="fa-brands fa-reddit smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to Reddit</span>
-                <svg id="car-reddit-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-reddit-body" class="d-none pt-1">
-                {% if not reddit_configured %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    Reddit credentials not configured.
-                    Set <code>REDDIT_CLIENT_ID</code>, <code>REDDIT_CLIENT_SECRET</code>, and <code>REDDIT_REFRESH_TOKEN</code> in your environment.
-                </div>
-                {% else %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-reddit-caption">Title<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Reddit. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" id="car-reddit-copy-link"
-                           onclick="event.preventDefault(); copyIgCaptionToReddit('car')">Copy from Instagram</a>
-                    </div>
-                    <textarea id="car-reddit-caption" class="form-control form-control-sm" rows="3"
-                              maxlength="300" placeholder="Write your Reddit title… #stamps #philately"
-                              oninput="document.getElementById('car-reddit-char-count').textContent=this.value.length+' / 300'"></textarea>
-                    <div class="text-end text-muted small mt-1" id="car-reddit-char-count">0 / 300</div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-reddit-btn-row">
-                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToReddit('car')" id="car-reddit-post-btn">
-                        <i class="fa-brands fa-reddit me-1"></i>Post to Reddit
-                    </button>
-                </div>
-                <div id="car-reddit-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="car-reddit-status-running">
-                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
-                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
-                        <span id="car-reddit-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="car-reddit-progress-wrap">
-                        <div id="car-reddit-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="car-reddit-result" class="d-none small"></div>
-                    <div id="car-reddit-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-reddit-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="car-reddit-history-list"></div>
-                    </div>
-                </div>
-                {% endif %}
-            </div><!-- /car-reddit-body -->
-            </div><!-- /smc-reddit -->
-            <div data-smc-net="telegram">
-            <!-- Telegram Carousel Posting -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="toggleTelegramSection('car')">
-                <i id="car-telegram-icon" class="fa-brands fa-telegram smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to Telegram</span>
-                <svg id="car-telegram-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-telegram-body" class="d-none pt-1">
-                {% if not telegram_configured %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    Telegram credentials not configured.
-                    Set <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> in your environment.
-                </div>
-                {% else %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-telegram-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Telegram. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" id="car-telegram-copy-link"
-                           onclick="event.preventDefault(); copyIgCaptionToTelegram('car')">Copy from Instagram</a>
-                    </div>
-                    <textarea id="car-telegram-caption" class="form-control form-control-sm" rows="3"
-                              maxlength="1024" placeholder="Write your Telegram caption… #stamps #philately"
-                              oninput="document.getElementById('car-telegram-char-count').textContent=this.value.length+' / 1024'"></textarea>
-                    <div class="text-end text-muted small mt-1" id="car-telegram-char-count">0 / 1024</div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-telegram-btn-row">
-                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToTelegram('car')" id="car-telegram-post-btn">
-                        <i class="fa-brands fa-telegram me-1"></i>Post to Telegram
-                    </button>
-                </div>
-                <div id="car-telegram-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="car-telegram-status-running">
-                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
-                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
-                        <span id="car-telegram-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="car-telegram-progress-wrap">
-                        <div id="car-telegram-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="car-telegram-result" class="d-none small"></div>
-                    <div id="car-telegram-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-telegram-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="car-telegram-history-list"></div>
-                    </div>
-                </div>
-                {% endif %}
-            </div><!-- /car-telegram-body -->
-            </div><!-- /smc-telegram -->
-            <div data-smc-net="vimeo">
-            <!-- Vimeo Carousel (not supported) -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="toggleVimeoSection('car')">
-                <i id="car-vimeo-icon" class="fa-brands fa-vimeo smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to Vimeo</span>
-                <svg id="car-vimeo-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-vimeo-body" class="d-none pt-1">
-                <div class="alert alert-info small mb-0 d-flex align-items-center gap-2" style="padding:.6rem .8rem">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                    <span>Vimeo does not support image posts. Use <strong>Narrated Videos</strong> to post to Vimeo instead.</span>
-                </div>
-            </div>
-            </div><!-- /smc-vimeo -->
-            <div data-smc-net="mastodon">
-            <!-- Mastodon Carousel Posting -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="toggleMastodonSection('car')">
-                <i id="car-mastodon-icon" class="fa-brands fa-mastodon smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to Mastodon</span>
-                <svg id="car-mastodon-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-mastodon-body" class="d-none pt-1">
-                {% if not mastodon_configured %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    Mastodon credentials not configured.
-                    Set <code>MASTODON_INSTANCE_URL</code> and <code>MASTODON_ACCESS_TOKEN</code> in your environment.
-                </div>
-                {% else %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-mastodon-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Mastodon. It will be saved below in Past Posts for your records.">?</span></label>
-                        <select class="form-select form-select-sm ms-auto ig-section-link" id="car-mastodon-copy-link" style="width:auto;font-size:0.75rem;padding:.05rem 1.4rem .05rem .4rem;"
-                                onmousedown="_populateCaptionSourceSelect(this, 'car', 'mastodon', 500)"
-                                onchange="_handleCaptionSourceChange(this, 'car', 'mastodon', 500)">
-                            <option value="">Fill caption…</option>
-                        </select>
-                    </div>
-                    <textarea id="car-mastodon-caption" class="form-control form-control-sm" rows="3"
-                              maxlength="500" placeholder="Write your Mastodon caption… #stamps #philately"
-                              oninput="document.getElementById('car-mastodon-char-count').textContent=this.value.length+' / 500'"></textarea>
-                    <div class="text-end text-muted small mt-1" id="car-mastodon-char-count">0 / 500</div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-mastodon-btn-row">
-                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToMastodon('car')" id="car-mastodon-post-btn">
-                        <i class="fa-brands fa-mastodon me-1"></i>Post to Mastodon
-                    </button>
-                </div>
-                <div id="car-mastodon-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="car-mastodon-status-running">
-                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
-                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
-                        <span id="car-mastodon-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="car-mastodon-progress-wrap">
-                        <div id="car-mastodon-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="car-mastodon-result" class="d-none small"></div>
-                    <div id="car-mastodon-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-mastodon-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="car-mastodon-history-list"></div>
-                    </div>
-                </div>
-                {% endif %}
-            </div><!-- /car-mastodon-body -->
-            </div><!-- /smc-mastodon -->
-            <div data-smc-net="vk">
-            <!-- VK Carousel Posting -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="toggleVkSection('car')">
-                <i id="car-vk-icon" class="fa-brands fa-vk smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to VK</span>
-                <svg id="car-vk-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-vk-body" class="d-none pt-1">
-                {% if not vk_configured %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    VK credentials not configured.
-                    Set <code>VK_ACCESS_TOKEN</code> and <code>VK_GROUP_ID</code> in your environment.
-                </div>
-                {% else %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-vk-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from VK. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" id="car-vk-copy-link"
-                           onclick="event.preventDefault(); copyIgCaptionToVk('car')">Copy from Instagram</a>
-                    </div>
-                    <textarea id="car-vk-caption" class="form-control form-control-sm" rows="3"
-                              maxlength="16384" placeholder="Write your VK caption… #stamps #philately"
-                              oninput="document.getElementById('car-vk-char-count').textContent=this.value.length+' / 16384'"></textarea>
-                    <div class="text-end text-muted small mt-1" id="car-vk-char-count">0 / 16384</div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-vk-btn-row">
-                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToVk('car')" id="car-vk-post-btn">
-                        <i class="fa-brands fa-vk me-1"></i>Post to VK
-                    </button>
-                </div>
-                <div id="car-vk-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="car-vk-status-running">
-                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
-                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
-                        <span id="car-vk-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="car-vk-progress-wrap">
-                        <div id="car-vk-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="car-vk-result" class="d-none small"></div>
-                    <div id="car-vk-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-vk-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="car-vk-history-list"></div>
-                    </div>
-                </div>
-                {% endif %}
-            </div><!-- /car-vk-body -->
-            </div><!-- /smc-vk -->
-            <div data-smc-net="tumblr">
-            <!-- Tumblr Carousel Posting -->
-            <hr class="mt-3 mb-0">
-            <div class="d-flex align-items-center gap-2 py-2 user-select-none"
-                 style="cursor:pointer" onclick="toggleTumblrSection('car')">
-                <i id="car-tumblr-icon" class="fa-brands fa-tumblr smc-net-icon" style="font-size:15px;width:15px;text-align:center;flex-shrink:0"></i>
-                <span class="small fw-semibold">Post Carousel Images to Tumblr</span>
-                <svg id="car-tumblr-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" class="ms-auto me-1"
-                     style="transition:transform 0.2s;flex-shrink:0">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <div id="car-tumblr-body" class="d-none pt-1">
-                {% if not tumblr_configured %}
-                <div class="alert alert-warning py-2 small mb-0">
-                    Tumblr credentials not configured.
-                    Set <code>TUMBLR_API_KEY</code> and <code>TUMBLR_BLOG_NAME</code> in your environment.
-                </div>
-                {% else %}
-                <div class="mb-2">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <label class="small text-muted mb-0" for="car-tumblr-caption">Caption<span class="ig-caption-tooltip" data-tip="Click &#39;Delete and archive post&#39; to remove it from Tumblr. It will be saved below in Past Posts for your records.">?</span></label>
-                        <a href="#" class="small ms-auto ig-section-link" id="car-tumblr-copy-link"
-                           onclick="event.preventDefault(); copyIgCaptionToTumblr('car')">Copy from Instagram</a>
-                    </div>
-                    <textarea id="car-tumblr-caption" class="form-control form-control-sm" rows="3"
-                              maxlength="4096" placeholder="Write your Tumblr caption… #stamps #philately"
-                              oninput="document.getElementById('car-tumblr-char-count').textContent=this.value.length+' / 4096'"></textarea>
-                    <div class="text-end text-muted small mt-1" id="car-tumblr-char-count">0 / 4096</div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap align-items-center mb-2" id="car-tumblr-btn-row">
-                    <button type="button" class="btn btn-sm btn-dark" onclick="postCarouselToTumblr('car')" id="car-tumblr-post-btn">
-                        <i class="fa-brands fa-tumblr me-1"></i>Post to Tumblr
-                    </button>
-                </div>
-                <div id="car-tumblr-status-area" class="d-none">
-                    <div class="d-flex align-items-center gap-2 mb-1" id="car-tumblr-status-running">
-                        <div class="spinner-border spinner-border-sm text-secondary" role="status"
-                             style="width:.9rem;height:.9rem;border-width:.12em"></div>
-                        <span id="car-tumblr-status-text" class="text-muted small">Starting…</span>
-                    </div>
-                    <div class="progress mb-2" style="height:4px" id="car-tumblr-progress-wrap">
-                        <div id="car-tumblr-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width:0%"></div>
-                    </div>
-                    <div id="car-tumblr-result" class="d-none small"></div>
-                    <div id="car-tumblr-history" class="d-none mt-3">
-                        <a class="small fw-semibold text-decoration-none d-flex align-items-center gap-1" data-bs-toggle="collapse" href="#car-tumblr-history-list" role="button" aria-expanded="false"><span>Past Posts</span><span class="text-muted" style="font-size:.7rem;">▼</span></a>
-                        <div class="collapse" id="car-tumblr-history-list"></div>
-                    </div>
-                </div>
-                {% endif %}
-            </div><!-- /car-tumblr-body -->
-            </div><!-- /smc-tumblr -->
 
             {% endif %}<!-- /article.id -->
         </div>
@@ -2109,6 +1411,83 @@
         </div>
     </div>
 
+    <!-- ── Engagement & Analytics (last sub-component of Social Media Content) ── -->
+    <div class="card mt-3 mb-0" id="engagement-card">
+        <div class="card-header d-flex align-items-center gap-2">
+            <h5 class="mb-0"><i class="fa-solid fa-chart-line me-1"></i>Engagement &amp; Analytics</h5>
+            <button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="engagement-refresh-btn" onclick="refreshEngagement()">
+                <i class="fa-solid fa-arrows-rotate me-1"></i>Refresh Metrics
+            </button>
+        </div>
+        <div class="card-body">
+            <div id="engagement-loading" class="d-none text-center py-3">
+                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                Fetching metrics from platform APIs...
+            </div>
+            <div id="engagement-empty" class="text-muted small text-center py-3">
+                No engagement data yet. Click <strong>Refresh Metrics</strong> to fetch from platform APIs.
+            </div>
+            <div id="engagement-content" class="d-none">
+                <!-- Totals row -->
+                <div class="d-flex flex-wrap gap-3 mb-3" id="engagement-totals"></div>
+                <!-- Platform breakdown table -->
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-2" id="engagement-table">
+                        <thead>
+                            <tr>
+                                <th>Platform</th>
+                                <th class="text-end" title="Likes / reactions">Likes</th>
+                                <th class="text-end" title="Video views or post views (where reported)">Views</th>
+                                <th class="text-end" title="Shares / reposts">Shares</th>
+                                <th class="text-end">Comments</th>
+                                <th class="text-end" title="Saves / bookmarks (Instagram, Pinterest)">Saves</th>
+                                <th class="text-end" style="cursor:help"
+                                    title="Clicks on the tracked short URL (obelisk-stamps.com/a/XXXX) we mint for each platform when you generate its caption. Hits from known bots and link-preview crawlers (Facebook's external hit, LinkedInBot, Slackbot, etc.) are filtered out. The raw total including bots is shown in parentheses.">Link Clicks <i class="fa-regular fa-circle-question text-muted ms-1" style="font-size:.75em"></i></th>
+                                <th class="text-end" title="Impressions (where reported)">Impr.</th>
+                                <th class="text-end" title="Unique users reached (where reported)">Reach</th>
+                                <th class="text-end" title="Orders attributed via UTM tag for this platform">Orders</th>
+                            </tr>
+                        </thead>
+                        <tbody id="engagement-tbody"></tbody>
+                        <tfoot id="engagement-tfoot"></tfoot>
+                    </table>
+                </div>
+                <!-- Per content-type breakdown -->
+                <div id="engagement-by-ct-wrap" class="mb-2 d-none">
+                    <details>
+                        <summary class="small text-muted" style="cursor:pointer">
+                            <i class="fa-solid fa-layer-group me-1"></i>Per content-type breakdown
+                        </summary>
+                        <div class="table-responsive mt-2">
+                            <table class="table table-sm table-bordered small mb-0" id="engagement-by-ct-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Platform</th>
+                                        <th>Content</th>
+                                        <th class="text-end">Likes</th>
+                                        <th class="text-end">Views</th>
+                                        <th class="text-end">Shares</th>
+                                        <th class="text-end">Comments</th>
+                                        <th class="text-end">Saves</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="engagement-by-ct-tbody"></tbody>
+                            </table>
+                        </div>
+                    </details>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <small class="text-muted" id="engagement-updated"></small>
+                    {% if ga_measurement_id %}
+                    <a href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener" class="ms-auto small">
+                        <i class="fa-solid fa-chart-bar me-1"></i>Open Google Analytics
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
         </div><!-- /.card-body (social-content-card) -->
     </div><!-- /#social-content-card -->
 
@@ -2547,6 +1926,60 @@ const ARTICLE_ID = parseInt(document.getElementById('article-form').dataset.arti
 const SAVE_URL = ARTICLE_ID
     ? '/admin/articles/' + ARTICLE_ID + '/save'
     : '/admin/articles/new';
+
+// ── Schedule publishing ──────────────────────────────────────
+function _showScheduleError(msg) {
+    var el = document.getElementById('schedule-error');
+    if (!el) return;
+    if (msg) { el.textContent = msg; el.classList.remove('d-none'); }
+    else { el.textContent = ''; el.classList.add('d-none'); }
+}
+
+function saveScheduledPublish() {
+    if (!ARTICLE_ID) { alert('Save the article first.'); return; }
+    var input = document.getElementById('schedule-publish-input');
+    if (!input || !input.value) { _showScheduleError('Pick a date and time first.'); return; }
+    _showScheduleError('');
+    fetch('/admin/articles/' + ARTICLE_ID + '/schedule-publish', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({scheduled_at: input.value})
+    })
+    .then(function(r) { return r.json().then(function(d) { return {status: r.status, data: d}; }); })
+    .then(function(resp) {
+        if (resp.data.ok) {
+            document.getElementById('schedule-chip-when').textContent = resp.data.scheduled_at_human;
+            document.getElementById('schedule-chip-view').classList.remove('d-none');
+            document.getElementById('schedule-pick-view').classList.add('d-none');
+        } else {
+            _showScheduleError(resp.data.error || 'Could not save schedule.');
+        }
+    })
+    .catch(function(e) { _showScheduleError('Network error: ' + e); });
+}
+
+function cancelScheduledPublish() {
+    if (!ARTICLE_ID) return;
+    if (!confirm('Cancel the scheduled publish time?')) return;
+    fetch('/admin/articles/' + ARTICLE_ID + '/schedule-publish', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({scheduled_at: null})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.ok) {
+            document.getElementById('schedule-chip-view').classList.add('d-none');
+            document.getElementById('schedule-pick-view').classList.remove('d-none');
+            var input = document.getElementById('schedule-publish-input');
+            if (input) input.value = '';
+            _showScheduleError('');
+        } else {
+            _showScheduleError(d.error || 'Could not cancel schedule.');
+        }
+    })
+    .catch(function(e) { _showScheduleError('Network error: ' + e); });
+}
 const CAROUSEL_STYLE     = {{ carousel_style | tojson }};
 const CINEMAGRAPH_PROMPT = {{ cinemagraph_prompt | tojson }};
 const CINEMAGRAPH_ARTICLE_PROMPT = {{ cinemagraph_article_prompt | tojson }};
@@ -10570,6 +10003,27 @@ function narratedUnlock() {
     if (!accordion || accordion.children.length === 0) {
         document.getElementById('narrated-empty').classList.remove('d-none');
     }
+    // If any runs already exist, hide the main blue button — user can still
+    // re-generate via the kebab menu's "Generate Narrated Video" item.
+    _updateNarratedMainBtnVisibility();
+}
+
+/* ── Hide the main "Generate Narrated Video" button when at least one run
+   already exists (main list or Past Videos). The kebab menu item remains
+   available so the user can regenerate from there. ──────────────────── */
+function _updateNarratedMainBtnVisibility() {
+    var btn = document.getElementById('narrated-btn');
+    if (!btn) return;
+    // Don't override the carousel-locked state (button is still d-none then)
+    var locked = document.getElementById('narrated-locked-btn');
+    if (locked && !locked.classList.contains('d-none')) return;
+    var mainCount = (document.getElementById('narrated-runs-accordion') || {children:[]}).children.length;
+    var pastCount = (document.getElementById('narrated-past-accordion') || {children:[]}).children.length;
+    if (mainCount + pastCount > 0) {
+        btn.classList.add('d-none');
+    } else {
+        btn.classList.remove('d-none');
+    }
 }
 
 /* ── Build one accordion item DOM node ───────────────────────── */
@@ -11685,6 +11139,7 @@ function hideNarratedRun(ts) {
         if (!document.getElementById('narrated-runs-accordion').children.length) {
             document.getElementById('narrated-runs-wrap').classList.add('d-none');
         }
+        if (typeof _updateNarratedMainBtnVisibility === 'function') _updateNarratedMainBtnVisibility();
     });
 }
 
@@ -11714,6 +11169,7 @@ function restoreNarratedRun(ts) {
         if (!document.getElementById('narrated-past-accordion').children.length) {
             document.getElementById('narrated-past-wrap').classList.add('d-none');
         }
+        if (typeof _updateNarratedMainBtnVisibility === 'function') _updateNarratedMainBtnVisibility();
     });
 }
 
@@ -11773,6 +11229,7 @@ function loadNarratedRuns(runs, hiddenTs) {
         document.getElementById('narrated-past-wrap').classList.remove('d-none');
     }
     applyAllSmcPrefs();
+    _updateNarratedMainBtnVisibility();
 }
 
 /* ── Prepend a new run after generation completes ────────────── */
@@ -11787,6 +11244,7 @@ function addNarratedRun(run) {
     applyAllSmcPrefs();
     document.getElementById('narrated-runs-wrap').classList.remove('d-none');
     document.getElementById('narrated-empty').classList.add('d-none');
+    _updateNarratedMainBtnVisibility();
 }
 
 function openNarratedSettings() {

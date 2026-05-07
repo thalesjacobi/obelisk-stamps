@@ -63,71 +63,7 @@
     <!-- Main Content -->
     <div class="col-12">
         <!-- Tab Navigation -->
-        <ul class="nav nav-tabs mb-4">
-            <li class="nav-item">
-                <a class="nav-link {% if active_tab == 'currency' %}active{% endif %}" href="/admin/currency">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
-                        <path d="M4 10.781c.148 1.667 1.513 2.85 3.591 3.003V15h1.043v-1.216c2.27-.179 3.678-1.438 3.678-3.3 0-1.59-.947-2.51-2.956-3.028l-.722-.187V3.467c1.122.11 1.879.714 2.07 1.616h1.47c-.166-1.6-1.54-2.748-3.54-2.875V1H7.591v1.233c-1.939.23-3.27 1.472-3.27 3.156 0 1.454.966 2.483 2.661 2.917l.61.162v4.031c-1.149-.17-1.94-.8-2.131-1.718H4zm3.391-3.836c-1.043-.263-1.6-.825-1.6-1.616 0-.944.704-1.641 1.8-1.828v3.495l-.2-.05zm1.591 1.872c1.287.323 1.852.859 1.852 1.769 0 1.097-.826 1.828-2.2 1.939V8.73l.348.086z"/>
-                    </svg>
-                    Currency Exchange
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if active_tab == 'users' %}active{% endif %}" href="/admin/users">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
-                        <path d="M15 14s1 0 1-1-1-4-5-4-5 3-5 4 1 1 1 1zm-7.978-1L7 12.996c.001-.264.167-1.03.76-1.72C8.312 10.629 9.282 10 11 10c1.717 0 2.687.63 3.24 1.276.593.69.758 1.457.76 1.72l-.008.002-.014.002zM11 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4m3-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0M6.936 9.28a6 6 0 0 0-1.23-.247A7 7 0 0 0 5 9c-4 0-5 3-5 4s1 1 1 1h4.216A2.24 2.24 0 0 1 5 13c0-1.01.377-2.042 1.09-2.904.243-.294.526-.569.846-.816M4.92 10A5.5 5.5 0 0 0 4 13H1c0-.26.164-1.03.76-1.724.545-.636 1.492-1.256 3.16-1.275ZM1.5 5.5a3 3 0 1 1 6 0 3 3 0 0 1-6 0m3-2a2 2 0 1 0 0 4 2 2 0 0 0 0-4"/>
-                    </svg>
-                    Users
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if active_tab == 'articles' %}active{% endif %}" href="/admin/articles">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
-                        <path d="M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h13zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13z"/><path d="M3 5.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zM3 8a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9A.5.5 0 0 1 3 8zm0 2.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5z"/>
-                    </svg>
-                    Articles
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if active_tab == 'catalogue' %}active{% endif %}" href="/admin/catalogue">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
-                        <path d="M0 1.5A1.5 1.5 0 0 1 1.5 0h9A1.5 1.5 0 0 1 12 1.5V14l-3-2-3 2-3-2-3 2V1.5z"/>
-                    </svg>
-                    Catalogue
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if active_tab == 'unrecognized' %}active{% endif %}" href="/admin/unrecognized-stamps">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
-                        <path d="M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5v-5A3.5 3.5 0 0 0 10.5 2h-5zM3 5.5A2.5 2.5 0 0 1 5.5 3h5A2.5 2.5 0 0 1 13 5.5v5a2.5 2.5 0 0 1-2.5 2.5h-5A2.5 2.5 0 0 1 3 10.5v-5z"/>
-                        <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/>
-                    </svg>
-                    Unrecognized
-                    {% if unrecognized_count %}<span class="badge bg-danger ms-1">{{ unrecognized_count }}</span>{% endif %}
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if active_tab == 'settings' %}active{% endif %}" href="/admin/settings">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
-                        <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
-                    </svg>
-                    Settings
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if active_tab == 'analytics' %}active{% endif %}" href="/admin/analytics">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
-                        <path d="M4 11H2v3h2v-3zm5-4H7v7h2V7zm5-5h-2v12h2V2zm-2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1h-2zM6 7a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7zm-5 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-3z"/>
-                    </svg>
-                    Analytics
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="/admin/article-pipeline">
-                    <i class="fa-solid fa-wand-magic-sparkles me-1"></i> Pipeline
-                </a>
-            </li>
-        </ul>
+        {% include "_admin_nav.html" %}
 
         {% if active_tab == 'currency' %}
         <!-- Currency Exchange Tab Content -->
@@ -456,6 +392,9 @@
                             </span>
                         </button>
                     </li>
+                    <li class="nav-item" role="presentation">
+                        <a class="nav-link py-1 px-3 small" href="/admin/article-pipeline">Pre-Draft Pipeline</a>
+                    </li>
                 </ul>
             </div>
             <a href="/admin/articles/new" class="btn btn-primary btn-sm">
@@ -514,42 +453,61 @@
             <!-- Drafts -->
             <div class="tab-pane fade" id="articles-drafts" role="tabpanel">
             {% set drafts = articles | rejectattr('is_published') | list %}
-
-            <!-- Batch action bar (hidden until selection) -->
-            <div id="draft-batch-bar" class="d-none align-items-center gap-3 mb-3 p-2 border rounded bg-light">
-                <span class="small text-muted"><span id="draft-sel-count">0</span> / 10 selected</span>
-                <button type="button" class="btn btn-sm btn-primary" id="draft-batch-generate-btn" onclick="draftBatchGenerate()" disabled>
-                    <i class="fa-solid fa-images me-1"></i>Generate Carousels
+            {% set scheduled_drafts = drafts | selectattr('scheduled_publish_at') | list %}
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <button type="button" class="btn btn-sm btn-outline-success" id="run-sweep-btn" onclick="runPublishSweep()">
+                    <i class="fa-regular fa-clock me-1"></i>Publish scheduled now
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-danger d-none" id="draft-batch-cancel-btn" onclick="draftBatchCancel()">
-                    <i class="fa-solid fa-stop me-1"></i>Cancel
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="draftClearSelection()">Clear</button>
-                <span id="draft-batch-status" class="small text-muted"></span>
+                <span class="small text-muted">
+                    {% if scheduled_drafts %}
+                        {{ scheduled_drafts | length }} draft{{ 's' if scheduled_drafts | length != 1 else '' }} scheduled.
+                    {% else %}
+                        No drafts have a scheduled publish time.
+                    {% endif %}
+                </span>
+                <span id="run-sweep-status" class="small ms-2"></span>
             </div>
-
             <div class="table-responsive">
                 <table class="table table-hover align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th style="width:36px;">
-                                <input type="checkbox" class="form-check-input mt-0" id="draft-select-all" title="Select / deselect all visible" onchange="draftToggleAll(this.checked)">
-                            </th>
                             <th>Title</th>
-                            <th></th>
+                            <th class="text-center" style="width:160px;" title="Date and time the article will auto-publish">Scheduled</th>
+                            <th class="text-center" style="width:90px;" title="Carousel images created">Carousel</th>
+                            <th class="text-center" style="width:90px;" title="Narrated video created">Narrated</th>
+                            <th style="width:70px;"></th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for a in drafts %}
-                        <tr id="draft-row-{{ a.id }}">
-                            <td>
-                                <input type="checkbox" class="form-check-input mt-0 draft-select-cb"
-                                       data-id="{{ a.id }}" data-title="{{ a.title | e }}"
-                                       onchange="draftSelectionChanged()">
+                        <tr>
+                            <td>{{ a.title }}</td>
+                            <td class="text-center">
+                                {% if a.scheduled_publish_at %}
+                                    <span class="badge bg-info text-dark" title="Will auto-publish at this time">
+                                        <i class="fa-regular fa-calendar me-1"></i>{{ a.scheduled_publish_at }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted small">—</span>
+                                {% endif %}
                             </td>
-                            <td>
-                                {{ a.title }}
-                                <span id="draft-status-{{ a.id }}" class="ms-2"></span>
+                            <td class="text-center">
+                                {% if a.carousel_count and a.carousel_count > 0 %}
+                                    <span class="badge bg-success" title="{{ a.carousel_count }} of 10 carousel images created">
+                                        <i class="fa-solid fa-images me-1"></i>{{ a.carousel_count }}/10
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted" title="No carousel images yet">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if a.has_narrated %}
+                                    <span class="badge bg-success" title="Narrated video created">
+                                        <i class="fa-solid fa-video me-1"></i>Yes
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted" title="No narrated video yet">—</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <a href="/admin/articles/{{ a.id }}/edit" class="btn btn-outline-secondary btn-sm">Edit</a>
@@ -557,7 +515,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="3" class="text-center text-muted py-4">No drafts.</td>
+                            <td colspan="5" class="text-center text-muted py-4">No drafts.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -1568,6 +1526,47 @@ function saveIgCaptionPromptSettings() {
 }
 {% endif %}
 
+// ── Manual scheduled-publish sweep ───────────────────────────────────────
+function runPublishSweep() {
+    var btn = document.getElementById('run-sweep-btn');
+    var statusEl = document.getElementById('run-sweep-status');
+    if (btn) btn.disabled = true;
+    if (statusEl) statusEl.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1" style="width:.7rem;height:.7rem;border-width:.1em"></span>Checking…</span>';
+    fetch('/admin/articles/run-publish-sweep', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: '{}'
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (btn) btn.disabled = false;
+        if (!d.ok) {
+            if (statusEl) statusEl.innerHTML = '<span class="text-danger">Error.</span>';
+            return;
+        }
+        if (d.published_count === 0) {
+            if (statusEl) {
+                if (d.still_scheduled_for_future > 0) {
+                    statusEl.innerHTML = '<span class="text-muted">Nothing due now. ' + d.still_scheduled_for_future + ' draft' + (d.still_scheduled_for_future !== 1 ? 's' : '') + ' scheduled for later.</span>';
+                } else {
+                    statusEl.innerHTML = '<span class="text-muted">Nothing to publish.</span>';
+                }
+            }
+        } else {
+            var titles = (d.published || []).map(function(a) { return a.title; }).join(', ');
+            if (statusEl) {
+                statusEl.innerHTML = '<span class="text-success"><i class="fa-solid fa-check me-1"></i>Published ' + d.published_count + ' article' + (d.published_count !== 1 ? 's' : '') + '.</span>';
+            }
+            // Reload after a short delay so the user sees confirmation, then sees the article moved to Published
+            setTimeout(function() { window.location.reload(); }, 1500);
+        }
+    })
+    .catch(function(e) {
+        if (btn) btn.disabled = false;
+        if (statusEl) statusEl.innerHTML = '<span class="text-danger">Network error.</span>';
+    });
+}
+
 // ── Draft Batch Carousel Generation ──────────────────────────────────────
 // Browser-driven queue: one HTTP request per article, sequential.  Avoids
 // the Cloud Run "background thread killed when instance scales down" trap.
@@ -1791,6 +1790,23 @@ function draftRetryArticle(id) {
 // On page load, restore any historical results so the user sees them
 // (and clears stale "running" entries from the old broken background-thread
 //  implementation by treating them as cancelled).
+// Activate the right Articles pill based on URL hash (so links from other
+// pages like /admin/articles#articles-drafts open the Drafts tab, not Published)
+document.addEventListener('DOMContentLoaded', function() {
+    var hash = window.location.hash;
+    if (!hash) return;
+    var pillMap = {
+        '#articles-drafts':    'pill-drafts',
+        '#articles-published': 'pill-published'
+    };
+    var btnId = pillMap[hash];
+    if (!btnId) return;
+    var btn = document.getElementById(btnId);
+    if (btn && window.bootstrap && bootstrap.Tab) {
+        bootstrap.Tab.getOrCreateInstance(btn).show();
+    }
+});
+
 document.addEventListener('DOMContentLoaded', function() {
     var allIds = Array.from(document.querySelectorAll('.draft-select-cb')).map(function(cb) { return parseInt(cb.dataset.id); });
     if (!allIds.length) return;

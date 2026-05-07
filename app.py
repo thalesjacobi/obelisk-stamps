@@ -1251,7 +1251,8 @@ def init_articles_table():
                 "carousel_created_at TEXT",
                 "carousel_archived_meta TEXT",
                 "carousel_cinemagraph_created_at TEXT",
-                "show_slideshow BOOLEAN DEFAULT FALSE"):
+                "show_slideshow BOOLEAN DEFAULT FALSE",
+                "scheduled_publish_at DATETIME NULL"):
         try:
             cur.execute(f"ALTER TABLE articles ADD COLUMN {col}")
         except Exception:
@@ -4253,12 +4254,73 @@ def admin_settings_save():
 # ------------------------------------------------------------
 # ADMIN — ARTICLES
 # ------------------------------------------------------------
+
+def _sweep_scheduled_publishes():
+    """Lazy-sweep: publish any articles whose scheduled_publish_at <= NOW().
+
+    Called at the top of admin_articles() so every visit to the Articles list
+    triggers a sweep. Cheap (single UPDATE) and idempotent.
+
+    Returns a list of (id, title) tuples for articles that were just published.
+    Empty list if nothing was due (or on error — error is also logged to stdout).
+    """
+    try:
+        due = query_all(
+            "SELECT id, title FROM articles "
+            "WHERE is_published = 0 "
+            "  AND scheduled_publish_at IS NOT NULL "
+            "  AND scheduled_publish_at <= NOW()"
+        ) or []
+        if not due:
+            return []
+        ids = [int(r[0]) for r in due]
+        placeholders = ",".join(["%s"] * len(ids))
+        execute(
+            f"UPDATE articles SET is_published = 1, "
+            f"published_at = COALESCE(scheduled_publish_at, NOW()), "
+            f"scheduled_publish_at = NULL "
+            f"WHERE id IN ({placeholders})",
+            tuple(ids),
+        )
+        for _id, _title in due:
+            print(f"[ScheduledPublish] Auto-published article {_id}: {_title!r}", flush=True)
+        return [(int(r[0]), r[1]) for r in due]
+    except Exception as _e:
+        print(f"[ScheduledPublish] Sweep failed: {_e}", flush=True)
+        return []
+
+
+@app.route("/admin/articles/run-publish-sweep", methods=["POST"])
+@login_required
+@admin_required
+def admin_articles_run_publish_sweep():
+    """Manually trigger the scheduled-publish sweep. Returns details."""
+    published = _sweep_scheduled_publishes()
+    # Also report how many drafts have a future scheduled time (informational)
+    pending = query_all(
+        "SELECT COUNT(*) FROM articles WHERE is_published = 0 "
+        "AND scheduled_publish_at IS NOT NULL AND scheduled_publish_at > NOW()"
+    ) or [(0,)]
+    return jsonify({
+        "ok": True,
+        "published_count": len(published),
+        "published": [{"id": _id, "title": _title} for _id, _title in published],
+        "still_scheduled_for_future": int(pending[0][0]),
+    })
+
+
 @app.route("/admin/articles")
 @login_required
 @admin_required
 def admin_articles():
+    # Lazy-sweep: publish any articles whose scheduled time has arrived
+    swept = _sweep_scheduled_publishes()
+    if swept:
+        flash(f"Auto-published {len(swept)} scheduled article{'s' if len(swept) != 1 else ''}.", "success")
+
     rows = query_all(
-        "SELECT id, title, slug, is_published, published_at, updated_at "
+        "SELECT id, title, slug, is_published, published_at, updated_at, "
+        "carousel_images, video_narrated_url, scheduled_publish_at "
         "FROM articles ORDER BY updated_at DESC"
     )
 
@@ -4282,6 +4344,15 @@ def admin_articles():
     """) or []
     engagement_by_article = {r[0]: int(r[1] or 0) for r in eng_rows}
 
+    def _carousel_count(raw):
+        if not raw:
+            return 0
+        try:
+            imgs = json.loads(raw)
+            return sum(1 for u in (imgs or [])[:10] if u)
+        except Exception:
+            return 0
+
     article_list = [
         {
             "id": r[0], "title": r[1], "slug": r[2],
@@ -4290,6 +4361,9 @@ def admin_articles():
             "updated_at": r[5].strftime("%d %b %Y %H:%M") if r[5] else None,
             "link_clicks": clicks_by_article.get(r[0], 0),
             "engagement":  engagement_by_article.get(r[0], 0),
+            "carousel_count":   _carousel_count(r[6]),
+            "has_narrated":     bool(r[7]),
+            "scheduled_publish_at": r[8].strftime("%d %b %Y %H:%M") if r[8] else None,
         }
         for r in rows
     ]
@@ -4351,7 +4425,7 @@ def admin_article_edit(article_id):
     row = query_one(
         "SELECT id, slug, title, subtitle, content, excerpt, image_url, "
         "is_published, published_at, carousel_prompts, carousel_images, "
-        "carousel_punchlines, carousel_style, show_slideshow "
+        "carousel_punchlines, carousel_style, show_slideshow, scheduled_publish_at "
         "FROM articles WHERE id = %s",
         (article_id,),
     )
@@ -4367,6 +4441,9 @@ def admin_article_edit(article_id):
         "carousel_images": json.loads(row[10]) if row[10] else [],
         "carousel_punchlines": json.loads(row[11]) if row[11] else [],
         "show_slideshow": bool(row[13]),
+        # ISO format for the datetime-local input; pretty form for the chip
+        "scheduled_publish_at_iso":   row[14].strftime("%Y-%m-%dT%H:%M") if row[14] else "",
+        "scheduled_publish_at_human": row[14].strftime("%d %b %Y, %H:%M") if row[14] else "",
     }
     # Show this article's saved style; fall back to current site setting if never generated
     article_carousel_style = row[12] or get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
@@ -4437,6 +4514,56 @@ def admin_article_toggle_slideshow(article_id):
     enabled = bool(data.get("enabled", False))
     execute("UPDATE articles SET show_slideshow = %s WHERE id = %s", (enabled, article_id))
     return jsonify({"ok": True})
+
+
+@app.route("/admin/articles/<int:article_id>/schedule-publish", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_schedule_publish(article_id):
+    """Set or clear a scheduled publish time for an article.
+
+    Body: {"scheduled_at": "2026-05-20T09:00"} (datetime-local format) or
+          {"scheduled_at": null|""} to clear.
+    Only works on draft articles — already-published articles can't be
+    scheduled (publish them or unpublish first).
+    """
+    row = query_one("SELECT is_published FROM articles WHERE id = %s", (article_id,))
+    if not row:
+        return jsonify({"error": "Article not found."}), 404
+    if bool(row[0]):
+        return jsonify({"error": "This article is already published. Unpublish first to schedule a new publish time."}), 400
+
+    data = request.get_json() or {}
+    raw = (data.get("scheduled_at") or "").strip()
+
+    if not raw:
+        # Clear schedule
+        execute("UPDATE articles SET scheduled_publish_at = NULL WHERE id = %s", (article_id,))
+        return jsonify({"ok": True, "scheduled_at": None})
+
+    # Parse the datetime-local format (YYYY-MM-DDTHH:MM)
+    import datetime as _dt
+    try:
+        dt = _dt.datetime.strptime(raw, "%Y-%m-%dT%H:%M")
+    except ValueError:
+        try:
+            dt = _dt.datetime.strptime(raw, "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return jsonify({"error": f"Invalid datetime: {raw!r}"}), 400
+
+    # Reject schedules in the past (with 1-min grace)
+    if dt < _dt.datetime.now() - _dt.timedelta(minutes=1):
+        return jsonify({"error": "Scheduled time is in the past."}), 400
+
+    execute(
+        "UPDATE articles SET scheduled_publish_at = %s WHERE id = %s",
+        (dt.strftime("%Y-%m-%d %H:%M:%S"), article_id),
+    )
+    return jsonify({
+        "ok": True,
+        "scheduled_at_iso":   dt.strftime("%Y-%m-%dT%H:%M"),
+        "scheduled_at_human": dt.strftime("%d %b %Y, %H:%M"),
+    })
 
 
 @app.route("/admin/articles/<int:article_id>/save", methods=["POST"])
@@ -15812,7 +15939,13 @@ def admin_article_pipeline():
         "so favour topics that make readers appreciate the beauty and value of stamps."
     )
     idea_prompt = get_setting("pipeline_idea_prompt", _default_idea_prompt)
-    return render_template("admin_pipeline.html", queue=queue, idea_prompt=idea_prompt)
+    # Pass article counts so the Pre-Draft Pipeline page can render the same
+    # Articles pill row (Published / Drafts / Pre-Draft Pipeline) used on /admin/articles
+    pub_count   = (query_one("SELECT COUNT(*) FROM articles WHERE is_published = 1") or [0])[0]
+    draft_count = (query_one("SELECT COUNT(*) FROM articles WHERE is_published = 0") or [0])[0]
+    return render_template("admin_pipeline.html",
+                           queue=queue, idea_prompt=idea_prompt,
+                           published_count=pub_count, draft_count=draft_count)
 
 
 @app.route("/admin/article-pipeline/generate-ideas", methods=["POST"])

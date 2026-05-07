@@ -3,29 +3,106 @@
 {% block title %}Article Pipeline - Obelisk Stamps{% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<div class="row">
+    <div class="col-12">
+        {% set active_tab = 'articles' %}
+        {% include "_admin_nav.html" %}
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2 class="mb-0"><i class="fa-solid fa-wand-magic-sparkles me-2"></i>Article Pipeline</h2>
-        <a href="/admin/articles" class="btn btn-outline-secondary btn-sm">Back to Articles</a>
+        <div class="d-flex align-items-center gap-3">
+            <h5 class="mb-0">Articles</h5>
+            <!-- Same pill row as /admin/articles, with Pre-Draft Pipeline active -->
+            <ul class="nav nav-pills nav-pills-sm" role="tablist" style="--bs-nav-pills-link-active-bg: #198754;">
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link py-1 px-3 small" href="/admin/articles">
+                        Published
+                        <span class="badge bg-light text-success ms-1" style="font-size:.7rem;">{{ published_count or 0 }}</span>
+                    </a>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link py-1 px-3 small" href="/admin/articles#articles-drafts">
+                        Drafts
+                        <span class="badge bg-secondary ms-1" style="font-size:.7rem;">{{ draft_count or 0 }}</span>
+                    </a>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link active py-1 px-3 small" href="/admin/article-pipeline">Pre-Draft Pipeline</a>
+                </li>
+            </ul>
+        </div>
+        <a href="/admin/articles/new" class="btn btn-primary btn-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="me-1" viewBox="0 0 16 16">
+                <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+            </svg>
+            New Article
+        </a>
     </div>
 
-    <!-- Stats bar -->
-    <div class="row g-2 mb-4" id="stats-bar">
-        <div class="col-auto"><span class="badge bg-warning text-dark fs-6" id="stat-pending">Pending: {{ queue|selectattr('status','equalto','pending')|list|length }}</span></div>
-        <div class="col-auto"><span class="badge bg-info fs-6" id="stat-accepted">Accepted: {{ queue|selectattr('status','equalto','accepted')|list|length }}</span></div>
-        <div class="col-auto"><span class="badge bg-primary fs-6" id="stat-generating">Generating: {{ queue|selectattr('status','equalto','generating')|list|length }}</span></div>
-        <div class="col-auto"><span class="badge bg-success fs-6" id="stat-ready">Ready: {{ queue|selectattr('status','equalto','ready')|list|length }}</span></div>
-        <div class="col-auto"><span class="badge bg-danger fs-6" id="stat-failed">Failed: {{ queue|selectattr('status','equalto','failed')|list|length }}</span></div>
-        <div class="col-auto"><span class="badge bg-secondary fs-6" id="stat-rejected">Rejected: {{ queue|selectattr('status','equalto','rejected')|list|length }}</span></div>
-    </div>
+    <!-- Status filter tabs (replaces old stats badges) -->
+    <ul class="nav nav-pills nav-pills-sm mb-3" id="status-filter-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active py-1 px-3 small status-tab" data-status="pending"
+                    style="--bs-nav-pills-link-active-bg: #ffc107; --bs-nav-pills-link-active-color:#212529;"
+                    onclick="filterQueueByStatus('pending', this)">
+                Pending <span class="badge bg-light text-dark ms-1" id="stat-pending">{{ queue|selectattr('status','equalto','pending')|list|length }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link py-1 px-3 small status-tab" data-status="accepted"
+                    style="--bs-nav-pills-link-active-bg: #0dcaf0; --bs-nav-pills-link-active-color:#000;"
+                    onclick="filterQueueByStatus('accepted', this)">
+                Accepted <span class="badge bg-light text-dark ms-1" id="stat-accepted">{{ queue|selectattr('status','equalto','accepted')|list|length }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link py-1 px-3 small status-tab" data-status="generating"
+                    style="--bs-nav-pills-link-active-bg: #0d6efd;"
+                    onclick="filterQueueByStatus('generating', this)">
+                Generating <span class="badge bg-light text-dark ms-1" id="stat-generating">{{ queue|selectattr('status','equalto','generating')|list|length }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link py-1 px-3 small status-tab" data-status="ready"
+                    style="--bs-nav-pills-link-active-bg: #198754;"
+                    onclick="filterQueueByStatus('ready', this)">
+                Ready <span class="badge bg-light text-dark ms-1" id="stat-ready">{{ queue|selectattr('status','equalto','ready')|list|length }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link py-1 px-3 small status-tab" data-status="failed"
+                    style="--bs-nav-pills-link-active-bg: #dc3545;"
+                    onclick="filterQueueByStatus('failed', this)">
+                Failed <span class="badge bg-light text-dark ms-1" id="stat-failed">{{ queue|selectattr('status','equalto','failed')|list|length }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link py-1 px-3 small status-tab" data-status="rejected"
+                    style="--bs-nav-pills-link-active-bg: #6c757d;"
+                    onclick="filterQueueByStatus('rejected', this)">
+                Rejected <span class="badge bg-light text-dark ms-1" id="stat-rejected">{{ queue|selectattr('status','equalto','rejected')|list|length }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link py-1 px-3 small status-tab" data-status="all"
+                    onclick="filterQueueByStatus('all', this)">
+                All <span class="badge bg-light text-dark ms-1">{{ queue|length }}</span>
+            </button>
+        </li>
+    </ul>
 
     <!-- Generate Ideas panel -->
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Generate Article Ideas</h5>
-            <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#generateForm">
-                <i class="fa-solid fa-plus me-1"></i> New Batch
-            </button>
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-muted" style="cursor:help"
+                      data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true"
+                      title="<strong>New Batch</strong><br>Opens a form to generate a batch of new article ideas via OpenAI.<br><br>Set <em>Articles per day</em>, a <em>Start</em> and <em>End date</em>, optionally customise the idea-generation prompt, then click <em>Generate Ideas</em>. New ideas appear in this list as <strong>Pending</strong> — review them and click <em>Accept</em> to push to the article pipeline (where they get auto-generated into draft articles).">
+                    <i class="fa-solid fa-circle-info"></i>
+                </span>
+                <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#generateForm">
+                    <i class="fa-solid fa-plus me-1"></i> New Batch
+                </button>
+            </div>
         </div>
         <div class="collapse" id="generateForm">
             <div class="card-body">
@@ -177,7 +254,8 @@
             </div>
         </div>
     </div>
-</div>
+    </div><!-- /col-12 -->
+</div><!-- /row -->
 
 {% endblock %}
 
@@ -201,6 +279,53 @@
 })();
 
 let _pollTimer = null;
+let _currentStatusFilter = 'pending';
+
+// Filter the queue table to show only rows matching the selected status
+function filterQueueByStatus(status, btn) {
+    _currentStatusFilter = status;
+    // Update active state on tabs
+    document.querySelectorAll('.status-tab').forEach(function(t) {
+        t.classList.toggle('active', t === btn);
+    });
+    // Show/hide rows
+    var rows = document.querySelectorAll('#queue-table tbody tr[data-status]');
+    var visibleCount = 0;
+    rows.forEach(function(r) {
+        var rowStatus = r.dataset.status;
+        var show = (status === 'all') || (rowStatus === status);
+        r.style.display = show ? '' : 'none';
+        if (show) visibleCount++;
+    });
+    // If no rows visible, show an empty state row
+    var emptyRow = document.getElementById('queue-empty-row');
+    var tbody = document.querySelector('#queue-table tbody');
+    if (visibleCount === 0) {
+        if (!emptyRow && tbody) {
+            emptyRow = document.createElement('tr');
+            emptyRow.id = 'queue-empty-row';
+            emptyRow.innerHTML = '<td colspan="6" class="text-center text-muted py-4">No items in this status.</td>';
+            tbody.appendChild(emptyRow);
+        }
+    } else if (emptyRow) {
+        emptyRow.remove();
+    }
+    // Reset "select all" since visible rows changed
+    var checkAll = document.getElementById('checkAll');
+    if (checkAll) checkAll.checked = false;
+}
+
+// Apply the default 'pending' filter on page load + initialise Bootstrap tooltips
+document.addEventListener('DOMContentLoaded', function() {
+    var defaultBtn = document.querySelector('.status-tab[data-status="pending"]');
+    if (defaultBtn) filterQueueByStatus('pending', defaultBtn);
+    // Init Bootstrap tooltips for any [data-bs-toggle="tooltip"] elements
+    if (window.bootstrap && bootstrap.Tooltip) {
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+            new bootstrap.Tooltip(el);
+        });
+    }
+});
 
 const DEFAULT_IDEA_PROMPT = `You are an expert philatelist, historian, and content strategist for Obelisk Stamps, a premium online store selling handcrafted framed stamp displays.
 
