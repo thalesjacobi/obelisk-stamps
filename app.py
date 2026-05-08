@@ -10017,10 +10017,13 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
             return
         print(f"[X] INIT ok, media_id={media_id}", flush=True)
 
-        # 3. APPEND chunks (5 MB each) — POST /2/media/upload/{id}/append (multipart)
+        # 3. APPEND chunks — POST /2/media/upload/{id}/append (multipart).
+        # X's v2 endpoint enforces a smaller chunk limit than v1.1's 5 MB.
+        # 5 MB returns HTTP 413 ("Payload Too Large"); 1 MB is well under
+        # any plausible limit and is the value Bluesky / common clients use.
         _set_status("running:upload_append")
         append_url = f"https://api.x.com/2/media/upload/{media_id}/append"
-        chunk_size = 5 * 1024 * 1024
+        chunk_size = 1 * 1024 * 1024  # 1 MB
         segment = 0
         with open(tmp_path, "rb") as f:
             while True:
@@ -12957,10 +12960,14 @@ def _post_narrated_bluesky_worker(article_id, video_url, caption, run_ts):
 
         _set_status("running:auth")
         print(f"[Bluesky] Resolved PDS for video service auth: {pds_url} (aud={pds_did})", flush=True)
+        # The lxm (lexicon method) must be com.atproto.repo.uploadBlob.
+        # Per the actual error from video.bsky.app:
+        #   "invalid token lexicon method \"app.bsky.video.uploadVideo\",
+        #    should be com.atproto.repo.uploadBlob"
         sa_resp = _req.get(
             f"{pds_url}/xrpc/com.atproto.server.getServiceAuth",
             params={"aud": pds_did,
-                    "lxm": "app.bsky.video.uploadVideo",
+                    "lxm": "com.atproto.repo.uploadBlob",
                     "exp": int(_time_mod.time()) + 30 * 60},  # 30-minute token
             headers={"Authorization": f"Bearer {jwt}"},
             timeout=15)
