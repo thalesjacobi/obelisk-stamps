@@ -5866,6 +5866,9 @@ def admin_article_video_data(article_id):
         if run_ts:
             run["ig_caption"]      = get_setting(f"ig_narrated_caption_{article_id}_{run_ts}")      or ""
             run["threads_caption"] = get_setting(f"threads_narrated_caption_{article_id}_{run_ts}") or ""
+            run["x_caption"]       = get_setting(f"x_narrated_caption_{article_id}_{run_ts}")       or ""
+            run["bluesky_caption"] = get_setting(f"bluesky_narrated_caption_{article_id}_{run_ts}") or ""
+            run["fb_caption"]      = get_setting(f"fb_narrated_caption_{article_id}_{run_ts}")      or ""
 
     return jsonify({
         "narrated_url":           narrated_url or None,
@@ -10056,13 +10059,17 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
         _, fin_info = _x_extract(fin_data)
         print(f"[X] FINALIZE ok (state={fin_info.get('state', 'n/a')})", flush=True)
 
-        # 5. Poll STATUS — GET /2/media/upload/{id}  (only if processing async)
+        # 5. Poll STATUS — GET /2/media/upload?command=STATUS&media_id=...
+        # Note: STATUS uses query params on the bare endpoint, not a path-based
+        # subresource like INIT/APPEND/FINALIZE. Path-based gives 404.
         _set_status("running:processing")
         if fin_info and fin_info.get("state") and fin_info["state"] != "succeeded":
-            status_url = f"https://api.x.com/2/media/upload/{media_id}"
             for _ in range(60):
                 _time_mod.sleep(5)
-                resp = _req.get(status_url, auth=auth, timeout=30)
+                resp = _req.get("https://api.x.com/2/media/upload",
+                                auth=auth,
+                                params={"command": "STATUS", "media_id": media_id},
+                                timeout=30)
                 if resp.status_code != 200:
                     _x_log_failure("STATUS", resp.status_code, resp.text)
                     return

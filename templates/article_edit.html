@@ -10444,6 +10444,21 @@ function buildRunItem(run, expandIt) {
         var threadsCountEl = item.querySelector('#nv-threads-' + run.ts + '-count');
         if (threadsCountEl) threadsCountEl.textContent = threadsCaptionEl.value.length + ' / 500';
     }
+    /* Restore saved captions for X (280), Bluesky (300), Facebook (no hard cap shown but we use 2200) */
+    [
+        {plat: 'x',       limit: 280,  field: 'x_caption'},
+        {plat: 'bluesky', limit: 300,  field: 'bluesky_caption'},
+        {plat: 'fb',      limit: 2200, field: 'fb_caption'},
+    ].forEach(function(p) {
+        var ta  = item.querySelector('#nv-' + p.plat + '-' + run.ts + '-caption');
+        if (!ta) return;
+        var saved = run[p.field];
+        if (saved && saved.trim()) {
+            ta.value = saved;
+            var counter = item.querySelector('#nv-' + p.plat + '-' + run.ts + '-count');
+            if (counter) counter.textContent = ta.value.length + ' / ' + p.limit;
+        }
+    });
     var ytTitleEl = item.querySelector('#nv-yt-' + run.ts + '-title');
     if (ytTitleEl && ARTICLE_TITLE) ytTitleEl.value = ARTICLE_TITLE;
     var vimeoTitleEl = item.querySelector('#nv-vimeo-' + run.ts + '-title');
