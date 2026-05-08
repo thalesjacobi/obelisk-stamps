@@ -10059,57 +10059,75 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
         _, fin_info = _x_extract(fin_data)
         print(f"[X] FINALIZE ok (state={fin_info.get('state', 'n/a')})", flush=True)
 
-        # 5. Poll STATUS — GET /2/media/upload?command=STATUS&media_id=...
-        # Note: STATUS uses query params on the bare endpoint, not a path-based
-        # subresource like INIT/APPEND/FINALIZE. Path-based gives 404.
+        # 5. Wait for processing — X's v2 STATUS endpoint (both path-based and
+        # query-string forms) currently returns 404 in production despite being
+        # documented. Workaround: sleep generously up front, then retry the
+        # tweet step on "media is invalid" errors (which X uses as a
+        # not-ready-yet signal as well as a true error).
         _set_status("running:processing")
+        # Initial wait. For narrated videos (typically 50-200 MB) X's
+        # async transcoder takes 20-60s. Use the larger of:
+        #   - check_after_secs * 2 (X's hint, doubled for safety)
+        #   - 30s default
+        # Skip entirely if state was already "succeeded".
+        initial_wait = 0
         if fin_info and fin_info.get("state") and fin_info["state"] != "succeeded":
-            for _ in range(60):
-                _time_mod.sleep(5)
-                resp = _req.get("https://api.x.com/2/media/upload",
-                                auth=auth,
-                                params={"command": "STATUS", "media_id": media_id},
-                                timeout=30)
-                if resp.status_code != 200:
-                    _x_log_failure("STATUS", resp.status_code, resp.text)
-                    return
-                _, info = _x_extract(resp.json())
-                state = info.get("state", "succeeded")
-                print(f"[X] STATUS state={state}", flush=True)
-                if state == "succeeded":
-                    break
-                if state == "failed":
-                    err_obj = info.get("error") or info
-                    _set_result(f"error:X video processing failed: {err_obj}")
-                    _add_activity_log(article_id, "X Narrated Video Post Failed",
-                                      f"Step: STATUS\nProcessing state: failed\n{_json.dumps(info, indent=2)[:1500]}",
-                                      component="narrated")
-                    return
-            else:
-                _set_result("error:X video processing timed out after 5 minutes")
-                _add_activity_log(article_id, "X Narrated Video Post Failed",
-                                  "Step: STATUS\nTimed out after 5 minutes of polling.",
-                                  component="narrated")
-                return
+            cas = int(fin_info.get("check_after_secs") or 0)
+            initial_wait = max(30, cas * 2 if cas else 30)
+            initial_wait = min(initial_wait, 120)  # cap at 2 min
+            print(f"[X] FINALIZE state={fin_info.get('state')}; "
+                  f"check_after_secs={fin_info.get('check_after_secs')}; "
+                  f"sleeping {initial_wait}s before first tweet attempt", flush=True)
+            _time_mod.sleep(initial_wait)
 
-        # 6. Post tweet
+        # 6. Post tweet — retry on "media is invalid" (X's not-ready-yet signal).
+        # Wait pattern between retries: 20s, 40s, 60s (total ~2min on top of
+        # the initial wait). Most videos finish well within this window.
         _set_status("running:tweeting")
         tweet_text = caption[:280] if caption else ""
-        resp = _req.post(_X_TWEET_URL, auth=auth, json={
-            "text":  tweet_text,
-            "media": {"media_ids": [media_id]},
-        }, timeout=30)
-        if resp.status_code not in (200, 201):
-            _x_log_failure("Tweet creation", resp.status_code, resp.text)
-            return
-        try:
-            tweet_data = resp.json()
-        except Exception:
-            tweet_data = {}
-        tweet_id = (tweet_data.get("data") or {}).get("id")
+        tweet_data = {}
+        tweet_id = None
+        last_err_body = ""
+        last_status = 0
+        for attempt_num, retry_wait in enumerate([0, 20, 40, 60], start=1):
+            if retry_wait:
+                print(f"[X] Tweet attempt {attempt_num} — waiting {retry_wait}s "
+                      f"(media still processing)", flush=True)
+                _time_mod.sleep(retry_wait)
+            resp = _req.post(_X_TWEET_URL, auth=auth, json={
+                "text":  tweet_text,
+                "media": {"media_ids": [media_id]},
+            }, timeout=30)
+            last_status = resp.status_code
+            last_err_body = resp.text or ""
+            print(f"[X] Tweet attempt {attempt_num} → HTTP {resp.status_code}", flush=True)
+            if resp.status_code in (200, 201):
+                try:
+                    tweet_data = resp.json()
+                except Exception:
+                    tweet_data = {}
+                tweet_id = (tweet_data.get("data") or {}).get("id")
+                if tweet_id:
+                    break
+            # Detect "media is invalid" / not-ready signals; retry those only.
+            is_media_not_ready = False
+            try:
+                err_json = _json.loads(last_err_body)
+                err_msgs = " ".join(
+                    (e.get("message") or "") for e in (err_json.get("errors") or [])
+                ).lower()
+                if "media" in err_msgs and ("invalid" in err_msgs or "not ready" in err_msgs):
+                    is_media_not_ready = True
+            except Exception:
+                pass
+            if not is_media_not_ready:
+                break  # other errors aren't retryable
+
         if not tweet_id:
-            _x_log_failure("Tweet creation", resp.status_code, resp.text or _json.dumps(tweet_data),
-                           exception_msg="No tweet id in response")
+            _x_log_failure("Tweet creation",
+                           last_status,
+                           last_err_body or _json.dumps(tweet_data),
+                           exception_msg=f"Failed after {attempt_num} attempts; initial_wait={initial_wait}s")
             return
 
         permalink = f"https://x.com/i/web/status/{tweet_id}"
