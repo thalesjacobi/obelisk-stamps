@@ -9947,31 +9947,79 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
         file_size = _os.path.getsize(tmp_path)
         print(f"[X] Downloaded video: {file_size} bytes", flush=True)
 
-        # Helper: extract media_id from a v2 (or v1.1 fallback) upload response.
-        # v2:    {"data": {"id": "...", "media_key": "...", "processing_info": {...}}}
-        # v1.1:  {"media_id_string": "...", "processing_info": {...}}
+        # ── X v2 chunked media upload ──────────────────────────────────────
+        # The v2 chunked upload uses path-based subresources with JSON bodies,
+        # NOT the legacy v1.1 form-encoded "command=INIT" pattern. Endpoints:
+        #   POST /2/media/upload/initialize         (JSON body)
+        #   POST /2/media/upload/{media_id}/append  (multipart)
+        #   POST /2/media/upload/{media_id}/finalize
+        #   GET  /2/media/upload/{media_id}         (status)
+        # Reference: https://docs.x.com/x-api/media/upload-media-chunked
+
+        def _x_short_err(resp_json, fallback_text):
+            """Pull a human-friendly error snippet out of an X error response."""
+            try:
+                if isinstance(resp_json, dict):
+                    if resp_json.get("errors"):
+                        return "; ".join(
+                            (e.get("message") or e.get("detail") or str(e))
+                            for e in resp_json["errors"][:3])
+                    return resp_json.get("detail") or resp_json.get("title") or resp_json.get("message") or fallback_text
+            except Exception:
+                pass
+            return fallback_text
+
+        def _x_log_failure(step, http_status, body_text, exception_msg=None):
+            """Surface X failures clearly in the Narrated Video logs."""
+            short = body_text[:240]
+            try:
+                short = _x_short_err(_json.loads(body_text), short)
+            except Exception:
+                pass
+            user_msg = f"X {step} failed (HTTP {http_status}): {short}"
+            _set_result(f"error:{user_msg}")
+            _add_activity_log(
+                article_id, "X Narrated Video Post Failed",
+                f"Step: {step}\nHTTP {http_status}\n\nResponse body:\n{body_text[:2500]}"
+                + (f"\n\nException: {exception_msg}" if exception_msg else ""),
+                component="narrated")
+
+        # Helper: extract media_id and processing_info from a v2 response.
+        # v2 shape: {"data": {"id": "...", "processing_info": {...}}}
         def _x_extract(resp_json):
             d = (resp_json or {}).get("data") or {}
-            mid = d.get("id") or resp_json.get("media_id_string") or resp_json.get("id")
-            info = d.get("processing_info") or resp_json.get("processing_info") or {}
+            mid = d.get("id") or (resp_json or {}).get("id")
+            info = d.get("processing_info") or (resp_json or {}).get("processing_info") or {}
             return mid, info
 
-        # 2. INIT upload session
+        import json as _json
+
+        # 2. INIT upload session — POST /2/media/upload/initialize with JSON body
         _set_status("running:upload_init")
-        resp = _req.post(_X_UPLOAD_URL, auth=auth, data={
-            "command":        "INIT",
-            "total_bytes":    str(file_size),
+        init_url = "https://api.x.com/2/media/upload/initialize"
+        init_body = {
+            "total_bytes":    file_size,
             "media_type":     "video/mp4",
             "media_category": "tweet_video",
-        }, timeout=30)
-        init_data = resp.json()
+        }
+        resp = _req.post(init_url, auth=auth, json=init_body, timeout=30)
+        if resp.status_code != 200 and resp.status_code != 201:
+            _x_log_failure("INIT", resp.status_code, resp.text)
+            return
+        try:
+            init_data = resp.json()
+        except Exception:
+            init_data = {}
         media_id, _ = _x_extract(init_data)
         if not media_id:
-            raise Exception(f"INIT failed (HTTP {resp.status_code}): {init_data}")
-        print(f"[X] INIT media_id={media_id}", flush=True)
+            _x_log_failure("INIT", resp.status_code, resp.text or _json.dumps(init_data),
+                           exception_msg="No media_id in response")
+            return
+        print(f"[X] INIT ok, media_id={media_id}", flush=True)
 
-        # 3. APPEND chunks (5 MB each)
+        # 3. APPEND chunks (5 MB each) — POST /2/media/upload/{id}/append (multipart)
         _set_status("running:upload_append")
+        append_url = f"https://api.x.com/2/media/upload/{media_id}/append"
         chunk_size = 5 * 1024 * 1024
         segment = 0
         with open(tmp_path, "rb") as f:
@@ -9979,48 +10027,60 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
                 chunk = f.read(chunk_size)
                 if not chunk:
                     break
-                resp = _req.post(_X_UPLOAD_URL, auth=auth, data={
-                    "command":       "APPEND",
-                    "media_id":      media_id,
-                    "segment_index": str(segment),
-                }, files={"media": chunk}, timeout=60)
-                if resp.status_code not in (200, 204):
-                    raise Exception(f"APPEND segment {segment} failed (HTTP {resp.status_code}): {resp.text[:300]}")
+                resp = _req.post(
+                    append_url, auth=auth,
+                    data={"segment_index": str(segment)},
+                    files={"media": chunk},
+                    timeout=120,
+                )
+                if resp.status_code not in (200, 201, 204):
+                    _x_log_failure(f"APPEND seg {segment}", resp.status_code, resp.text)
+                    return
                 segment += 1
         print(f"[X] APPEND done ({segment} segments)", flush=True)
 
-        # 4. FINALIZE
+        # 4. FINALIZE — POST /2/media/upload/{id}/finalize
         _set_status("running:upload_finalize")
-        resp = _req.post(_X_UPLOAD_URL, auth=auth, data={
-            "command":  "FINALIZE",
-            "media_id": media_id,
-        }, timeout=30)
-        fin_data = resp.json()
-        fin_id, fin_info = _x_extract(fin_data)
-        if not fin_id:
-            raise Exception(f"FINALIZE failed (HTTP {resp.status_code}): {fin_data}")
+        fin_url = f"https://api.x.com/2/media/upload/{media_id}/finalize"
+        resp = _req.post(fin_url, auth=auth, timeout=30)
+        if resp.status_code not in (200, 201):
+            _x_log_failure("FINALIZE", resp.status_code, resp.text)
+            return
+        try:
+            fin_data = resp.json()
+        except Exception:
+            fin_data = {}
+        _, fin_info = _x_extract(fin_data)
         print(f"[X] FINALIZE ok (state={fin_info.get('state', 'n/a')})", flush=True)
 
-        # 5. Poll STATUS until processing complete
+        # 5. Poll STATUS — GET /2/media/upload/{id}  (only if processing async)
         _set_status("running:processing")
-        # If FINALIZE returned no processing_info (small video processed
-        # synchronously), skip straight through.
         if fin_info and fin_info.get("state") and fin_info["state"] != "succeeded":
+            status_url = f"https://api.x.com/2/media/upload/{media_id}"
             for _ in range(60):
                 _time_mod.sleep(5)
-                resp = _req.get(_X_UPLOAD_URL, auth=auth, params={
-                    "command":  "STATUS",
-                    "media_id": media_id,
-                }, timeout=30)
+                resp = _req.get(status_url, auth=auth, timeout=30)
+                if resp.status_code != 200:
+                    _x_log_failure("STATUS", resp.status_code, resp.text)
+                    return
                 _, info = _x_extract(resp.json())
                 state = info.get("state", "succeeded")
                 print(f"[X] STATUS state={state}", flush=True)
                 if state == "succeeded":
                     break
                 if state == "failed":
-                    raise Exception(f"X video processing failed: {info}")
+                    err_obj = info.get("error") or info
+                    _set_result(f"error:X video processing failed: {err_obj}")
+                    _add_activity_log(article_id, "X Narrated Video Post Failed",
+                                      f"Step: STATUS\nProcessing state: failed\n{_json.dumps(info, indent=2)[:1500]}",
+                                      component="narrated")
+                    return
             else:
-                raise Exception("X video processing timed out after 5 minutes")
+                _set_result("error:X video processing timed out after 5 minutes")
+                _add_activity_log(article_id, "X Narrated Video Post Failed",
+                                  "Step: STATUS\nTimed out after 5 minutes of polling.",
+                                  component="narrated")
+                return
 
         # 6. Post tweet
         _set_status("running:tweeting")
@@ -10029,10 +10089,18 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
             "text":  tweet_text,
             "media": {"media_ids": [media_id]},
         }, timeout=30)
-        tweet_data = resp.json()
+        if resp.status_code not in (200, 201):
+            _x_log_failure("Tweet creation", resp.status_code, resp.text)
+            return
+        try:
+            tweet_data = resp.json()
+        except Exception:
+            tweet_data = {}
         tweet_id = (tweet_data.get("data") or {}).get("id")
         if not tweet_id:
-            raise Exception(f"Tweet creation failed: {tweet_data}")
+            _x_log_failure("Tweet creation", resp.status_code, resp.text or _json.dumps(tweet_data),
+                           exception_msg="No tweet id in response")
+            return
 
         permalink = f"https://x.com/i/web/status/{tweet_id}"
         execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
@@ -12877,17 +12945,21 @@ def _post_narrated_bluesky_worker(article_id, video_url, caption, run_ts):
         jwt, did, pds_url = _bluesky_auth()
 
         # ── Get a service-auth token for the video upload service ──────────────
-        # video.bsky.app is a separate service from bsky.social; the regular
-        # session JWT is rejected with 401. Bluesky requires a short-lived
-        # service token issued via com.atproto.server.getServiceAuth with
-        # aud=did:web:video.bsky.app and lxm=app.bsky.video.uploadVideo.
-        # IMPORTANT: this must be called on the user's actual PDS — service
-        # tokens issued by a different host won't be accepted by video.bsky.app.
+        # video.bsky.app validates the incoming token by checking that its
+        # `aud` claim is the user's own PDS DID (did:web:<pds_host>) — NOT
+        # video.bsky.app's own DID. Per the error returned by video.bsky.app:
+        #   "invalid token audience ..., should be the user's PDS DID
+        #    \"did:web:<pds-host>\""
+        # Build that DID from the resolved PDS URL.
+        from urllib.parse import urlparse as _urlparse
+        pds_host = (_urlparse(pds_url).hostname or "").strip()
+        pds_did  = f"did:web:{pds_host}" if pds_host else "did:web:bsky.social"
+
         _set_status("running:auth")
-        print(f"[Bluesky] Resolved PDS for video service auth: {pds_url}", flush=True)
+        print(f"[Bluesky] Resolved PDS for video service auth: {pds_url} (aud={pds_did})", flush=True)
         sa_resp = _req.get(
             f"{pds_url}/xrpc/com.atproto.server.getServiceAuth",
-            params={"aud": "did:web:video.bsky.app",
+            params={"aud": pds_did,
                     "lxm": "app.bsky.video.uploadVideo",
                     "exp": int(_time_mod.time()) + 30 * 60},  # 30-minute token
             headers={"Authorization": f"Bearer {jwt}"},
