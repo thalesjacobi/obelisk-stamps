@@ -6799,15 +6799,16 @@ function postNarratedToTiktok(ts, videoUrl) {
     var postBtn = document.getElementById(_nvTiktokId(ts, 'post-btn'));
     if (postBtn) postBtn.disabled = true;
 
-    /* ── Demo mode when TikTok is not configured ── */
+    /* If TikTok isn't configured, show a real error instead of faking a post.
+       (The previous "demo mode" that simulated a successful post silently
+       hid auth issues like an expired access token — the request never
+       reached the server, so nothing was logged.) */
     if (!TIKTOK_CONFIGURED) {
-        showNvTiktokRunning(ts, 'running:0');
-        setTimeout(function() { showNvTiktokRunning(ts, 'running:uploading'); }, 800);
-        setTimeout(function() { showNvTiktokRunning(ts, 'running:processing'); }, 2000);
-        setTimeout(function() {
-            showNvTiktokDone(ts, 'https://www.tiktok.com/@obelisk_stamps/video/demo');
-            if (postBtn) postBtn.disabled = false;
-        }, 3500);
+        showNvTiktokError(ts,
+            'TikTok is not configured (env vars TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET / '
+            + 'TIKTOK_ACCESS_TOKEN). The access token may have expired — re-issue it and '
+            + 'redeploy to refresh the Cloud Run env vars.');
+        if (postBtn) postBtn.disabled = false;
         return;
     }
 

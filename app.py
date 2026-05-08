@@ -377,8 +377,11 @@ if X_CONFIGURED:
 else:
     print("X (Twitter): credentials not set — posting disabled")
 
-_X_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
-_X_TWEET_URL  = "https://api.twitter.com/2/tweets"
+# X media upload — v2 endpoint. The legacy v1.1 endpoint
+# (upload.twitter.com/1.1/media/upload.json) was retired in 2024; media IDs
+# returned by v1.1 are no longer accepted by the v2 tweets endpoint.
+_X_UPLOAD_URL = "https://api.x.com/2/media/upload"
+_X_TWEET_URL  = "https://api.x.com/2/tweets"
 
 
 def _x_auth():
@@ -9944,6 +9947,15 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
         file_size = _os.path.getsize(tmp_path)
         print(f"[X] Downloaded video: {file_size} bytes", flush=True)
 
+        # Helper: extract media_id from a v2 (or v1.1 fallback) upload response.
+        # v2:    {"data": {"id": "...", "media_key": "...", "processing_info": {...}}}
+        # v1.1:  {"media_id_string": "...", "processing_info": {...}}
+        def _x_extract(resp_json):
+            d = (resp_json or {}).get("data") or {}
+            mid = d.get("id") or resp_json.get("media_id_string") or resp_json.get("id")
+            info = d.get("processing_info") or resp_json.get("processing_info") or {}
+            return mid, info
+
         # 2. INIT upload session
         _set_status("running:upload_init")
         resp = _req.post(_X_UPLOAD_URL, auth=auth, data={
@@ -9952,10 +9964,10 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
             "media_type":     "video/mp4",
             "media_category": "tweet_video",
         }, timeout=30)
-        data = resp.json()
-        if "media_id_string" not in data:
-            raise Exception(f"INIT failed: {data}")
-        media_id = data["media_id_string"]
+        init_data = resp.json()
+        media_id, _ = _x_extract(init_data)
+        if not media_id:
+            raise Exception(f"INIT failed (HTTP {resp.status_code}): {init_data}")
         print(f"[X] INIT media_id={media_id}", flush=True)
 
         # 3. APPEND chunks (5 MB each)
@@ -9973,7 +9985,7 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
                     "segment_index": str(segment),
                 }, files={"media": chunk}, timeout=60)
                 if resp.status_code not in (200, 204):
-                    raise Exception(f"APPEND segment {segment} failed: {resp.text[:300]}")
+                    raise Exception(f"APPEND segment {segment} failed (HTTP {resp.status_code}): {resp.text[:300]}")
                 segment += 1
         print(f"[X] APPEND done ({segment} segments)", flush=True)
 
@@ -9983,28 +9995,32 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
             "command":  "FINALIZE",
             "media_id": media_id,
         }, timeout=30)
-        data = resp.json()
-        if "media_id_string" not in data:
-            raise Exception(f"FINALIZE failed: {data}")
-        print(f"[X] FINALIZE ok", flush=True)
+        fin_data = resp.json()
+        fin_id, fin_info = _x_extract(fin_data)
+        if not fin_id:
+            raise Exception(f"FINALIZE failed (HTTP {resp.status_code}): {fin_data}")
+        print(f"[X] FINALIZE ok (state={fin_info.get('state', 'n/a')})", flush=True)
 
         # 5. Poll STATUS until processing complete
         _set_status("running:processing")
-        for _ in range(60):
-            _time_mod.sleep(5)
-            resp = _req.get(_X_UPLOAD_URL, auth=auth, params={
-                "command":  "STATUS",
-                "media_id": media_id,
-            }, timeout=30)
-            info = resp.json().get("processing_info", {})
-            state = info.get("state", "succeeded")
-            print(f"[X] STATUS state={state}", flush=True)
-            if state == "succeeded":
-                break
-            if state == "failed":
-                raise Exception(f"X video processing failed: {info}")
-        else:
-            raise Exception("X video processing timed out after 5 minutes")
+        # If FINALIZE returned no processing_info (small video processed
+        # synchronously), skip straight through.
+        if fin_info and fin_info.get("state") and fin_info["state"] != "succeeded":
+            for _ in range(60):
+                _time_mod.sleep(5)
+                resp = _req.get(_X_UPLOAD_URL, auth=auth, params={
+                    "command":  "STATUS",
+                    "media_id": media_id,
+                }, timeout=30)
+                _, info = _x_extract(resp.json())
+                state = info.get("state", "succeeded")
+                print(f"[X] STATUS state={state}", flush=True)
+                if state == "succeeded":
+                    break
+                if state == "failed":
+                    raise Exception(f"X video processing failed: {info}")
+            else:
+                raise Exception("X video processing timed out after 5 minutes")
 
         # 6. Post tweet
         _set_status("running:tweeting")
@@ -12617,8 +12633,36 @@ def admin_delete_narrated_linkedin_post(article_id):
 # BLUESKY (AT Protocol): Workers & Routes
 # ══════════════════════════════════════════════════════════════
 
+def _bluesky_resolve_pds(did):
+    """Resolve a DID to its PDS endpoint (e.g. https://shiitake.us-east.host.bsky.network).
+
+    For did:plc:... we query the PLC directory. For did:web:... we resolve the web URL.
+    Falls back to https://bsky.social on any failure (the legacy assumption).
+    Returns the bare URL with no trailing slash.
+    """
+    import requests as _req
+    try:
+        if did.startswith("did:plc:"):
+            r = _req.get(f"https://plc.directory/{did}", timeout=10)
+            doc = r.json() if r.status_code == 200 else {}
+        elif did.startswith("did:web:"):
+            host = did[len("did:web:"):]
+            r = _req.get(f"https://{host}/.well-known/did.json", timeout=10)
+            doc = r.json() if r.status_code == 200 else {}
+        else:
+            return "https://bsky.social"
+        for svc in (doc.get("service") or []):
+            if svc.get("id") in ("#atproto_pds", f"{did}#atproto_pds") and svc.get("type") == "AtprotoPersonalDataServer":
+                ep = (svc.get("serviceEndpoint") or "").rstrip("/")
+                if ep:
+                    return ep
+    except Exception as _e:
+        print(f"[Bluesky] PDS resolution failed for {did}: {_e}", flush=True)
+    return "https://bsky.social"
+
+
 def _bluesky_auth():
-    """Authenticate with Bluesky and return (jwt, did)."""
+    """Authenticate with Bluesky and return (jwt, did, pds_url)."""
     import requests as _req
     resp = _req.post("https://bsky.social/xrpc/com.atproto.server.createSession", json={
         "identifier": BLUESKY_HANDLE,
@@ -12626,7 +12670,26 @@ def _bluesky_auth():
     }, timeout=15)
     resp.raise_for_status()
     data = resp.json()
-    return data["accessJwt"], data["did"]
+    did = data["did"]
+    pds_url = _bluesky_resolve_pds(did)
+    # If the account is on a non-bsky.social PDS, re-create the session there so
+    # the JWT is signed by the correct issuer (required for service-auth tokens
+    # accepted by video.bsky.app).
+    if pds_url != "https://bsky.social":
+        try:
+            resp2 = _req.post(f"{pds_url}/xrpc/com.atproto.server.createSession", json={
+                "identifier": BLUESKY_HANDLE,
+                "password":   BLUESKY_APP_PASSWORD,
+            }, timeout=15)
+            if resp2.status_code == 200:
+                data = resp2.json()
+                print(f"[Bluesky] Re-authenticated against PDS {pds_url}", flush=True)
+            else:
+                print(f"[Bluesky] PDS re-auth failed (HTTP {resp2.status_code}); "
+                      f"falling back to bsky.social JWT", flush=True)
+        except Exception as _e:
+            print(f"[Bluesky] PDS re-auth error: {_e}; using bsky.social JWT", flush=True)
+    return data["accessJwt"], data["did"], pds_url
 
 
 def _post_carousel_bluesky_worker(article_id, caption, component):
@@ -12670,7 +12733,7 @@ def _post_carousel_bluesky_worker(article_id, caption, component):
         carousel_band_top = _compute_max_overlay_band_top(punchlines[:n])
 
         # Authenticate
-        jwt, did = _bluesky_auth()
+        jwt, did, pds_url = _bluesky_auth()
 
         # 1. Compose, upload images as blobs
         _set_status(f"running:compose:0/{n}")
@@ -12811,16 +12874,19 @@ def _post_narrated_bluesky_worker(article_id, video_url, caption, run_ts):
         execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
 
     try:
-        jwt, did = _bluesky_auth()
+        jwt, did, pds_url = _bluesky_auth()
 
         # ── Get a service-auth token for the video upload service ──────────────
         # video.bsky.app is a separate service from bsky.social; the regular
         # session JWT is rejected with 401. Bluesky requires a short-lived
         # service token issued via com.atproto.server.getServiceAuth with
         # aud=did:web:video.bsky.app and lxm=app.bsky.video.uploadVideo.
+        # IMPORTANT: this must be called on the user's actual PDS — service
+        # tokens issued by a different host won't be accepted by video.bsky.app.
         _set_status("running:auth")
+        print(f"[Bluesky] Resolved PDS for video service auth: {pds_url}", flush=True)
         sa_resp = _req.get(
-            "https://bsky.social/xrpc/com.atproto.server.getServiceAuth",
+            f"{pds_url}/xrpc/com.atproto.server.getServiceAuth",
             params={"aud": "did:web:video.bsky.app",
                     "lxm": "app.bsky.video.uploadVideo",
                     "exp": int(_time_mod.time()) + 30 * 60},  # 30-minute token
@@ -12828,37 +12894,60 @@ def _post_narrated_bluesky_worker(article_id, video_url, caption, run_ts):
             timeout=15)
         if sa_resp.status_code != 200:
             _set_result(f"error:Failed to obtain Bluesky video service token "
-                        f"(HTTP {sa_resp.status_code}): {sa_resp.text[:200]}")
+                        f"from {pds_url} (HTTP {sa_resp.status_code}): {sa_resp.text[:300]}")
+            _add_activity_log(article_id, "Bluesky Narrated Video Post Failed",
+                              f"getServiceAuth on {pds_url} returned HTTP {sa_resp.status_code}\n"
+                              f"Body: {sa_resp.text[:500]}",
+                              component="narrated")
             return
-        service_token = sa_resp.json().get("token", "")
+        service_token = (sa_resp.json() or {}).get("token", "")
         if not service_token:
-            _set_result(f"error:No service token in response: {sa_resp.text[:200]}")
+            _set_result(f"error:No service token in response: {sa_resp.text[:300]}")
             return
-        print(f"[Bluesky] Got video service token (len={len(service_token)})", flush=True)
+        print(f"[Bluesky] Got video service token (len={len(service_token)}) from {pds_url}", flush=True)
 
         # 1. Download video
         _set_status("running:download")
         resp_dl = _req.get(video_url, timeout=120)
         resp_dl.raise_for_status()
         video_bytes = resp_dl.content
+        print(f"[Bluesky] Downloaded video: {len(video_bytes)} bytes", flush=True)
 
         # 2. Upload video to Bluesky video service using the SERVICE TOKEN
         _set_status("running:upload")
+        upload_url = f"https://video.bsky.app/xrpc/app.bsky.video.uploadVideo?did={did}&name=video.mp4"
         resp = _req.post(
-            f"https://video.bsky.app/xrpc/app.bsky.video.uploadVideo?did={did}&name=video.mp4",
+            upload_url,
             headers={"Authorization": f"Bearer {service_token}",
                      "Content-Type": "video/mp4"},
             data=video_bytes, timeout=120)
         if resp.status_code == 409:
-            # Already uploaded — surface a helpful error
             _set_result(f"error:Bluesky says this video was already uploaded "
                         f"(HTTP 409). Try posting a freshly-generated narrated video.")
             return
-        resp.raise_for_status()
-        job_data = resp.json()
+        if resp.status_code != 200:
+            # Surface the FULL error body so we can debug auth failures.
+            err_body = (resp.text or "")[:500]
+            try:
+                err_json = resp.json()
+                err_short = err_json.get("message") or err_json.get("error") or err_body
+            except Exception:
+                err_short = err_body
+            _set_result(f"error:Bluesky uploadVideo HTTP {resp.status_code}: {err_short}")
+            _add_activity_log(article_id, "Bluesky Narrated Video Post Failed",
+                              f"uploadVideo on {upload_url} returned HTTP {resp.status_code}\n"
+                              f"PDS used for service-auth: {pds_url}\n"
+                              f"Service token length: {len(service_token)}\n"
+                              f"Body: {err_body}",
+                              component="narrated")
+            return
+        try:
+            job_data = resp.json()
+        except Exception:
+            job_data = {}
         job_id = job_data.get("jobId", "")
         if not job_id:
-            _set_result(f"error:Video upload failed: {job_data}")
+            _set_result(f"error:Video upload returned no jobId: {job_data}")
             return
         print(f"[Bluesky] Video upload job: {job_id}", flush=True)
 
@@ -13024,7 +13113,7 @@ def admin_delete_carousel_bluesky_post(article_id):
     if not post_id:
         return jsonify({"error": "No post record found"}), 400
     try:
-        jwt, did = _bluesky_auth()
+        jwt, did, pds_url = _bluesky_auth()
         resp = _req.post("https://bsky.social/xrpc/com.atproto.repo.deleteRecord", json={
             "repo": did,
             "collection": "app.bsky.feed.post",
@@ -13133,7 +13222,7 @@ def admin_delete_narrated_bluesky_post(article_id):
     if not post_id:
         return jsonify({"error": "No post record found"}), 400
     try:
-        jwt, did = _bluesky_auth()
+        jwt, did, pds_url = _bluesky_auth()
         resp = _req.post("https://bsky.social/xrpc/com.atproto.repo.deleteRecord", json={
             "repo": did,
             "collection": "app.bsky.feed.post",
