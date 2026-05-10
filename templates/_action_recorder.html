@@ -1,0 +1,369 @@
+{# ============================================================================
+   Action Recorder partial — toggleable click/change logger for automation.
+
+   Captures every meaningful UI interaction (button clicks, link clicks,
+   form-input changes, image clicks, accordion headers, anything with
+   cursor: pointer) into localStorage with millisecond delays between
+   actions. Persists across page navigations on the same origin.
+
+   Include this partial in any admin page where you want recording
+   available (currently /admin/articles list and /admin/articles/<id>/edit).
+
+   localStorage keys:
+     ar.enabled  — "true" / "false"
+     ar.log      — JSON array of {ts, wait_ms, kind, selector, text, ...}
+     ar.last_ts  — last action timestamp (for wait_ms calculation)
+
+   Visible UI: a floating widget pinned to the bottom-right of the viewport.
+   ============================================================================ #}
+
+{# ── Floating toggle bar ───────────────────────────────────────────────── #}
+<div id="action-recorder-bar"
+     class="d-flex align-items-center gap-1 shadow-sm"
+     style="position:fixed; bottom:1rem; right:1rem; z-index:1050;
+            background:#fff; padding:.35rem; border-radius:999px; border:1px solid #dee2e6;">
+    <button type="button" class="btn btn-sm btn-outline-danger rounded-pill" id="ar-toggle-btn"
+            onclick="actionRecorderToggle()"
+            title="Record clicks and form changes for later automation">
+        <i class="fa-regular fa-circle me-1" id="ar-toggle-icon"></i><span id="ar-toggle-label">Record actions</span>
+    </button>
+    <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill"
+            onclick="actionRecorderShow()"
+            title="View / export recorded actions">
+        <span class="badge bg-secondary" id="ar-count">0</span>
+    </button>
+</div>
+
+{# ── Recorded-actions viewer modal ────────────────────────────────────── #}
+<div class="modal fade" id="action-recorder-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Recorded Actions</h5>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="actionRecorderCopyJson()" title="Copy as JSON">
+                        <i class="fa-regular fa-copy me-1"></i>Copy JSON
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="actionRecorderClear()">
+                        <i class="fa-solid fa-trash me-1"></i>Clear
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">
+                    Each row is one user action. <strong>wait_ms</strong> is the time you waited
+                    before this action (relative to the previous one). Recording persists across
+                    page navigations on this site, so you can capture a flow that spans the
+                    Articles list and the Edit page.
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover" id="ar-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:40px">#</th>
+                                <th style="width:90px">Wait (ms)</th>
+                                <th>Element</th>
+                                <th>Text / label</th>
+                                <th style="width:140px">Kind</th>
+                                <th>Value</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ar-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="ar-empty" class="text-muted small text-center py-3 d-none">No actions recorded yet.</div>
+                <details class="mt-3">
+                    <summary class="small text-muted">Raw JSON</summary>
+                    <textarea class="form-control font-monospace small mt-2" id="ar-json" rows="10" readonly></textarea>
+                </details>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ──────────────────────────────────────────────────────────────────────────
+   Action Recorder — implementation
+   ────────────────────────────────────────────────────────────────────────── */
+function _arGetLog() {
+    try { return JSON.parse(localStorage.getItem('ar.log') || '[]'); }
+    catch (_) { return []; }
+}
+function _arSetLog(arr) {
+    localStorage.setItem('ar.log', JSON.stringify(arr));
+    _arUpdateBadge();
+}
+function _arEnabled() { return localStorage.getItem('ar.enabled') === 'true'; }
+function _arUpdateBadge() {
+    var n = _arGetLog().length;
+    var el = document.getElementById('ar-count');
+    if (el) el.textContent = n;
+}
+function _arUpdateToggleUI() {
+    var enabled = _arEnabled();
+    var btn   = document.getElementById('ar-toggle-btn');
+    var icon  = document.getElementById('ar-toggle-icon');
+    var label = document.getElementById('ar-toggle-label');
+    if (!btn || !icon || !label) return;
+    if (enabled) {
+        btn.classList.remove('btn-outline-danger');
+        btn.classList.add('btn-danger');
+        icon.className = 'fa-solid fa-circle me-1';
+        icon.style.animation = 'ar-blink 1s infinite';
+        label.textContent = 'Recording…';
+    } else {
+        btn.classList.remove('btn-danger');
+        btn.classList.add('btn-outline-danger');
+        icon.className = 'fa-regular fa-circle me-1';
+        icon.style.animation = '';
+        label.textContent = 'Record actions';
+    }
+}
+
+/* Build a stable-ish CSS selector for an element. Prefer #id, then a
+   chain of tag.class:nth-child for context. */
+function _arSelector(el) {
+    if (!el) return '';
+    if (el.id) return '#' + el.id;
+    var parts = [];
+    var cur = el;
+    var depth = 0;
+    while (cur && cur.nodeType === 1 && depth < 4) {
+        var part = cur.tagName.toLowerCase();
+        if (cur.id) { parts.unshift('#' + cur.id); break; }
+        if (cur.className && typeof cur.className === 'string') {
+            var cls = cur.className.trim().split(/\s+/).slice(0, 2).join('.');
+            if (cls) part += '.' + cls;
+        }
+        var p = cur.parentElement;
+        if (p) {
+            var idx = Array.prototype.indexOf.call(p.children, cur) + 1;
+            part += ':nth-child(' + idx + ')';
+        }
+        parts.unshift(part);
+        cur = cur.parentElement;
+        depth++;
+    }
+    return parts.join(' > ');
+}
+
+/* Walk up to find any clickable ancestor. Returns null for form inputs and
+   labels-for-inputs — those are covered by the separate `change` event
+   handler so we don't double-record. */
+function _arResolveTarget(el) {
+    while (el && el.nodeType === 1 && el !== document.body) {
+        var tag = el.tagName ? el.tagName.toLowerCase() : '';
+        if (tag === 'input' || tag === 'select' || tag === 'textarea') return null;
+        if (tag === 'label' && el.htmlFor) return null;
+        if (tag === 'button' || tag === 'a') return el;
+        if (el.getAttribute) {
+            var role = el.getAttribute('role');
+            if (role === 'button' || role === 'link' || role === 'menuitem' ||
+                role === 'tab' || role === 'option' || role === 'checkbox' ||
+                role === 'switch') return el;
+            if (el.hasAttribute('onclick')) return el;
+            if (el.hasAttribute('data-bs-toggle') ||
+                el.hasAttribute('data-bs-dismiss') ||
+                el.hasAttribute('data-bs-target')) return el;
+        }
+        try {
+            var cs = window.getComputedStyle(el);
+            if (cs && cs.cursor === 'pointer') return el;
+        } catch (_) { /* getComputedStyle can fail on disconnected nodes */ }
+        el = el.parentElement;
+    }
+    return null;
+}
+
+/* Find the visible label text for a form input. */
+function _arInputLabel(el) {
+    if (el.id) {
+        try {
+            var lbl = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+            if (lbl && lbl.textContent) return lbl.textContent.trim().replace(/\s+/g, ' ').slice(0, 120);
+        } catch (_) {}
+    }
+    var p = el.parentElement;
+    while (p && p !== document.body) {
+        if (p.tagName === 'LABEL' && p.textContent) {
+            return p.textContent.trim().replace(/\s+/g, ' ').slice(0, 120);
+        }
+        p = p.parentElement;
+    }
+    return el.getAttribute('aria-label')
+        || el.getAttribute('placeholder')
+        || el.getAttribute('name')
+        || '';
+}
+
+/* Skip events on the recorder UI itself so we don't record meta-events. */
+function _arIsRecorderUI(el) {
+    while (el && el.nodeType === 1) {
+        if (el.id === 'action-recorder-bar' || el.id === 'action-recorder-modal') return true;
+        el = el.parentElement;
+    }
+    return false;
+}
+
+function _arRecord(entry) {
+    var now = Date.now();
+    var lastTs = parseInt(localStorage.getItem('ar.last_ts') || '0', 10);
+    entry.wait_ms = lastTs ? (now - lastTs) : 0;
+    entry.ts = new Date(now).toISOString();
+    // Tag the entry with the page it was recorded on so cross-page flows
+    // are reproducible.
+    entry.page = window.location.pathname;
+    var log = _arGetLog();
+    log.push(entry);
+    _arSetLog(log);
+    localStorage.setItem('ar.last_ts', String(now));
+}
+
+function _arClickHandler(e) {
+    if (!_arEnabled()) return;
+    if (_arIsRecorderUI(e.target)) return;
+    var tgt = _arResolveTarget(e.target);
+    if (!tgt) return;
+    var tag = tgt.tagName.toLowerCase();
+    var kind;
+    if (tag === 'a')           kind = 'link';
+    else if (tag === 'button') kind = 'button';
+    else                       kind = 'click:' + tag;
+    var text = (tgt.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+    if (!text && tag === 'img') {
+        text = tgt.getAttribute('alt')
+            || tgt.getAttribute('title')
+            || tgt.getAttribute('data-image-url')
+            || (tgt.getAttribute('src') || '').split('/').pop();
+    }
+    _arRecord({
+        kind:     kind,
+        selector: _arSelector(tgt),
+        text:     text || '',
+        href:     tag === 'a' ? (tgt.getAttribute('href') || '') : null,
+        src:      tag === 'img' ? (tgt.getAttribute('src') || '') : null,
+    });
+}
+
+function _arChangeHandler(e) {
+    if (!_arEnabled()) return;
+    if (_arIsRecorderUI(e.target)) return;
+    var el = e.target;
+    if (!el || !el.tagName) return;
+    var tag = el.tagName.toLowerCase();
+    if (tag !== 'input' && tag !== 'select' && tag !== 'textarea') return;
+
+    var inputType = (el.type || tag).toLowerCase();
+    if (['hidden', 'submit', 'button', 'reset', 'file'].indexOf(inputType) !== -1) return;
+
+    var value;
+    if (inputType === 'checkbox' || inputType === 'radio') {
+        value = !!el.checked;
+    } else {
+        value = el.value;
+        if (typeof value === 'string' && value.length > 200) {
+            value = value.slice(0, 200) + '…';
+        }
+    }
+    _arRecord({
+        kind:     'change:' + inputType,
+        selector: _arSelector(el),
+        text:     _arInputLabel(el),
+        value:    value,
+    });
+}
+
+/* Public API ──────────────────────────────────────────────────────────── */
+function actionRecorderToggle() {
+    var newState = !_arEnabled();
+    localStorage.setItem('ar.enabled', String(newState));
+    if (newState) {
+        localStorage.removeItem('ar.last_ts');
+    }
+    _arUpdateToggleUI();
+}
+
+function _arRenderModal() {
+    var log = _arGetLog();
+    var tbody = document.getElementById('ar-tbody');
+    var empty = document.getElementById('ar-empty');
+    var jsonEl = document.getElementById('ar-json');
+    if (!tbody || !empty || !jsonEl) return;
+    tbody.innerHTML = '';
+    if (!log.length) {
+        empty.classList.remove('d-none');
+    } else {
+        empty.classList.add('d-none');
+        log.forEach(function(e, i) {
+            var tr = document.createElement('tr');
+            var badgeColor = 'secondary';
+            if (e.kind === 'link') badgeColor = 'info';
+            else if (e.kind && e.kind.indexOf('change:') === 0) badgeColor = 'warning';
+            var valDisplay = '';
+            if (Object.prototype.hasOwnProperty.call(e, 'value')) {
+                if (typeof e.value === 'boolean') {
+                    valDisplay = e.value ? '<span class="badge bg-success">true</span>'
+                                         : '<span class="badge bg-secondary">false</span>';
+                } else {
+                    valDisplay = '<span class="font-monospace small">'
+                        + String(e.value).replace(/</g, '&lt;').slice(0, 100) + '</span>';
+                }
+            } else if (e.href) {
+                valDisplay = '<span class="font-monospace small text-muted">' +
+                    e.href.replace(/</g, '&lt;') + '</span>';
+            } else if (e.src) {
+                valDisplay = '<span class="font-monospace small text-muted">' +
+                    e.src.replace(/</g, '&lt;') + '</span>';
+            }
+            tr.innerHTML =
+                '<td class="text-muted small">' + (i + 1) + '</td>' +
+                '<td class="font-monospace small">' + (e.wait_ms || 0) + '</td>' +
+                '<td class="font-monospace small" style="word-break:break-all">' +
+                    (e.selector || '').replace(/</g, '&lt;') + '</td>' +
+                '<td class="small">' + (e.text || '').replace(/</g, '&lt;') + '</td>' +
+                '<td><span class="badge bg-' + badgeColor + '">' + e.kind + '</span></td>' +
+                '<td>' + valDisplay + '</td>';
+            tbody.appendChild(tr);
+        });
+    }
+    jsonEl.value = JSON.stringify(log, null, 2);
+}
+
+function actionRecorderShow() {
+    _arRenderModal();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('action-recorder-modal')).show();
+}
+
+function actionRecorderClear() {
+    if (!confirm('Clear the recorded action log?')) return;
+    localStorage.removeItem('ar.log');
+    localStorage.removeItem('ar.last_ts');
+    _arUpdateBadge();
+    _arRenderModal();
+}
+
+function actionRecorderCopyJson() {
+    var jsonEl = document.getElementById('ar-json');
+    jsonEl.focus(); jsonEl.select();
+    try {
+        navigator.clipboard.writeText(jsonEl.value).then(function() { jsonEl.blur(); });
+    } catch (_) {
+        document.execCommand('copy');
+    }
+}
+
+/* Bootstrap: attach the listeners and sync UI to localStorage state. */
+(function _arBoot() {
+    document.addEventListener('click',  _arClickHandler,  true);
+    document.addEventListener('change', _arChangeHandler, true);
+    document.addEventListener('DOMContentLoaded', function() {
+        _arUpdateToggleUI();
+        _arUpdateBadge();
+    });
+    var style = document.createElement('style');
+    style.textContent = '@keyframes ar-blink { 0%,100%{opacity:1} 50%{opacity:.3} }';
+    document.head.appendChild(style);
+})();
+/* ── end Action Recorder ─────────────────────────────────────────────── */
+</script>

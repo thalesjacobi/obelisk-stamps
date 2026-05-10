@@ -247,9 +247,15 @@
 <div class="d-flex align-items-center mb-3">
     <a href="/admin/articles" class="text-decoration-none text-muted me-3">&larr; All Articles</a>
     <h4 class="mb-0">{% if article %}Edit Article{% else %}New Article{% endif %}</h4>
-    {% if article and article.is_published %}
-        <a href="/articles/{{ article.slug }}" target="_blank" class="btn btn-outline-secondary btn-sm ms-auto">View Live</a>
-    {% endif %}
+
+    <div class="ms-auto d-flex align-items-center gap-2">
+        {% if article and article.is_published %}
+            <a href="/articles/{{ article.slug }}" target="_blank" class="btn btn-outline-secondary btn-sm">View Live</a>
+        {% endif %}
+        <button type="button" class="btn btn-primary btn-sm px-3" onclick="saveArticle()" id="save-btn-top">
+            <i class="fa-regular fa-floppy-disk me-1"></i>Save
+        </button>
+    </div>
 </div>
 
 <form id="article-form" data-article-id="{{ article.id if article else '' }}">
@@ -1887,7 +1893,6 @@
             <div class="modal-header">
                 <h5 class="modal-title" id="component-log-title">Logs</h5>
                 <div class="ms-auto d-flex align-items-center gap-2">
-                    <span id="component-log-auto-refresh-status" class="small text-muted"></span>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="component-log-refresh-btn" onclick="refreshComponentLog()" title="Reload entries from server">
                         <i class="fa-solid fa-arrows-rotate"></i>
                     </button>
@@ -1921,6 +1926,9 @@
         </div>
     </div>
 </div>
+
+{# Floating Action Recorder (cross-page click + form-change logger). Persists in localStorage. #}
+{% include "_action_recorder.html" %}
 {% endblock %}
 
 {% block scripts %}
@@ -1929,6 +1937,7 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
 const ARTICLE_ID = parseInt(document.getElementById('article-form').dataset.articleId) || null;
+
 const SAVE_URL = ARTICLE_ID
     ? '/admin/articles/' + ARTICLE_ID + '/save'
     : '/admin/articles/new';
@@ -11492,19 +11501,9 @@ function viewComponentLog(component, title, reuse) {
                 accordion.appendChild(item);
             });
 
-            // Show modal only on first open (not on auto-refresh redraws)
+            // Show modal only on first open (not on manual refresh redraws)
             if (!reuse) {
-                var modalEl = document.getElementById('component-log-modal');
-                new bootstrap.Modal(modalEl).show();
-                // Start auto-refresh: re-fetch every 5s while modal is open.
-                _stopComponentLogAutoRefresh();
-                _componentLogContext.timer = setInterval(function() {
-                    refreshComponentLog();
-                }, 5000);
-                var st = document.getElementById('component-log-auto-refresh-status');
-                if (st) st.textContent = 'Auto-refresh: every 5s';
-                // Stop the timer when the modal is dismissed.
-                modalEl.addEventListener('hidden.bs.modal', _stopComponentLogAutoRefresh, {once: true});
+                new bootstrap.Modal(document.getElementById('component-log-modal')).show();
             }
         })
         .catch(function() {

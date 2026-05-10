@@ -1138,6 +1138,11 @@
         {% endif %}
     </div>
 </div>
+
+{# Floating Action Recorder (cross-page click + form-change logger). Persists in localStorage. #}
+{% if active_tab == 'articles' %}
+{% include "_action_recorder.html" %}
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
