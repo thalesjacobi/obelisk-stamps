@@ -787,6 +787,50 @@
             </div>
         </div>
 
+        <!-- Auto-Publish Action Sequence -->
+        <div class="card mt-4" id="auto-publish-card">
+            <div class="card-header d-flex align-items-center gap-2">
+                <strong>Auto-Publish Action Sequence</strong>
+                <span class="ms-auto badge bg-secondary" id="auto-pub-eligible-badge" title="Eligibility status">…</span>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">
+                    JSON list of actions (recorded via the floating Action Recorder) to run
+                    <strong>automatically</strong> when an article is auto-published via
+                    <em>Schedule publishing</em>.
+                </p>
+                <ul class="text-muted small mb-3" style="padding-left:1.2rem">
+                    <li>Runs in a background thread immediately after the lazy-sweep flips
+                        <code>is_published = 1</code>.</li>
+                    <li>Only fires if the article has a <strong>full 10/10 carousel</strong>
+                        AND a <strong>narrated video</strong>. Otherwise the article is published
+                        without the automation (silent skip; logged in stdout).</li>
+                    <li>Each "Post to &lt;Network&gt;" entry in the JSON is executed sequentially —
+                        the worker waits for each network to fully complete (or fail) before
+                        moving to the next.</li>
+                    <li>Non-network actions (accordion clicks, navigation, etc.) are ignored.</li>
+                    <li>Captions are generated automatically: one Instagram caption is produced
+                        using the prompt above, then reused as-is on Instagram / Facebook / YouTube /
+                        LinkedIn / TikTok / Reddit / Telegram / Vimeo. Tight-budget platforms
+                        (<strong>X</strong>, <strong>Threads</strong>, <strong>Bluesky</strong>,
+                        <strong>Mastodon</strong>, <strong>Pinterest</strong>) get a separate
+                        AI-shortened version that fits their character limit while preserving
+                        voice / emoji / hashtags. Roughly $0.03 in OpenAI fees per article.</li>
+                </ul>
+                <textarea id="settings-auto-publish-actions" class="form-control font-monospace mb-2"
+                          rows="10" placeholder='[]' spellcheck="false">{{ auto_publish_actions or '' }}</textarea>
+                <div class="d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="saveAutoPublishActions()">Save</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="validateAutoPublishActions()">Validate JSON</button>
+                    <span id="settings-auto-publish-status" class="ms-2 small"></span>
+                </div>
+                <details class="mt-3">
+                    <summary class="small text-muted">Detected networks in current JSON</summary>
+                    <div class="small text-muted mt-2" id="auto-pub-detected-networks">—</div>
+                </details>
+            </div>
+        </div>
+
         <!-- Instagram API Credentials -->
         <div class="card mt-4">
             <div class="card-header"><strong>Instagram API</strong></div>
@@ -1529,6 +1573,76 @@ function saveIgCaptionPromptSettings() {
     })
     .catch(() => { status.textContent = 'Network error.'; status.className = 'ms-3 small text-danger'; });
 }
+
+// \u2500\u2500 Auto-Publish Action Sequence \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+const _autoPubKnownNetworks = ['instagram','facebook','youtube','threads','bluesky','x','tiktok','linkedin','pinterest','reddit','telegram','vimeo','mastodon','vk','tumblr'];
+function _autoPubExtractNetworks(actions) {
+    var hits = [];
+    if (!Array.isArray(actions)) return hits;
+    actions.forEach(function(a) {
+        var t = ((a && a.text) || '').toLowerCase();
+        if (!t.indexOf('post to ') === 0 && t.indexOf('post to ') === -1) return;
+        _autoPubKnownNetworks.forEach(function(n) {
+            if (t.indexOf('post to ' + n) !== -1 && hits.indexOf(n) === -1) hits.push(n);
+        });
+    });
+    return hits;
+}
+
+function validateAutoPublishActions() {
+    const ta = document.getElementById('settings-auto-publish-actions');
+    const status = document.getElementById('settings-auto-publish-status');
+    const detected = document.getElementById('auto-pub-detected-networks');
+    const raw = ta.value.trim();
+    if (!raw) {
+        status.textContent = 'Empty (no automation will run).';
+        status.className = 'ms-2 small text-muted';
+        if (detected) detected.textContent = '\u2014';
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) throw new Error('Top-level must be a JSON array.');
+        const nets = _autoPubExtractNetworks(parsed);
+        status.textContent = '\u2713 Valid JSON (' + parsed.length + ' actions, '
+            + nets.length + ' networks: ' + (nets.join(', ') || 'none') + ')';
+        status.className = 'ms-2 small text-success';
+        if (detected) detected.textContent = nets.length ? nets.join(', ') : 'No "Post to <Network>" entries detected.';
+        return parsed;
+    } catch (e) {
+        status.textContent = '\u2717 Invalid JSON: ' + (e.message || e);
+        status.className = 'ms-2 small text-danger';
+        if (detected) detected.textContent = '\u2014';
+        return null;
+    }
+}
+
+function saveAutoPublishActions() {
+    const ta = document.getElementById('settings-auto-publish-actions');
+    const status = document.getElementById('settings-auto-publish-status');
+    const raw = ta.value.trim();
+    // Validate first; allow empty
+    if (raw && validateAutoPublishActions() === null) return;
+    status.textContent = 'Saving\u2026';
+    status.className = 'ms-2 small text-muted';
+    fetch('/admin/settings/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({auto_publish_actions: raw}),
+    })
+    .then(r => r.json())
+    .then(d => {
+        status.textContent = d.success ? 'Saved!' : ('Error: ' + (d.error || 'unknown'));
+        status.className = 'ms-2 small ' + (d.success ? 'text-success' : 'text-danger');
+    })
+    .catch(() => { status.textContent = 'Network error.'; status.className = 'ms-2 small text-danger'; });
+}
+// Populate detected-networks badge on page load
+document.addEventListener('DOMContentLoaded', function() {
+    if (document.getElementById('settings-auto-publish-actions')) {
+        validateAutoPublishActions();
+    }
+});
 {% endif %}
 
 // ── Manual scheduled-publish sweep ───────────────────────────────────────

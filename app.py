@@ -4187,13 +4187,15 @@ def admin_test_luma():
 @login_required
 @admin_required
 def admin_settings():
-    carousel_style     = get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
-    cinemagraph_prompt = get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
-    ig_caption_prompt  = get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT)
+    carousel_style       = get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
+    cinemagraph_prompt   = get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
+    ig_caption_prompt    = get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT)
+    auto_publish_actions = get_setting('auto_publish_actions', '')
     return render_template("admin.html", active_tab="settings",
                            carousel_style=carousel_style,
                            cinemagraph_prompt=cinemagraph_prompt,
                            ig_caption_prompt=ig_caption_prompt,
+                           auto_publish_actions=auto_publish_actions,
                            ig_user_id_set=bool(IG_USER_ID),
                            ig_token_set=bool(IG_ACCESS_TOKEN),
                            fb_page_id_set=bool(FB_PAGE_ID),
@@ -4249,6 +4251,24 @@ def admin_settings_save():
             "ON DUPLICATE KEY UPDATE value = %s",
             (key, ig_caption_prompt, ig_caption_prompt),
         )
+    # Handle auto-publish action sequence (allow empty string to clear)
+    auto_publish_payload = data.get("auto_publish_actions")
+    if auto_publish_payload is not None:
+        raw = (auto_publish_payload or "").strip()
+        if raw:
+            # Validate JSON shape before saving
+            try:
+                parsed = json.loads(raw)
+            except Exception as _e:
+                return jsonify({"error": f"Invalid JSON: {_e}"}), 400
+            if not isinstance(parsed, list):
+                return jsonify({"error": "auto_publish_actions must be a JSON array"}), 400
+        execute(
+            "INSERT INTO site_settings (`key`, value) VALUES ('auto_publish_actions', %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (raw, raw),
+        )
+        return jsonify({"success": True})
     if not carousel_style and not cinemagraph_prompt and not ig_caption_prompt:
         return jsonify({"error": "Nothing to save"}), 400
     return jsonify({"success": True})
@@ -4287,10 +4307,268 @@ def _sweep_scheduled_publishes():
         )
         for _id, _title in due:
             print(f"[ScheduledPublish] Auto-published article {_id}: {_title!r}", flush=True)
+            # If the article has a full carousel + narrated video, fire the
+            # automation sequence in the background. The sequence calls each
+            # social-network worker sequentially and waits for completion;
+            # this can take many minutes, so it MUST run off the request thread.
+            try:
+                if _article_eligible_for_auto_publish_actions(int(_id)):
+                    threading.Thread(
+                        target=_run_auto_publish_actions,
+                        args=(int(_id),),
+                        daemon=True,
+                    ).start()
+                    print(f"[ScheduledPublish] Article {_id}: spawned auto-publish action runner.", flush=True)
+                else:
+                    print(f"[ScheduledPublish] Article {_id}: NOT eligible "
+                          f"(needs full 10/10 carousel + narrated video) — skipping automation.", flush=True)
+            except Exception as _e:
+                print(f"[ScheduledPublish] Article {_id}: failed to spawn runner: {_e}", flush=True)
         return [(int(r[0]), r[1]) for r in due]
     except Exception as _e:
         print(f"[ScheduledPublish] Sweep failed: {_e}", flush=True)
         return []
+
+
+def _article_eligible_for_auto_publish_actions(article_id):
+    """An article is eligible for the auto-publish action sequence ONLY if:
+       - it has all 10 carousel images, AND
+       - it has a narrated video (video_narrated_url is set).
+    """
+    row = query_one(
+        "SELECT carousel_images, video_narrated_url FROM articles WHERE id = %s",
+        (article_id,))
+    if not row:
+        return False
+    try:
+        imgs = json.loads(row[0]) if row[0] else []
+    except Exception:
+        imgs = []
+    if sum(1 for u in imgs[:10] if u) < 10:
+        return False
+    return bool(row[1])
+
+
+# Map of "Post to <Network>" text → (worker_function, status_key_prefix, network_label)
+# Only includes networks that take the standard (article_id, video_url, caption, run_ts)
+# signature. YouTube takes a different signature and is handled specially.
+_AUTO_PUB_WORKER_MAP = {
+    "instagram": "_post_narrated_reel_worker",
+    "facebook":  "_post_narrated_fb_worker",
+    "x":         "_post_narrated_x_worker",
+    "threads":   "_post_narrated_threads_worker",
+    "pinterest": "_post_narrated_pinterest_worker",
+    "tiktok":    "_post_narrated_tiktok_worker",
+    "linkedin":  "_post_narrated_linkedin_worker",
+    "bluesky":   "_post_narrated_bluesky_worker",
+    "reddit":    "_post_narrated_reddit_worker",
+    "telegram":  "_post_narrated_telegram_worker",
+    "vimeo":     "_post_narrated_vimeo_worker",
+    "mastodon":  "_post_narrated_mastodon_worker",
+}
+# Status key prefix per network — used to poll for completion
+_AUTO_PUB_STATUS_PREFIX = {
+    "instagram": "ig_narrated_status_",
+    "facebook":  "fb_narrated_status_",
+    "x":         "x_narrated_status_",
+    "threads":   "threads_narrated_status_",
+    "pinterest": "pinterest_narrated_status_",
+    "tiktok":    "tiktok_narrated_status_",
+    "linkedin":  "linkedin_narrated_status_",
+    "bluesky":   "bluesky_narrated_status_",
+    "reddit":    "reddit_narrated_status_",
+    "telegram":  "telegram_narrated_status_",
+    "vimeo":     "vimeo_narrated_status_",
+    "mastodon":  "mastodon_narrated_status_",
+    "youtube":   "yt_status_",
+}
+
+
+def _generate_caption_for_article(article_id):
+    """Generate an Instagram-style caption for the article using OpenAI.
+    Returns the caption string, or a simple fallback (title + url) if OpenAI
+    is not configured / errors out. Used by the auto-publish runner."""
+    row = query_one("SELECT title, slug, content FROM articles WHERE id = %s", (article_id,))
+    if not row:
+        return ""
+    title, slug, content = row[0] or "", row[1] or "", row[2] or ""
+    site_url = (SITE_URL or "").rstrip("/")
+    fallback = title + (("\n" + f"{site_url}/articles/{slug}") if site_url and slug else "")
+    if not _openai_client:
+        return fallback
+    try:
+        plain = re.sub(r"<[^>]+>", " ", content)
+        plain = re.sub(r"\s+", " ", plain).strip()[:500]
+        link = make_short_url(article_id, "ig") if site_url and slug else ""
+        system_msg = (get_setting(f'ig_caption_prompt_{article_id}')
+                      or get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT))
+        user_msg = f"Article title: {title}\n\nArticle summary: {plain}"
+        resp = _openai_client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "system", "content": system_msg},
+                      {"role": "user",   "content": user_msg}],
+            max_tokens=600,
+        )
+        caption = (resp.choices[0].message.content or "").strip()
+        if link and slug:
+            # Strip any "Want to read…" outro the model added, then append our short link
+            caption = re.sub(r'\n+Want to read the full article\?.*$', '',
+                             caption, flags=re.IGNORECASE | re.DOTALL).rstrip()
+            caption = re.sub(rf'{re.escape(site_url)}/articles/{re.escape(slug)}/?', '', caption).rstrip()
+            caption = caption + "\n\n" + link
+        return caption or fallback
+    except Exception as _e:
+        print(f"[AutoPublish] Caption generation failed: {_e}", flush=True)
+        return fallback
+
+
+def _run_auto_publish_actions(article_id):
+    """Sequentially execute every "Post to <Network>" action from the saved
+    auto_publish_actions JSON for this article. Each network's narrated-video
+    worker is called inline (so this thread blocks until it completes before
+    moving to the next). All progress is mirrored to the article's activity
+    log so the user can follow along from the Narrated Video Logs panel.
+
+    Designed to run from a background thread spawned by the lazy publish
+    sweep — no Flask request context required."""
+    import time as _time
+
+    raw = get_setting('auto_publish_actions') or ''
+    if not raw.strip():
+        print(f"[AutoPublish] Article {article_id}: no auto_publish_actions configured; nothing to do.", flush=True)
+        return
+    try:
+        actions = json.loads(raw)
+    except Exception as _e:
+        print(f"[AutoPublish] Article {article_id}: invalid JSON in auto_publish_actions: {_e}", flush=True)
+        return
+    if not isinstance(actions, list) or not actions:
+        return
+
+    # Find latest narrated run
+    nrow = query_one(
+        "SELECT video_narrated_url, video_narrated_runs FROM articles WHERE id = %s",
+        (article_id,))
+    if not nrow or not nrow[0]:
+        print(f"[AutoPublish] Article {article_id}: no narrated video — aborting.", flush=True)
+        return
+    article_video_url = nrow[0]
+    runs = []
+    if nrow[1]:
+        try:
+            runs = json.loads(nrow[1]) or []
+        except Exception:
+            runs = []
+    # Pick the most recent run by timestamp
+    latest_run = sorted(runs, key=lambda r: int(r.get("ts") or 0), reverse=True)[0] if runs else None
+    run_ts = str(latest_run.get("ts")) if latest_run else "0"
+    video_url = (latest_run.get("url") if latest_run else None) or article_video_url
+
+    # Extract networks from the action sequence in their original order
+    networks = []
+    for a in actions:
+        text = (a.get("text") or "").lower()
+        if "post to " not in text:
+            continue
+        for net in _AUTO_PUB_WORKER_MAP.keys():
+            if f"post to {net}" in text and net not in networks:
+                networks.append(net)
+                break
+        # YouTube uses a different label
+        if ("youtube" in text or "yt shorts" in text) and "youtube" not in networks:
+            networks.append("youtube")
+
+    if not networks:
+        print(f"[AutoPublish] Article {article_id}: no recognised 'Post to <Network>' actions — nothing to do.", flush=True)
+        return
+
+    print(f"[AutoPublish] Article {article_id}: starting auto-publish sequence "
+          f"({len(networks)} networks: {networks})", flush=True)
+    _add_activity_log(article_id, "Auto-Publish Sequence Started",
+                      f"Networks queued (in order): {', '.join(networks)}\n"
+                      f"run_ts={run_ts}\nvideo_url={video_url[:120]}",
+                      component="narrated")
+
+    # Generate the IG caption ONCE up front. Networks with no tight char limit
+    # (Instagram, Facebook, YouTube, TikTok, LinkedIn, Reddit, Telegram, Vimeo)
+    # reuse it as-is. Tight-budget platforms (X / Threads / Bluesky / Mastodon
+    # / Pinterest) get an AI-shortened version generated lazily on demand and
+    # cached so we don't pay for the same AI call twice in one sequence.
+    caption = _generate_caption_for_article(article_id)
+    print(f"[AutoPublish] Article {article_id}: IG caption ready ({len(caption)} chars)", flush=True)
+    _shortened_cache = {}  # platform → shortened caption string
+
+    def _caption_for_network(net_name):
+        """Return the platform-appropriate caption text. Calls the AI
+        shortener on demand for tight-budget platforms (memoised per run)."""
+        if net_name in _SHORTEN_PLATFORM_LIMITS:
+            if net_name not in _shortened_cache:
+                _shortened_cache[net_name] = _shorten_caption_for_platform_inline(
+                    article_id, caption, net_name) or caption
+                print(f"[AutoPublish] Article {article_id}: AI-shortened caption for "
+                      f"{net_name} ({len(_shortened_cache[net_name])} chars).", flush=True)
+            return _shortened_cache[net_name]
+        return caption
+
+    for net in networks:
+        try:
+            # Clear any stale status from a previous run so polling starts clean
+            status_key = _AUTO_PUB_STATUS_PREFIX[net] + str(article_id)
+            if net != "youtube":
+                status_key = status_key + "_" + run_ts  # narrated workers use _runts suffix
+            execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+
+            net_caption = _caption_for_network(net)
+            print(f"[AutoPublish] Article {article_id}: → posting to {net} "
+                  f"(caption {len(net_caption)} chars)", flush=True)
+            _add_activity_log(article_id, f"Auto-Publish → {net}",
+                              f"Starting {net} post for narrated run {run_ts}\n"
+                              f"Caption length: {len(net_caption)} chars\n"
+                              f"Caption preview: {net_caption[:120]}",
+                              component="narrated")
+
+            if net == "youtube":
+                refresh_token = get_setting("youtube_refresh_token")
+                if not refresh_token:
+                    _add_activity_log(article_id, f"Auto-Publish → {net} skipped",
+                                      "YouTube not connected (no youtube_refresh_token).",
+                                      component="narrated")
+                    continue
+                row = query_one("SELECT title FROM articles WHERE id = %s", (article_id,))
+                yt_title = (row[0] if row else "Obelisk Stamps")[:100]
+                # Run the YT worker inline so we wait for completion
+                _upload_to_youtube_worker(article_id, video_url, yt_title, net_caption[:5000],
+                                          run_ts, refresh_token)
+            else:
+                worker_name = _AUTO_PUB_WORKER_MAP[net]
+                worker_fn = globals().get(worker_name)
+                if not worker_fn:
+                    _add_activity_log(article_id, f"Auto-Publish → {net} skipped",
+                                      f"Worker {worker_name} not found in this build.",
+                                      component="narrated")
+                    continue
+                worker_fn(article_id, video_url, net_caption, run_ts)
+
+            # The worker writes a result_key on completion; the corresponding
+            # status_key is deleted. We can verify by re-reading the status_key.
+            final_status = get_setting(status_key) or "idle"
+            print(f"[AutoPublish] Article {article_id}: {net} → final status={final_status!r}", flush=True)
+            _add_activity_log(article_id, f"Auto-Publish → {net} done",
+                              f"Final status key value: {final_status!r}",
+                              component="narrated")
+        except Exception as _e:
+            import traceback as _tb
+            print(f"[AutoPublish] Article {article_id}: {net} raised: {_e}\n{_tb.format_exc()}", flush=True)
+            _add_activity_log(article_id, f"Auto-Publish → {net} crashed",
+                              f"Exception: {_e}\n\n{_tb.format_exc()[:1500]}",
+                              component="narrated")
+            # Continue with the next network; one failure shouldn't abort the whole sequence
+            continue
+
+    print(f"[AutoPublish] Article {article_id}: sequence complete.", flush=True)
+    _add_activity_log(article_id, "Auto-Publish Sequence Complete",
+                      f"Finished posting to {len(networks)} network(s): {', '.join(networks)}",
+                      component="narrated")
 
 
 @app.route("/admin/articles/run-publish-sweep", methods=["POST"])
@@ -9051,6 +9329,72 @@ _SHORTEN_PLATFORM_LIMITS = {
     'mastodon': 500,
     'pinterest': 800,
 }
+
+
+def _shorten_caption_for_platform_inline(article_id, source, platform):
+    """Server-side helper: ask OpenAI to compress an IG-style caption to fit
+    a target platform's character budget, preserving voice/emojis/hashtags
+    and re-appending the platform's tracked short URL.
+
+    Returns the shortened caption (or `source` unchanged on any error so the
+    caller can decide whether to fall back). Pure function — no Flask request
+    context required, callable from background workers / the auto-publish
+    runner.
+    """
+    import re as _re
+    if not _openai_client:
+        return source
+    if platform not in _SHORTEN_PLATFORM_LIMITS:
+        return source
+    if not source or not source.strip():
+        return source
+
+    max_chars = _SHORTEN_PLATFORM_LIMITS[platform]
+
+    try:
+        slug_row = query_one("SELECT slug FROM articles WHERE id = %s", (article_id,))
+        slug = slug_row[0] if slug_row else ""
+        try:
+            short_url = make_short_url(article_id, platform) if SITE_URL and slug else ""
+        except Exception:
+            short_url = f"{SITE_URL}/articles/{slug}" if SITE_URL and slug else ""
+
+        body_text = _re.sub(r'\n+Want to read the full article\?.*$', '',
+                            source, flags=_re.IGNORECASE | _re.DOTALL).rstrip()
+        body_text = _re.sub(r'\n+https?://[^\s]+$', '', body_text, flags=_re.IGNORECASE).rstrip()
+
+        cta_template = f"\n\n👉 {short_url}" if short_url else ""
+        target_body_chars = max(80, max_chars - len(cta_template) - 5)
+
+        system_msg = (
+            "You rewrite social-media captions so they fit a strict character "
+            "budget while keeping the voice, emojis, hashtags-relevance and key "
+            "selling point. Drop or shorten hashtags first if needed. Never include "
+            "any URL or 'read more' line — those will be appended separately. "
+            f"Output MUST be at most {target_body_chars} characters. "
+            "Return ONLY the caption text, no commentary, no quotes."
+        )
+        user_msg = (
+            f"Target platform: {platform} ({max_chars} char total budget).\n"
+            f"Body budget (excluding URL): {target_body_chars} characters.\n\n"
+            f"Original caption:\n{body_text}"
+        )
+        resp = _openai_client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "system", "content": system_msg},
+                      {"role": "user",   "content": user_msg}],
+            max_tokens=600,
+        )
+        shortened = (resp.choices[0].message.content or "").strip()
+        if len(shortened) > target_body_chars:
+            shortened = shortened[:target_body_chars].rstrip()
+        final = shortened + cta_template
+        if len(final) > max_chars:
+            final = final[:max_chars]
+        return final
+    except Exception as _e:
+        print(f"[ShortenCaption] Article {article_id} platform={platform}: {_e}", flush=True)
+        return source
 
 @app.route("/admin/articles/<int:article_id>/shorten-caption-for-platform", methods=["POST"])
 @login_required
