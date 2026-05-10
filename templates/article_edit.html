@@ -296,18 +296,19 @@
                             <i class="fa-regular fa-circle-question small"></i>
                         </span>
                     </label>
-                    {# View 1: Saved schedule (chip) #}
-                    <div id="schedule-chip-view" class="{% if not article.scheduled_publish_at_iso %}d-none{% endif %}">
+                    {# View 1: Saved schedule (chip) — UTC ISO converted to local by JS #}
+                    <div id="schedule-chip-view" class="{% if not article.scheduled_publish_at_utc_iso %}d-none{% endif %}">
                         <span class="badge bg-info text-dark p-2" id="schedule-chip-text">
                             <i class="fa-regular fa-calendar me-1"></i>
-                            Will publish on <span id="schedule-chip-when">{{ article.scheduled_publish_at_human }}</span>
+                            Will publish on
+                            <time class="local-dt" id="schedule-chip-when" data-utc="{{ article.scheduled_publish_at_utc_iso }}" datetime="{{ article.scheduled_publish_at_utc_iso }}">{{ article.scheduled_publish_at_utc_iso }}</time>
                         </span>
                         <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" onclick="cancelScheduledPublish()" title="Cancel schedule">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
                     {# View 2: Pick a time #}
-                    <div id="schedule-pick-view" class="{% if article.scheduled_publish_at_iso %}d-none{% endif %} d-flex align-items-center gap-1">
+                    <div id="schedule-pick-view" class="{% if article.scheduled_publish_at_utc_iso %}d-none{% endif %} d-flex align-items-center gap-1">
                         <input type="datetime-local" id="schedule-publish-input" class="form-control form-control-sm" style="max-width:200px;">
                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="saveScheduledPublish()">
                             <i class="fa-regular fa-clock me-1"></i>Schedule
@@ -1942,6 +1943,24 @@ const SAVE_URL = ARTICLE_ID
     ? '/admin/articles/' + ARTICLE_ID + '/save'
     : '/admin/articles/new';
 
+// ── Local-time rendering for <time class="local-dt"> elements ─────────
+// All scheduled times are stored as UTC server-side. Each <time> tagged
+// with class="local-dt" carries the UTC ISO in its datetime / data-utc
+// attribute and gets its visible text rewritten to the viewer's local TZ.
+function _renderLocalTimes(root) {
+    (root || document).querySelectorAll('time.local-dt').forEach(function(el) {
+        var iso = el.getAttribute('datetime') || el.getAttribute('data-utc');
+        if (!iso) return;
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return;
+        el.textContent = d.toLocaleString(undefined, {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+    });
+}
+document.addEventListener('DOMContentLoaded', function() { _renderLocalTimes(document); });
+
 // ── Schedule publishing ──────────────────────────────────────
 function _showScheduleError(msg) {
     var el = document.getElementById('schedule-error');
@@ -1950,20 +1969,48 @@ function _showScheduleError(msg) {
     else { el.textContent = ''; el.classList.add('d-none'); }
 }
 
+// Convert a datetime-local input value (browser local time) to a UTC ISO
+// string (e.g. "2026-05-10T18:00:00.000Z"). The browser interprets the
+// naive datetime-local string as local-time when passed to new Date(...).
+function _localInputToUtcIso(localStr) {
+    if (!localStr) return '';
+    var d = new Date(localStr);
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString();
+}
+
+// Format a UTC ISO string in the viewer's local timezone using the
+// browser's locale settings.
+function _formatUtcAsLocal(utcIso) {
+    if (!utcIso) return '';
+    var d = new Date(utcIso);
+    if (isNaN(d.getTime())) return utcIso;
+    return d.toLocaleString(undefined, {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+}
+
 function saveScheduledPublish() {
     if (!ARTICLE_ID) { alert('Save the article first.'); return; }
     var input = document.getElementById('schedule-publish-input');
     if (!input || !input.value) { _showScheduleError('Pick a date and time first.'); return; }
     _showScheduleError('');
+    var utcIso = _localInputToUtcIso(input.value);
     fetch('/admin/articles/' + ARTICLE_ID + '/schedule-publish', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({scheduled_at: input.value})
+        body: JSON.stringify({scheduled_at: utcIso})
     })
     .then(function(r) { return r.json().then(function(d) { return {status: r.status, data: d}; }); })
     .then(function(resp) {
         if (resp.data.ok) {
-            document.getElementById('schedule-chip-when').textContent = resp.data.scheduled_at_human;
+            var chipEl = document.getElementById('schedule-chip-when');
+            if (chipEl) {
+                chipEl.setAttribute('datetime', resp.data.scheduled_at_utc_iso);
+                chipEl.setAttribute('data-utc', resp.data.scheduled_at_utc_iso);
+                chipEl.textContent = _formatUtcAsLocal(resp.data.scheduled_at_utc_iso);
+            }
             document.getElementById('schedule-chip-view').classList.remove('d-none');
             document.getElementById('schedule-pick-view').classList.add('d-none');
         } else {
@@ -2191,21 +2238,27 @@ function saveArticle() {
             var schInput = document.getElementById('schedule-publish-input');
             var saveSchedule = ARTICLE_ID && schInput && schInput.value && !payload.is_published;
             if (saveSchedule) {
+                var utcIso = _localInputToUtcIso(schInput.value);
                 return fetch('/admin/articles/' + ARTICLE_ID + '/schedule-publish', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({scheduled_at: schInput.value})
+                    body: JSON.stringify({scheduled_at: utcIso})
                 })
                 .then(r2 => r2.json())
                 .then(d2 => {
                     if (d2.ok) {
+                        var localPretty = _formatUtcAsLocal(d2.scheduled_at_utc_iso);
                         var chipWhen = document.getElementById('schedule-chip-when');
                         var chipView = document.getElementById('schedule-chip-view');
                         var pickView = document.getElementById('schedule-pick-view');
-                        if (chipWhen) chipWhen.textContent = d2.scheduled_at_human;
+                        if (chipWhen) {
+                            chipWhen.setAttribute('datetime', d2.scheduled_at_utc_iso);
+                            chipWhen.setAttribute('data-utc', d2.scheduled_at_utc_iso);
+                            chipWhen.textContent = localPretty;
+                        }
                         if (chipView) chipView.classList.remove('d-none');
                         if (pickView) pickView.classList.add('d-none');
-                        showStatus('Saved + scheduled for ' + d2.scheduled_at_human + '.', true);
+                        showStatus('Saved + scheduled for ' + localPretty + '.', true);
                     } else {
                         showStatus('Article saved, but schedule failed: ' + (d2.error || 'unknown'), false);
                     }

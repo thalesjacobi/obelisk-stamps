@@ -483,9 +483,10 @@
                         <tr>
                             <td>{{ a.title }}</td>
                             <td class="text-center">
-                                {% if a.scheduled_publish_at %}
-                                    <span class="badge bg-info text-dark" title="Will auto-publish at this time">
-                                        <i class="fa-regular fa-calendar me-1"></i>{{ a.scheduled_publish_at }}
+                                {% if a.scheduled_publish_at_utc_iso %}
+                                    <span class="badge bg-info text-dark" title="Will auto-publish at this time (your local timezone)">
+                                        <i class="fa-regular fa-calendar me-1"></i>
+                                        <time class="local-dt" datetime="{{ a.scheduled_publish_at_utc_iso }}">{{ a.scheduled_publish_at_utc_iso }}</time>
                                     </span>
                                 {% else %}
                                     <span class="text-muted small">—</span>
@@ -1644,6 +1645,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 {% endif %}
+
+// ── Local-time rendering for <time class="local-dt"> elements ─────────
+function _renderLocalTimes(root) {
+    (root || document).querySelectorAll('time.local-dt').forEach(function(el) {
+        var iso = el.getAttribute('datetime') || el.getAttribute('data-utc');
+        if (!iso) return;
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return;
+        el.textContent = d.toLocaleString(undefined, {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+    });
+}
+document.addEventListener('DOMContentLoaded', function() { _renderLocalTimes(document); });
 
 // ── Manual scheduled-publish sweep ───────────────────────────────────────
 function runPublishSweep() {

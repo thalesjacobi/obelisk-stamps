@@ -4644,7 +4644,9 @@ def admin_articles():
             "engagement":  engagement_by_article.get(r[0], 0),
             "carousel_count":   _carousel_count(r[6]),
             "has_narrated":     bool(r[7]),
-            "scheduled_publish_at": r[8].strftime("%d %b %Y %H:%M") if r[8] else None,
+            # UTC ISO — the template wraps it in <time data-utc="..."> and JS
+            # converts to the viewer's local timezone on load.
+            "scheduled_publish_at_utc_iso": r[8].strftime("%Y-%m-%dT%H:%M:%SZ") if r[8] else None,
         }
         for r in rows
     ]
@@ -4722,9 +4724,9 @@ def admin_article_edit(article_id):
         "carousel_images": json.loads(row[10]) if row[10] else [],
         "carousel_punchlines": json.loads(row[11]) if row[11] else [],
         "show_slideshow": bool(row[13]),
-        # ISO format for the datetime-local input; pretty form for the chip
-        "scheduled_publish_at_iso":   row[14].strftime("%Y-%m-%dT%H:%M") if row[14] else "",
-        "scheduled_publish_at_human": row[14].strftime("%d %b %Y, %H:%M") if row[14] else "",
+        # UTC ISO for browser-side conversion; the chip + datetime-local input
+        # both render LOCAL times derived from this UTC value via JS.
+        "scheduled_publish_at_utc_iso": row[14].strftime("%Y-%m-%dT%H:%M:%SZ") if row[14] else "",
     }
     # Show this article's saved style; fall back to current site setting if never generated
     article_carousel_style = row[12] or get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
@@ -4818,32 +4820,50 @@ def admin_article_schedule_publish(article_id):
     raw = (data.get("scheduled_at") or "").strip()
 
     if not raw:
-        # Clear schedule
         execute("UPDATE articles SET scheduled_publish_at = NULL WHERE id = %s", (article_id,))
         return jsonify({"ok": True, "scheduled_at": None})
 
-    # Parse the datetime-local format (YYYY-MM-DDTHH:MM)
+    # The browser sends a UTC ISO string (e.g. "2026-05-10T18:00:00.000Z").
+    # Legacy callers may still send naive datetime-local ("2026-05-10T19:00").
+    # We always store as a NAIVE DATETIME interpreted as UTC, so MySQL's NOW()
+    # (which on Cloud Run is UTC) compares correctly.
     import datetime as _dt
-    try:
-        dt = _dt.datetime.strptime(raw, "%Y-%m-%dT%H:%M")
-    except ValueError:
+    dt_utc = None
+    # Path 1: explicit UTC ISO — Python 3.10's fromisoformat doesn't accept
+    # the trailing Z or fractional seconds, so we strip both manually.
+    if raw.endswith("Z") or "+" in raw[10:] or "-" in raw[10:].replace("-", "", 0):
         try:
-            dt = _dt.datetime.strptime(raw, "%Y-%m-%dT%H:%M:%S")
-        except ValueError:
-            return jsonify({"error": f"Invalid datetime: {raw!r}"}), 400
+            iso = raw[:-1] if raw.endswith("Z") else raw
+            if "." in iso:
+                iso = iso.split(".")[0]
+            dt_utc = _dt.datetime.fromisoformat(iso)
+            if dt_utc.tzinfo is not None:
+                dt_utc = dt_utc.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+        except Exception:
+            dt_utc = None
+    # Path 2: legacy naive datetime-local — assume already UTC (best effort)
+    if dt_utc is None:
+        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+            try:
+                dt_utc = _dt.datetime.strptime(raw, fmt)
+                break
+            except ValueError:
+                continue
+    if dt_utc is None:
+        return jsonify({"error": f"Invalid datetime: {raw!r}"}), 400
 
-    # Reject schedules in the past (with 1-min grace)
-    if dt < _dt.datetime.now() - _dt.timedelta(minutes=1):
+    # Reject schedules in the past (with 1-min grace) — both sides UTC now.
+    now_utc = _dt.datetime.utcnow()
+    if dt_utc < now_utc - _dt.timedelta(minutes=1):
         return jsonify({"error": "Scheduled time is in the past."}), 400
 
     execute(
         "UPDATE articles SET scheduled_publish_at = %s WHERE id = %s",
-        (dt.strftime("%Y-%m-%d %H:%M:%S"), article_id),
+        (dt_utc.strftime("%Y-%m-%d %H:%M:%S"), article_id),
     )
     return jsonify({
         "ok": True,
-        "scheduled_at_iso":   dt.strftime("%Y-%m-%dT%H:%M"),
-        "scheduled_at_human": dt.strftime("%d %b %Y, %H:%M"),
+        "scheduled_at_utc_iso": dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 
 
