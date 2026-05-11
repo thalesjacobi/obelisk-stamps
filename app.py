@@ -4191,11 +4191,16 @@ def admin_settings():
     cinemagraph_prompt   = get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT)
     ig_caption_prompt    = get_setting('ig_caption_prompt', _IG_CAPTION_DEFAULT_PROMPT)
     auto_publish_actions = get_setting('auto_publish_actions', '')
+    # Public cron endpoint config (for external uptime monitors)
+    cron_last_hit_at = get_setting('cron_last_hit_at') or ""
+    cron_full_url    = f"{(SITE_URL or '').rstrip('/')}/cron/publish-scheduled"
     return render_template("admin.html", active_tab="settings",
                            carousel_style=carousel_style,
                            cinemagraph_prompt=cinemagraph_prompt,
                            ig_caption_prompt=ig_caption_prompt,
                            auto_publish_actions=auto_publish_actions,
+                           cron_last_hit_at_utc_iso=cron_last_hit_at,
+                           cron_full_url=cron_full_url,
                            ig_user_id_set=bool(IG_USER_ID),
                            ig_token_set=bool(IG_ACCESS_TOKEN),
                            fb_page_id_set=bool(FB_PAGE_ID),
@@ -4569,6 +4574,30 @@ def _run_auto_publish_actions(article_id):
     _add_activity_log(article_id, "Auto-Publish Sequence Complete",
                       f"Finished posting to {len(networks)} network(s): {', '.join(networks)}",
                       component="narrated")
+
+
+@app.route("/cron/publish-scheduled", methods=["GET", "HEAD"])
+def public_cron_publish_scheduled():
+    """Publicly accessible cron endpoint for external uptime monitors.
+
+    No auth — the sweep is idempotent and only publishes articles that
+    an admin has already scheduled, so the worst-case impact of an
+    unauthorised hit is "scheduled articles fire on schedule".
+
+    Returns a plain-text 'OK' on success (minimal output for uptime
+    monitors). The actual side effects (article publishing, auto-publish
+    action runner for each due article) happen server-side; check the
+    Settings page for the 'Last hit' timestamp and the article activity
+    logs for what published.
+    """
+    import datetime as _dt
+    now_utc_iso = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    execute("INSERT INTO site_settings (`key`, value) VALUES ('cron_last_hit_at', %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (now_utc_iso, now_utc_iso))
+    if request.method == "HEAD":
+        return ("", 200)
+    _sweep_scheduled_publishes()
+    return ("OK", 200, {"Content-Type": "text/plain; charset=utf-8"})
 
 
 @app.route("/admin/articles/run-publish-sweep", methods=["POST"])

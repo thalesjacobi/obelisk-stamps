@@ -832,6 +832,48 @@
             </div>
         </div>
 
+        <!-- Public Cron Endpoint (for external uptime monitors) -->
+        <div class="card mt-4" id="cron-endpoint-card">
+            <div class="card-header"><strong>Public Cron Endpoint — Auto-Publish Trigger</strong></div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">
+                    Configure an external uptime monitor (UptimeRobot, Better Stack, Pingdom,
+                    cron-job.org, etc.) to hit this URL on a schedule. Each hit runs the
+                    scheduled-publish sweep, so articles can be auto-published even when no
+                    admin has visited <code>/admin/articles</code>.
+                </p>
+                <ul class="text-muted small mb-3" style="padding-left:1.2rem">
+                    <li>Recommended interval: <strong>hourly</strong> (60 min) for typical use,
+                        or <strong>every 5 minutes</strong> if you need minute-precise timing.</li>
+                    <li>Method: <strong>GET</strong>. Response is a plain-text <code>OK</code>
+                        (status 200). HEAD requests return 200 without triggering the sweep —
+                        fine for liveness checks, useless for publishing.</li>
+                </ul>
+                <label class="form-label small fw-semibold mb-1">Cron URL</label>
+                <div class="input-group mb-2">
+                    <input type="text" id="cron-url" class="form-control font-monospace small"
+                           value="{{ cron_full_url }}" readonly>
+                    <button type="button" class="btn btn-outline-secondary" onclick="cronCopyUrl()" title="Copy to clipboard">
+                        <i class="fa-regular fa-copy"></i>
+                    </button>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="cronTestNow()">
+                        <i class="fa-solid fa-play me-1"></i>Test now (opens in new tab)
+                    </button>
+                    <span id="cron-status" class="small ms-2"></span>
+                </div>
+                <div class="small text-muted">
+                    <strong>Last hit:</strong>
+                    {% if cron_last_hit_at_utc_iso %}
+                        <time class="local-dt" datetime="{{ cron_last_hit_at_utc_iso }}">{{ cron_last_hit_at_utc_iso }}</time>
+                    {% else %}
+                        <em>never</em> (configure your monitor and check back here)
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
         <!-- Instagram API Credentials -->
         <div class="card mt-4">
             <div class="card-header"><strong>Instagram API</strong></div>
@@ -1644,6 +1686,29 @@ document.addEventListener('DOMContentLoaded', function() {
         validateAutoPublishActions();
     }
 });
+
+// ── Public cron endpoint ───────────────────────────────────────────────
+function cronCopyUrl() {
+    const input = document.getElementById('cron-url');
+    const status = document.getElementById('cron-status');
+    input.select();
+    try {
+        navigator.clipboard.writeText(input.value).then(function() {
+            status.textContent = 'Copied!';
+            status.className = 'small ms-2 text-success';
+            setTimeout(function() { status.textContent = ''; }, 1500);
+        });
+    } catch (_) {
+        document.execCommand('copy');
+        status.textContent = 'Copied!';
+        status.className = 'small ms-2 text-success';
+    }
+}
+
+function cronTestNow() {
+    const url = document.getElementById('cron-url').value;
+    window.open(url, '_blank');
+}
 {% endif %}
 
 // ── Local-time rendering for <time class="local-dt"> elements ─────────
