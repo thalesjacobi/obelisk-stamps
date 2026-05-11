@@ -4819,7 +4819,10 @@ def _daily_media_generation_runner(max_articles=None, forced=False):
                       flush=True)
                 per_log["steps"].append({"step": "narrated", "ok": False, "error": str(_e)[:200]})
 
-        # 3. Cover image + slideshow toggle — only if carousel images exist
+        # 3. Cover image + slideshow toggle — strict rules:
+        #    - Only touch these if at least one carousel image exists
+        #    - Cover image: set ONLY if there is no current cover (never override)
+        #    - Slideshow: enable ONLY if currently disabled (never override an explicit True)
         try:
             crow = query_one("SELECT carousel_images, image_url, show_slideshow FROM articles WHERE id = %s", (aid,))
             if crow:
@@ -4829,28 +4832,44 @@ def _daily_media_generation_runner(max_articles=None, forced=False):
                 except Exception:
                     images = []
                 images = [u for u in (images or [])[:10] if u]
-                if images:
-                    cover = images[1] if len(images) >= 2 else images[0]
-                    current_cover  = crow[1] or ""
+                if not images:
+                    # No carousel images → leave both fields alone, per user rule
+                    per_log["steps"].append({"step": "finalize", "ok": True, "skipped_no_carousel": True})
+                else:
+                    cover_to_use  = images[1] if len(images) >= 2 else images[0]
+                    current_cover = (crow[1] or "").strip()
                     current_slides = bool(crow[2])
-                    # Only update if changed (preserve admin overrides)
                     updates = []
                     params  = []
-                    if not current_cover or current_cover != cover:
-                        updates.append("image_url = %s"); params.append(cover)
+                    cover_set_to = None
+                    slideshow_enabled = False
+                    # Cover: only if empty
+                    if not current_cover:
+                        updates.append("image_url = %s")
+                        params.append(cover_to_use)
+                        cover_set_to = cover_to_use
+                    # Slideshow: only enable if currently off
                     if not current_slides:
-                        updates.append("show_slideshow = %s"); params.append(True)
+                        updates.append("show_slideshow = %s")
+                        params.append(True)
+                        slideshow_enabled = True
                     if updates:
                         params.append(aid)
                         execute(f"UPDATE articles SET {', '.join(updates)} WHERE id = %s",
                                 tuple(params))
                         per_log["steps"].append({
                             "step": "finalize", "ok": True,
-                            "cover_set": cover if (not current_cover or current_cover != cover) else None,
-                            "slideshow_enabled": (not current_slides),
+                            "cover_set": cover_set_to,
+                            "slideshow_enabled": slideshow_enabled,
+                            "cover_kept_existing": bool(current_cover),
+                            "slideshow_kept_existing": current_slides,
                         })
                     else:
-                        per_log["steps"].append({"step": "finalize", "ok": True, "no_change": True})
+                        per_log["steps"].append({
+                            "step": "finalize", "ok": True, "no_change": True,
+                            "cover_kept_existing": bool(current_cover),
+                            "slideshow_kept_existing": current_slides,
+                        })
         except Exception as _e:
             print(f"[DailyMedia] Article {aid}: finalize crashed: {_e}", flush=True)
             per_log["steps"].append({"step": "finalize", "ok": False, "error": str(_e)[:200]})
