@@ -4194,6 +4194,10 @@ def admin_settings():
     # Public cron endpoint config (for external uptime monitors)
     cron_last_hit_at = get_setting('cron_last_hit_at') or ""
     cron_full_url    = f"{(SITE_URL or '').rstrip('/')}/cron/publish-scheduled"
+    # Daily-media generation endpoint
+    daily_media_url             = f"{(SITE_URL or '').rstrip('/')}/cron/daily-media-generation"
+    daily_media_last_run_date   = get_setting('daily_media_last_run_date') or ""
+    daily_media_last_run_at_iso = get_setting('daily_media_last_run_at_utc_iso') or ""
     return render_template("admin.html", active_tab="settings",
                            carousel_style=carousel_style,
                            cinemagraph_prompt=cinemagraph_prompt,
@@ -4201,6 +4205,10 @@ def admin_settings():
                            auto_publish_actions=auto_publish_actions,
                            cron_last_hit_at_utc_iso=cron_last_hit_at,
                            cron_full_url=cron_full_url,
+                           daily_media_url=daily_media_url,
+                           daily_media_last_run_date=daily_media_last_run_date,
+                           daily_media_last_run_at_utc_iso=daily_media_last_run_at_iso,
+                           daily_media_max_articles=_DAILY_MEDIA_MAX_ARTICLES,
                            ig_user_id_set=bool(IG_USER_ID),
                            ig_token_set=bool(IG_ACCESS_TOKEN),
                            fb_page_id_set=bool(FB_PAGE_ID),
@@ -4653,6 +4661,279 @@ def admin_cron_hit_log_clear():
     """Wipe the cron hit log."""
     execute("DELETE FROM site_settings WHERE `key` = 'cron_hit_log'")
     return jsonify({"ok": True})
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Daily media generation — picks up to N draft articles that lack carousel
+# images and/or a narrated video, generates the missing pieces, sets the
+# cover image to slide 2, and enables the on-article slideshow.
+# Runs once per UTC day; safe to ping multiple times (no-op after the
+# first successful run that day).
+# ──────────────────────────────────────────────────────────────────────────
+
+_DAILY_MEDIA_MAX_ARTICLES = 4
+_DAILY_MEDIA_NARRATED_DEFAULT_CFG = {
+    "format":        "vertical",
+    "voice":         "onyx",
+    "tts_model":     "tts-1",
+    "script_len":    "medium",
+    "kb_speed":      "slow",
+    "speed":         1.35,
+    "crf":           23,
+    "fps":           25,
+    "captions":      True,
+    "caption_style": "tiktok",
+}
+_DAILY_MEDIA_LOG_MAX = 30
+
+
+def _carousel_url_count(raw):
+    if not raw:
+        return 0
+    try:
+        imgs = json.loads(raw)
+        return sum(1 for u in (imgs or [])[:10] if u)
+    except Exception:
+        return 0
+
+
+def _append_daily_media_log(entry):
+    """Append a row to site_settings.daily_media_run_log (capped, JSON)."""
+    try:
+        raw = get_setting('daily_media_run_log') or '[]'
+        log = json.loads(raw) if raw else []
+        if not isinstance(log, list):
+            log = []
+    except Exception:
+        log = []
+    log.append(entry)
+    if len(log) > _DAILY_MEDIA_LOG_MAX:
+        log = log[-_DAILY_MEDIA_LOG_MAX:]
+    val = json.dumps(log)
+    execute("INSERT INTO site_settings (`key`, value) VALUES ('daily_media_run_log', %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (val, val))
+
+
+def _pick_drafts_needing_media(limit):
+    """Return up to `limit` draft articles missing carousel and/or narrated.
+
+    Priority: articles with a scheduled_publish_at fire first (soonest first),
+    then by updated_at ascending so older drafts get attention before newer ones.
+    """
+    rows = query_all(
+        "SELECT id, title, carousel_images, video_narrated_url "
+        "FROM articles "
+        "WHERE is_published = 0 "
+        "ORDER BY (scheduled_publish_at IS NULL), scheduled_publish_at ASC, updated_at ASC"
+    ) or []
+    picks = []
+    for r in rows:
+        if len(picks) >= limit:
+            break
+        carousel_count = _carousel_url_count(r[2])
+        has_narrated = bool(r[3])
+        if carousel_count < 10 or not has_narrated:
+            picks.append({
+                "id": int(r[0]),
+                "title": r[1] or "(untitled)",
+                "carousel_count": carousel_count,
+                "has_narrated": has_narrated,
+            })
+    return picks
+
+
+def _daily_media_generation_runner(max_articles=None, forced=False):
+    """Background worker: generate carousel + narrated video for drafts that
+    need them, then set the cover image to slide 2 + enable slideshow.
+
+    Idempotent within a single day — the cron endpoint checks the last-run
+    date before invoking. Each per-article step writes to that article's
+    activity log so progress is visible from the Narrated Video Logs panel.
+    """
+    import datetime as _dt
+    n = int(max_articles or _DAILY_MEDIA_MAX_ARTICLES)
+    start_iso = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    drafts = _pick_drafts_needing_media(n)
+    print(f"[DailyMedia] Starting run; max={n}, picked={len(drafts)} draft(s) "
+          f"(forced={forced}).", flush=True)
+    if not drafts:
+        _append_daily_media_log({
+            "started_at": start_iso, "finished_at": start_iso,
+            "forced": forced, "processed": [], "note": "No drafts need media."
+        })
+        return
+
+    processed = []
+    for draft in drafts:
+        aid   = draft["id"]
+        title = draft["title"]
+        per_log = {"id": aid, "title": title, "started_at":
+                   _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                   "steps": []}
+
+        # 1. Carousel (if needed)
+        if draft["carousel_count"] < 10:
+            try:
+                print(f"[DailyMedia] Article {aid}: generating carousel "
+                      f"({draft['carousel_count']}/10 currently).", flush=True)
+                _add_activity_log(aid, "Daily Media — Carousel",
+                                  "Generating missing carousel images via DALL-E 3.",
+                                  component="carousel")
+                result = _generate_carousel_for_article_sync(aid)
+                per_log["steps"].append({
+                    "step": "carousel", "ok": bool(result and result.get("ok")),
+                    "generated": (result or {}).get("generated", 0),
+                    "total": (result or {}).get("total", 0),
+                    "fatal": (result or {}).get("fatal"),
+                })
+            except Exception as _e:
+                import traceback as _tb
+                print(f"[DailyMedia] Article {aid}: carousel crashed: {_e}\n{_tb.format_exc()}",
+                      flush=True)
+                per_log["steps"].append({"step": "carousel", "ok": False, "error": str(_e)[:200]})
+
+        # 2. Narrated video (if needed) — re-read so we use freshly-generated carousel
+        nrow = query_one(
+            "SELECT carousel_images, video_narrated_url FROM articles WHERE id = %s", (aid,))
+        post_carousel_count = _carousel_url_count(nrow[0] if nrow else None)
+        has_narrated = bool(nrow and nrow[1])
+        if not has_narrated and post_carousel_count > 0:
+            try:
+                print(f"[DailyMedia] Article {aid}: generating narrated video.", flush=True)
+                _add_activity_log(aid, "Daily Media — Narrated Video",
+                                  "Generating narrated MP4 (default config).",
+                                  component="narrated")
+                # Reset any stale running status so the worker proceeds
+                execute("UPDATE articles SET video_narrated_status = %s WHERE id = %s",
+                        ("running:script", aid))
+                _narrated_video_worker(aid, dict(_DAILY_MEDIA_NARRATED_DEFAULT_CFG))
+                # Verify it actually produced a URL
+                vrow = query_one("SELECT video_narrated_url FROM articles WHERE id = %s", (aid,))
+                produced = bool(vrow and vrow[0])
+                per_log["steps"].append({"step": "narrated", "ok": produced,
+                                         "produced_url": produced})
+            except Exception as _e:
+                import traceback as _tb
+                print(f"[DailyMedia] Article {aid}: narrated crashed: {_e}\n{_tb.format_exc()}",
+                      flush=True)
+                per_log["steps"].append({"step": "narrated", "ok": False, "error": str(_e)[:200]})
+
+        # 3. Cover image + slideshow toggle — only if carousel images exist
+        try:
+            crow = query_one("SELECT carousel_images, image_url, show_slideshow FROM articles WHERE id = %s", (aid,))
+            if crow:
+                images = []
+                try:
+                    images = json.loads(crow[0]) if crow[0] else []
+                except Exception:
+                    images = []
+                images = [u for u in (images or [])[:10] if u]
+                if images:
+                    cover = images[1] if len(images) >= 2 else images[0]
+                    current_cover  = crow[1] or ""
+                    current_slides = bool(crow[2])
+                    # Only update if changed (preserve admin overrides)
+                    updates = []
+                    params  = []
+                    if not current_cover or current_cover != cover:
+                        updates.append("image_url = %s"); params.append(cover)
+                    if not current_slides:
+                        updates.append("show_slideshow = %s"); params.append(True)
+                    if updates:
+                        params.append(aid)
+                        execute(f"UPDATE articles SET {', '.join(updates)} WHERE id = %s",
+                                tuple(params))
+                        per_log["steps"].append({
+                            "step": "finalize", "ok": True,
+                            "cover_set": cover if (not current_cover or current_cover != cover) else None,
+                            "slideshow_enabled": (not current_slides),
+                        })
+                    else:
+                        per_log["steps"].append({"step": "finalize", "ok": True, "no_change": True})
+        except Exception as _e:
+            print(f"[DailyMedia] Article {aid}: finalize crashed: {_e}", flush=True)
+            per_log["steps"].append({"step": "finalize", "ok": False, "error": str(_e)[:200]})
+
+        per_log["finished_at"] = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        processed.append(per_log)
+
+    finished_iso = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    _append_daily_media_log({
+        "started_at":  start_iso,
+        "finished_at": finished_iso,
+        "forced":      forced,
+        "processed":   processed,
+    })
+    print(f"[DailyMedia] Run complete. Processed {len(processed)} article(s).", flush=True)
+
+
+@app.route("/cron/daily-media-generation", methods=["GET", "HEAD"])
+def public_cron_daily_media_generation():
+    """Public cron endpoint. Hit this once a day (the runner self-throttles
+    via a last-run UTC-date check) to generate carousel + narrated video
+    for up to {} draft articles missing those media.""".format(_DAILY_MEDIA_MAX_ARTICLES)
+    import datetime as _dt
+    now = _dt.datetime.utcnow()
+    today_utc = now.strftime("%Y-%m-%d")
+    last_run_date = get_setting("daily_media_last_run_date") or ""
+    forced = (request.args.get("force") or "").strip().lower() in ("1", "true", "yes")
+
+    # HEAD: always 200, no side effects
+    if request.method == "HEAD":
+        return ("", 200)
+
+    if not forced and last_run_date == today_utc:
+        return ("ALREADY_RAN_TODAY\n", 200, {"Content-Type": "text/plain; charset=utf-8"})
+
+    execute("INSERT INTO site_settings (`key`, value) VALUES ('daily_media_last_run_date', %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (today_utc, today_utc))
+    execute("INSERT INTO site_settings (`key`, value) VALUES ('daily_media_last_run_at_utc_iso', %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (now.strftime("%Y-%m-%dT%H:%M:%SZ"), now.strftime("%Y-%m-%dT%H:%M:%SZ")))
+
+    threading.Thread(
+        target=_daily_media_generation_runner,
+        kwargs={"forced": forced},
+        daemon=True,
+    ).start()
+    return ("STARTED\n", 200, {"Content-Type": "text/plain; charset=utf-8"})
+
+
+@app.route("/admin/cron/daily-media-run-log")
+@login_required
+@admin_required
+def admin_daily_media_run_log():
+    """Return the daily-media run log (newest first)."""
+    try:
+        log = json.loads(get_setting("daily_media_run_log") or "[]")
+        if not isinstance(log, list):
+            log = []
+    except Exception:
+        log = []
+    return jsonify({"ok": True, "entries": list(reversed(log)), "total": len(log)})
+
+
+@app.route("/admin/cron/daily-media-run-log/clear", methods=["POST"])
+@login_required
+@admin_required
+def admin_daily_media_run_log_clear():
+    execute("DELETE FROM site_settings WHERE `key` = 'daily_media_run_log'")
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/cron/daily-media-force-run", methods=["POST"])
+@login_required
+@admin_required
+def admin_daily_media_force_run():
+    """Run the daily-media generation immediately, ignoring the once-per-day
+    throttle. Spawns a background thread; returns instantly."""
+    threading.Thread(
+        target=_daily_media_generation_runner,
+        kwargs={"forced": True},
+        daemon=True,
+    ).start()
+    return jsonify({"ok": True, "message": "Daily-media run started in the background."})
 
 
 @app.route("/admin/articles/run-publish-sweep", methods=["POST"])

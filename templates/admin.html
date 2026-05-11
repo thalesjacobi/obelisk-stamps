@@ -889,6 +889,100 @@
             </div>
         </div>
 
+        <!-- Daily Media Generation -->
+        <div class="card mt-4" id="daily-media-card">
+            <div class="card-header d-flex align-items-center">
+                <strong>Daily Media Generation</strong>
+                <div class="dropdown ms-auto">
+                    <button type="button" class="btn btn-sm btn-link text-muted p-1 lh-1"
+                            style="font-size:1.25rem;text-decoration:none;"
+                            data-bs-toggle="dropdown" aria-expanded="false"
+                            title="Endpoint options">&#8942;</button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><h6 class="dropdown-header">Logs</h6></li>
+                        <li>
+                            <button type="button" class="dropdown-item small"
+                                    onclick="dailyMediaShowLog()">View run log…</button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">
+                    Hits to this URL trigger a once-per-UTC-day job that picks up to
+                    <strong>{{ daily_media_max_articles }} draft articles</strong> missing carousel
+                    images or a narrated video, generates whatever is missing, sets the cover
+                    image to slide 2, and enables the on-article slideshow.
+                </p>
+                <ul class="text-muted small mb-3" style="padding-left:1.2rem">
+                    <li>Drafts are prioritised by <em>scheduled publish time</em> (soonest first)
+                        then by <em>oldest updated_at</em>.</li>
+                    <li>The endpoint is self-throttling: subsequent hits on the same UTC day
+                        return <code>ALREADY_RAN_TODAY</code> and skip. Use <em>Run now</em>
+                        below to force a run.</li>
+                    <li>Recommended uptime-monitor interval: <strong>hourly</strong>. Set the
+                        same URL as your publish-scheduled monitor or a separate one.</li>
+                    <li>Each article takes roughly 4–6 minutes (1 min carousel + 3–5 min
+                        narrated). Four articles ≈ 16–24 minutes total, run in background.</li>
+                </ul>
+                <label class="form-label small fw-semibold mb-1">Cron URL</label>
+                <div class="input-group mb-2">
+                    <input type="text" id="daily-media-url" class="form-control font-monospace small"
+                           value="{{ daily_media_url }}" readonly>
+                    <button type="button" class="btn btn-outline-secondary" onclick="dailyMediaCopyUrl()" title="Copy to clipboard">
+                        <i class="fa-regular fa-copy"></i>
+                    </button>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="dailyMediaForceRun()">
+                        <i class="fa-solid fa-play me-1"></i>Run now (force)
+                    </button>
+                    <span id="daily-media-status" class="small ms-2"></span>
+                </div>
+                <div class="small text-muted">
+                    <strong>Last run:</strong>
+                    {% if daily_media_last_run_at_utc_iso %}
+                        <time class="local-dt" datetime="{{ daily_media_last_run_at_utc_iso }}">{{ daily_media_last_run_at_utc_iso }}</time>
+                        (UTC date <code>{{ daily_media_last_run_date }}</code>)
+                    {% else %}
+                        <em>never</em>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Daily Media Run Log Modal -->
+        <div class="modal fade" id="daily-media-log-modal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Daily Media Generation — Run Log
+                            <span id="daily-media-log-count" class="badge bg-secondary ms-2">0</span>
+                        </h5>
+                        <div class="ms-auto d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="dailyMediaShowLog()" title="Reload">
+                                <i class="fa-solid fa-arrows-rotate"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="dailyMediaClearLog()">
+                                <i class="fa-solid fa-trash me-1"></i>Clear log
+                            </button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                    </div>
+                    <div class="modal-body">
+                        <p class="small text-muted">
+                            Newest run first. Each row is one daily run; expand to see
+                            per-article details (carousel, narrated, finalize).
+                        </p>
+                        <div id="daily-media-log-body"></div>
+                        <div id="daily-media-log-empty" class="text-muted small text-center py-3 d-none">
+                            No runs recorded yet.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Cron Hit Log Modal -->
         <div class="modal fade" id="cron-hit-log-modal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -1827,6 +1921,113 @@ function cronClearHitLog() {
     fetch('/admin/cron/hit-log/clear', {method: 'POST'})
     .then(r => r.json())
     .then(function() { cronShowHitLog(); });
+}
+
+// ── Daily Media Generation ────────────────────────────────────────────
+function dailyMediaCopyUrl() {
+    const input = document.getElementById('daily-media-url');
+    const status = document.getElementById('daily-media-status');
+    input.select();
+    try {
+        navigator.clipboard.writeText(input.value).then(function() {
+            status.textContent = 'Copied!'; status.className = 'small ms-2 text-success';
+            setTimeout(function() { status.textContent = ''; }, 1500);
+        });
+    } catch (_) { document.execCommand('copy'); }
+}
+
+function dailyMediaForceRun() {
+    if (!confirm('Force a daily-media run now? It will process up to 4 drafts (4–6 min each, in background).')) return;
+    const status = document.getElementById('daily-media-status');
+    status.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Starting…';
+    status.className = 'small ms-2 text-muted';
+    fetch('/admin/cron/daily-media-force-run', {method: 'POST'})
+    .then(r => r.json())
+    .then(d => {
+        status.textContent = d.ok ? 'Started — check the run log in a few minutes.' : ('Failed: ' + (d.error || 'unknown'));
+        status.className = 'small ms-2 ' + (d.ok ? 'text-success' : 'text-danger');
+    })
+    .catch(() => { status.textContent = 'Network error.'; status.className = 'small ms-2 text-danger'; });
+}
+
+function _renderDailyMediaLogEntries(entries) {
+    const body = document.getElementById('daily-media-log-body');
+    body.innerHTML = '';
+    entries.forEach(function(run, idx) {
+        var processed = run.processed || [];
+        var artHtml = processed.length
+            ? processed.map(function(a) {
+                var steps = (a.steps || []).map(function(s) {
+                    var ok = s.ok ? '<span class="badge bg-success">ok</span>' : '<span class="badge bg-danger">fail</span>';
+                    var detail = '';
+                    if (s.step === 'carousel' && s.total !== undefined) {
+                        detail = ' <span class="text-muted small">' + (s.generated || 0) + ' new / ' + (s.total || 0) + ' total</span>';
+                    } else if (s.step === 'narrated' && s.produced_url !== undefined) {
+                        detail = ' <span class="text-muted small">' + (s.produced_url ? 'URL produced' : 'no URL') + '</span>';
+                    } else if (s.step === 'finalize') {
+                        var parts = [];
+                        if (s.cover_set) parts.push('cover=image');
+                        if (s.slideshow_enabled) parts.push('slideshow=on');
+                        if (s.no_change) parts.push('no change');
+                        detail = parts.length ? ' <span class="text-muted small">' + parts.join(', ') + '</span>' : '';
+                    }
+                    if (s.fatal || s.error) {
+                        detail += ' <span class="text-danger small">' + (s.fatal || s.error).replace(/</g, '&lt;') + '</span>';
+                    }
+                    return '<li><strong>' + s.step + '</strong> ' + ok + detail + '</li>';
+                }).join('');
+                return '<li class="mb-2"><a href="/admin/articles/' + a.id + '/edit" target="_blank">' +
+                       '#' + a.id + ' ' + (a.title || '(untitled)').replace(/</g, '&lt;') + '</a>' +
+                       '<ul class="small mb-0">' + steps + '</ul></li>';
+              }).join('')
+            : '<li class="text-muted small">' + (run.note || 'No articles processed.') + '</li>';
+        var headTs = run.started_at ? new Date(run.started_at).toLocaleString() : '';
+        var endTs  = run.finished_at ? new Date(run.finished_at).toLocaleString() : '';
+        var forced = run.forced ? '<span class="badge bg-warning text-dark ms-2">forced</span>' : '';
+        var article = document.createElement('details');
+        article.className = 'border rounded p-2 mb-2';
+        article.open = idx === 0;
+        article.innerHTML =
+            '<summary class="small fw-semibold">' +
+                'Run #' + (entries.length - idx) +
+                ' — ' + headTs + ' → ' + endTs + ' ' + forced +
+                ' <span class="text-muted">(' + processed.length + ' article' + (processed.length !== 1 ? 's' : '') + ')</span>' +
+            '</summary>' +
+            '<ul class="mt-2">' + artHtml + '</ul>';
+        body.appendChild(article);
+    });
+}
+
+function dailyMediaShowLog() {
+    const body = document.getElementById('daily-media-log-body');
+    const empty = document.getElementById('daily-media-log-empty');
+    const count = document.getElementById('daily-media-log-count');
+    body.innerHTML = '<div class="text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading…</div>';
+    fetch('/admin/cron/daily-media-run-log')
+    .then(r => r.json())
+    .then(d => {
+        const entries = (d && d.entries) || [];
+        count.textContent = d.total || entries.length;
+        if (!entries.length) {
+            body.innerHTML = '';
+            empty.classList.remove('d-none');
+        } else {
+            empty.classList.add('d-none');
+            _renderDailyMediaLogEntries(entries);
+        }
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('daily-media-log-modal')).show();
+    })
+    .catch(function() {
+        body.innerHTML = '<div class="text-center text-danger py-3">Failed to load log.</div>';
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('daily-media-log-modal')).show();
+    });
+}
+
+function dailyMediaClearLog() {
+    if (!confirm('Clear the daily-media run log? This cannot be undone.')) return;
+    fetch('/admin/cron/daily-media-run-log/clear', {method: 'POST'})
+    .then(r => r.json())
+    .then(function() { dailyMediaShowLog(); });
 }
 {% endif %}
 
