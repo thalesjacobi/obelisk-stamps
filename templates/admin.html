@@ -834,7 +834,22 @@
 
         <!-- Public Cron Endpoint (for external uptime monitors) -->
         <div class="card mt-4" id="cron-endpoint-card">
-            <div class="card-header"><strong>Public Cron Endpoint — Auto-Publish Trigger</strong></div>
+            <div class="card-header d-flex align-items-center">
+                <strong>Public Cron Endpoint — Auto-Publish Trigger</strong>
+                <div class="dropdown ms-auto">
+                    <button type="button" class="btn btn-sm btn-link text-muted p-1 lh-1"
+                            style="font-size:1.25rem;text-decoration:none;"
+                            data-bs-toggle="dropdown" aria-expanded="false"
+                            title="Endpoint options">&#8942;</button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><h6 class="dropdown-header">Logs</h6></li>
+                        <li>
+                            <button type="button" class="dropdown-item small"
+                                    onclick="cronShowHitLog()">View hit log…</button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
             <div class="card-body">
                 <p class="text-muted small mb-2">
                     Configure an external uptime monitor (UptimeRobot, Better Stack, Pingdom,
@@ -870,6 +885,50 @@
                     {% else %}
                         <em>never</em> (configure your monitor and check back here)
                     {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Cron Hit Log Modal -->
+        <div class="modal fade" id="cron-hit-log-modal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Cron Hit Log <span id="cron-hit-log-count" class="badge bg-secondary ms-2">0</span></h5>
+                        <div class="ms-auto d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="cronShowHitLog()" title="Reload">
+                                <i class="fa-solid fa-arrows-rotate"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="cronClearHitLog()">
+                                <i class="fa-solid fa-trash me-1"></i>Clear log
+                            </button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                    </div>
+                    <div class="modal-body">
+                        <p class="small text-muted">
+                            Last {{ 100 }} hits (newest first). <strong>Method</strong> shows whether the
+                            monitor used GET (which actually runs the sweep) or HEAD (liveness-only).
+                            <strong>Published</strong> lists any articles auto-published during that hit;
+                            most rows will be empty because nothing was due yet.
+                        </p>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover" id="cron-hit-log-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width:40px">#</th>
+                                        <th>When (your local time)</th>
+                                        <th style="width:80px">Method</th>
+                                        <th>Published</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cron-hit-log-tbody"></tbody>
+                            </table>
+                        </div>
+                        <div id="cron-hit-log-empty" class="text-muted small text-center py-3 d-none">
+                            No hits recorded yet.
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1708,6 +1767,66 @@ function cronCopyUrl() {
 function cronTestNow() {
     const url = document.getElementById('cron-url').value;
     window.open(url, '_blank');
+}
+
+function _formatLocalDT(utcIso) {
+    if (!utcIso) return '';
+    var d = new Date(utcIso);
+    if (isNaN(d.getTime())) return utcIso;
+    return d.toLocaleString(undefined, {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+}
+
+function cronShowHitLog() {
+    const tbody = document.getElementById('cron-hit-log-tbody');
+    const empty = document.getElementById('cron-hit-log-empty');
+    const count = document.getElementById('cron-hit-log-count');
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading…</td></tr>';
+    fetch('/admin/cron/hit-log')
+    .then(r => r.json())
+    .then(d => {
+        const entries = (d && d.entries) || [];
+        count.textContent = d.total || entries.length;
+        tbody.innerHTML = '';
+        if (!entries.length) {
+            empty.classList.remove('d-none');
+        } else {
+            empty.classList.add('d-none');
+            entries.forEach(function(e, i) {
+                var pub = (e.published || []);
+                var pubHtml = pub.length
+                    ? pub.map(function(a) {
+                        return '<a href="/admin/articles/' + a.id + '/edit" class="badge bg-success text-decoration-none me-1" target="_blank">' +
+                            (a.title || ('id ' + a.id)).replace(/</g, '&lt;') + '</a>';
+                      }).join('')
+                    : '<span class="text-muted small">—</span>';
+                var methodBadge = '<span class="badge bg-' +
+                    (e.method === 'HEAD' ? 'secondary' : 'primary') + '">' +
+                    (e.method || 'GET') + '</span>';
+                var tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td class="text-muted small">' + (i + 1) + '</td>' +
+                    '<td class="font-monospace small">' + _formatLocalDT(e.ts) + '</td>' +
+                    '<td>' + methodBadge + '</td>' +
+                    '<td>' + pubHtml + '</td>';
+                tbody.appendChild(tr);
+            });
+        }
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('cron-hit-log-modal')).show();
+    })
+    .catch(function() {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger py-3">Failed to load log.</td></tr>';
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('cron-hit-log-modal')).show();
+    });
+}
+
+function cronClearHitLog() {
+    if (!confirm('Clear the entire cron hit log? This cannot be undone.')) return;
+    fetch('/admin/cron/hit-log/clear', {method: 'POST'})
+    .then(r => r.json())
+    .then(function() { cronShowHitLog(); });
 }
 {% endif %}
 

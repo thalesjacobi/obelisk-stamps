@@ -4576,6 +4576,32 @@ def _run_auto_publish_actions(article_id):
                       component="narrated")
 
 
+_CRON_HIT_LOG_MAX = 100  # cap log size; oldest entries roll off
+
+
+def _append_cron_hit(now_utc_iso, method, published):
+    """Append a row to the cron hit log (kept capped at _CRON_HIT_LOG_MAX).
+    `published` is a list of (id, title) tuples for articles auto-published
+    in this sweep, or an empty list."""
+    try:
+        raw = get_setting('cron_hit_log') or '[]'
+        log = json.loads(raw) if raw else []
+        if not isinstance(log, list):
+            log = []
+    except Exception:
+        log = []
+    log.append({
+        "ts":     now_utc_iso,
+        "method": method,
+        "published": [{"id": int(_id), "title": _t} for _id, _t in (published or [])],
+    })
+    if len(log) > _CRON_HIT_LOG_MAX:
+        log = log[-_CRON_HIT_LOG_MAX:]
+    val = json.dumps(log)
+    execute("INSERT INTO site_settings (`key`, value) VALUES ('cron_hit_log', %s) "
+            "ON DUPLICATE KEY UPDATE value = %s", (val, val))
+
+
 @app.route("/cron/publish-scheduled", methods=["GET", "HEAD"])
 def public_cron_publish_scheduled():
     """Publicly accessible cron endpoint for external uptime monitors.
@@ -4587,17 +4613,46 @@ def public_cron_publish_scheduled():
     Returns a plain-text 'OK' on success (minimal output for uptime
     monitors). The actual side effects (article publishing, auto-publish
     action runner for each due article) happen server-side; check the
-    Settings page for the 'Last hit' timestamp and the article activity
-    logs for what published.
+    Settings page for the 'Last hit' timestamp / hit log and the
+    article activity logs for what published.
     """
     import datetime as _dt
     now_utc_iso = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     execute("INSERT INTO site_settings (`key`, value) VALUES ('cron_last_hit_at', %s) "
             "ON DUPLICATE KEY UPDATE value = %s", (now_utc_iso, now_utc_iso))
+
     if request.method == "HEAD":
+        _append_cron_hit(now_utc_iso, "HEAD", [])
         return ("", 200)
-    _sweep_scheduled_publishes()
+
+    published = _sweep_scheduled_publishes()  # list of (id, title) tuples
+    _append_cron_hit(now_utc_iso, "GET", published)
     return ("OK", 200, {"Content-Type": "text/plain; charset=utf-8"})
+
+
+@app.route("/admin/cron/hit-log")
+@login_required
+@admin_required
+def admin_cron_hit_log():
+    """Return the cron hit log (newest first) for the settings-page modal."""
+    raw = get_setting('cron_hit_log') or '[]'
+    try:
+        log = json.loads(raw) if raw else []
+        if not isinstance(log, list):
+            log = []
+    except Exception:
+        log = []
+    log = list(reversed(log))  # newest first
+    return jsonify({"ok": True, "entries": log, "total": len(log)})
+
+
+@app.route("/admin/cron/hit-log/clear", methods=["POST"])
+@login_required
+@admin_required
+def admin_cron_hit_log_clear():
+    """Wipe the cron hit log."""
+    execute("DELETE FROM site_settings WHERE `key` = 'cron_hit_log'")
+    return jsonify({"ok": True})
 
 
 @app.route("/admin/articles/run-publish-sweep", methods=["POST"])

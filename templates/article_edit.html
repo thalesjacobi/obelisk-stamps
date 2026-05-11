@@ -2126,10 +2126,28 @@ function setCoverImageFromInput() {
 }
 
 function openCoverImagePicker() {
-    const urls = _previewImages.filter(Boolean);
+    // Read the LIVE carousel grid each time the picker opens. The grid is
+    // the authoritative source — it's kept up to date as images are
+    // generated or regenerated. (The _previewImages variable is only
+    // populated on initial page load via initPreview() and would otherwise
+    // miss images added by the current session.)
+    var liveUrls = Array.from(
+        document.querySelectorAll('#carousel-grid .carousel-col[id^="cimg-"] img.carousel-thumb')
+    )
+        // Sort by slot index to preserve carousel order regardless of insertion timing
+        .sort(function(a, b) {
+            var ia = parseInt((a.closest('.carousel-col') || {}).id?.replace('cimg-', '') || '0', 10);
+            var ib = parseInt((b.closest('.carousel-col') || {}).id?.replace('cimg-', '') || '0', 10);
+            return ia - ib;
+        })
+        // Strip cache-busting query strings so the URL matches what's stored on the article
+        .map(function(img) { return (img.getAttribute('src') || '').split('?')[0]; })
+        .filter(Boolean);
+
+    // Fall back to _previewImages if the grid hasn't been built yet
+    var urls = liveUrls.length ? liveUrls : _previewImages.filter(Boolean);
     const grid  = document.getElementById('cover-image-picker-grid');
     const empty = document.getElementById('cover-image-picker-empty');
-    // Pre-fill URL input with current value
     document.getElementById('cover-image-url-input').value = document.getElementById('image-url').value.trim();
     grid.innerHTML = '';
     if (!urls.length) {
