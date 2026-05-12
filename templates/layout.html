@@ -40,7 +40,10 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&display=swap" rel="stylesheet">
+    {# Classical typography pairing for the public site —
+       Playfair Display (headings) + Lora (body). Comic Neue stays loaded
+       for the existing brand wordmark style. #}
+    <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script src="https://www.google.com/recaptcha/enterprise.js?render=6LdO7nMsAAAAAFfZQbtr3vbztflfcyNA0uYL2opK"></script>
     {% if ga_measurement_id %}
@@ -54,7 +57,7 @@
     {% endif %}
     {% block head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}site-public{% endblock %}">
 
     <!-- Navigation Menu -->
     <nav class="navbar navbar-dark bg-dark">

@@ -4983,11 +4983,11 @@ def admin_articles_run_publish_sweep():
 @login_required
 @admin_required
 def admin_articles():
-    # Lazy-sweep: publish any articles whose scheduled time has arrived
-    swept = _sweep_scheduled_publishes()
-    if swept:
-        flash(f"Auto-published {len(swept)} scheduled article{'s' if len(swept) != 1 else ''}.", "success")
-
+    # NOTE: the lazy-sweep used to run here (publishing any due-now articles
+    # as a side effect of loading the Articles list). It was removed so the
+    # public cron endpoint (/cron/publish-scheduled, hit by UptimeRobot etc.)
+    # is the sole automatic trigger. The "Publish scheduled now" button on
+    # the Drafts tab remains as an explicit, on-demand manual sweep.
     rows = query_all(
         "SELECT id, title, slug, is_published, published_at, updated_at, "
         "carousel_images, video_narrated_url, scheduled_publish_at "

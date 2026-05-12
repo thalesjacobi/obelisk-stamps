@@ -1,6 +1,7 @@
 {% extends "layout.html" %}
 
 {% block title %}{% if article %}Edit Article{% else %}New Article{% endif %} - Obelisk Stamps Admin{% endblock %}
+{% block body_class %}site-admin{% endblock %}
 
 {% block head %}
 <!-- Font Awesome for brand icons -->
@@ -292,7 +293,7 @@
                         Schedule publishing
                         <span class="text-muted" style="cursor:help"
                               data-bs-toggle="tooltip" data-bs-placement="top"
-                              title="Set a date &amp; time and the article will auto-publish when that moment is reached. Publishing happens during admin page visits — accuracy depends on traffic. For minute-precise timing, set up a Cloud Scheduler ping.">
+                              title="Set a date &amp; time and the article will auto-publish when that moment is reached. Publishing is driven by the external uptime monitor pinging /cron/publish-scheduled — see Admin → Settings → Public Cron Endpoint. For an immediate manual sweep, use 'Publish scheduled now' on the Drafts tab.">
                             <i class="fa-regular fa-circle-question small"></i>
                         </span>
                     </label>

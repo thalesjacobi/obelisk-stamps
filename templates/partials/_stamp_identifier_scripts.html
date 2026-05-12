@@ -14,35 +14,50 @@ document.addEventListener('DOMContentLoaded', function() {
     const identifyBtn = document.getElementById('identify-btn');
     const btnText = document.getElementById('btn-text');
     const btnSpinner = document.getElementById('btn-spinner');
-    const warmupBar = document.getElementById('ml-warmup-bar');
-    const warmupText = document.getElementById('ml-warmup-text');
+    const warmupBar    = document.getElementById('ml-warmup-bar');
+    const warmupText   = document.getElementById('ml-warmup-text');
+    const warmupPrompt = document.getElementById('ml-warmup-prompt');
+    const warmupReady  = document.getElementById('ml-warmup-ready');
+    const warmupBtn    = document.getElementById('ml-warmup-btn');
 
     if (!form) return; // Exit if Stamp Quest AI is not on this page
 
-    // ── ML API warm-up ──────────────────────────────────────────────────────
-    // Ping the ML API in the background as soon as the page loads so the
-    // Cloud Run container is ready by the time the user clicks Identify.
+    // ── ML API warm-up — USER-INITIATED ─────────────────────────────────────
+    // We deliberately do NOT auto-ping the ML API on page load. The container
+    // sleeps when idle and billing accrues per wake-up — most page views
+    // never reach "Identify Stamp", so auto-warming would waste compute.
+    // Instead, show a "Wake up AI" button the user clicks before uploading.
+    // ────────────────────────────────────────────────────────────────────────
     let mlReady = false;
-    let warmupStartTime = Date.now();
+    let warmupStartTime = null;
+    let warmupPollInterval = null;
+    let warmupHardCap = null;
 
     function startWarmup() {
         if (mlReady) return;
+        if (warmupPrompt) warmupPrompt.classList.add('d-none');
+        if (warmupReady)  warmupReady.classList.add('d-none');
+        // Reveal the upload form — it's hidden until the user explicitly
+        // wakes up the ML API so the UI doesn't dangle a non-functional
+        // file picker.
+        form.classList.remove('d-none');
         warmupBar.classList.remove('d-none');
-        identifyBtn.disabled = true;
+        warmupStartTime = Date.now();
 
-        // Tell Flask to kick off a background ping
+        // Tell Flask to kick off a background ping to the ML API
         fetch('/ml-warmup').catch(function(){});
 
         // Poll /ml-ready every 5 s until the ML API responds
-        const pollInterval = setInterval(async function() {
+        warmupPollInterval = setInterval(async function() {
             try {
                 const r = await fetch('/ml-ready');
                 const data = await r.json();
                 if (data.ready) {
-                    clearInterval(pollInterval);
+                    clearInterval(warmupPollInterval); warmupPollInterval = null;
+                    if (warmupHardCap) { clearTimeout(warmupHardCap); warmupHardCap = null; }
                     mlReady = true;
                     warmupBar.classList.add('d-none');
-                    identifyBtn.disabled = false;
+                    if (warmupReady) warmupReady.classList.remove('d-none');
                 } else {
                     const elapsed = Math.round((Date.now() - warmupStartTime) / 1000);
                     warmupText.textContent = `Preparing Stamp Quest AI… (${elapsed}s) — this takes about a minute on first load.`;
@@ -50,18 +65,25 @@ document.addEventListener('DOMContentLoaded', function() {
             } catch (e) { /* keep polling */ }
         }, 5000);
 
-        // Hard cap: stop blocking the button after 3 minutes regardless
-        setTimeout(function() {
+        // Hard cap: stop showing the spinner after 3 minutes regardless,
+        // so the user can still attempt to identify if our polling is stuck.
+        warmupHardCap = setTimeout(function() {
             if (!mlReady) {
-                clearInterval(pollInterval);
+                if (warmupPollInterval) { clearInterval(warmupPollInterval); warmupPollInterval = null; }
                 mlReady = true;
                 warmupBar.classList.add('d-none');
-                identifyBtn.disabled = false;
+                if (warmupReady) warmupReady.classList.remove('d-none');
             }
         }, 180000);
     }
 
-    startWarmup();
+    if (warmupBtn) warmupBtn.addEventListener('click', startWarmup);
+
+    // If the user clicks Identify before warming up, kick off the warm-up
+    // automatically — the submitIdentification fetch below will then hit
+    // a (probably-still-cold) ML API. We don't block the click; we just
+    // make sure the user sees what's happening.
+    // (Handled inline in submitIdentification via the warmupPrompt check.)
     // ────────────────────────────────────────────────────────────────────────
 
     // Image preview

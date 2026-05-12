@@ -105,14 +105,6 @@
 {% block content %}
 <article class="mx-auto" style="max-width: 800px;">
 
-    <!-- Banner image — above the title, wide and low -->
-    {% if article.image_url %}
-    <img src="{{ article.image_url }}"
-         class="w-100 rounded mb-4"
-         alt="{{ article.title }}"
-         style="max-height: 210px; object-fit: cover; object-position: center; display: block;">
-    {% endif %}
-
     <div class="d-flex align-items-center justify-content-between mb-3">
         <a href="/articles" class="text-decoration-none text-muted">&larr; All Articles</a>
         {% if is_admin %}
@@ -128,11 +120,23 @@
         {% endif %}
     </div>
 
-    <h1 class="mt-2 mb-2">{{ article.title }}</h1>
-    {% if article.subtitle %}
-    <p class="lead text-muted">{{ article.subtitle }}</p>
+    <!-- Banner image — framed like a tipped-in plate -->
+    {% if article.image_url %}
+    <div class="article-hero mb-4">
+        <img src="{{ article.image_url }}"
+             alt="{{ article.title }}"
+             style="max-height: 320px; object-fit: cover; object-position: center;">
+    </div>
     {% endif %}
-    <p class="text-muted mb-4"><small>{{ article.published_at }} &middot; Obelisk Stamps</small></p>
+
+    <div class="article-title-block">
+        <h1>{{ article.title }}</h1>
+        {% if article.subtitle %}
+        <p class="article-subtitle">{{ article.subtitle }}</p>
+        {% endif %}
+        <p class="article-meta">{{ article.published_at }} &middot; Obelisk Stamps</p>
+        <div class="ornament"></div>
+    </div>
 
     <!-- Ken Burns slideshow — floated left, only when carousel images exist -->
     {% if article.show_slideshow and article.carousel_images %}
@@ -156,8 +160,10 @@
     </div>
     <div style="clear: left;"></div>
 
-    <hr class="my-5">
-    <a href="/articles" class="btn btn-outline-secondary mb-4">&larr; Back to Articles</a>
+    <div class="article-end-ornament"></div>
+    <div class="text-center">
+        <a href="/articles" class="btn btn-outline-secondary mb-4">&larr; Back to Articles</a>
+    </div>
 
 </article>
 {% endblock %}

@@ -569,3 +569,426 @@ article #asl-pause-btn{
         right: 30px;
     }
 }
+
+/* =====================================================================
+   Phase 1 — Classical typography, palette and ornaments
+   ---------------------------------------------------------------------
+   Scoped to `body.site-public` so the admin panel keeps its current
+   Bootstrap defaults. Admin templates set `{% block body_class %}site-admin{% endblock %}`.
+   ===================================================================== */
+body.site-public {
+    /* Warm "paper and ink" palette echoing classical stamp imagery */
+    --bg-page:    #fbf8f1;   /* warm parchment */
+    --bg-card:    #fffaf0;   /* cream */
+    --text:       #3a342c;   /* warm charcoal */
+    --text-muted: #8a7e6a;   /* warm taupe */
+    --accent:     #7a1f2b;   /* deep burgundy */
+    --accent-2:   #a98553;   /* antique gold */
+    --rule:       #dbd2c1;   /* dusty taupe rule */
+
+    background: var(--bg-page);
+    color: var(--text);
+    font-family: 'Lora', Georgia, 'Times New Roman', serif;
+    /* Old-style numerals where the font supports them (Lora does) */
+    font-feature-settings: "onum" 1, "kern" 1;
+    font-size: 1.0625rem;     /* slight bump for serif legibility */
+    line-height: 1.65;
+}
+
+body.site-public h1,
+body.site-public h2,
+body.site-public h3,
+body.site-public h4,
+body.site-public h5,
+body.site-public h6,
+body.site-public .h1,
+body.site-public .h2,
+body.site-public .h3,
+body.site-public .h4,
+body.site-public .h5,
+body.site-public .h6 {
+    font-family: 'Playfair Display', 'Times New Roman', Georgia, serif;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.005em;
+}
+
+body.site-public h1, body.site-public .h1 { font-weight: 700; }
+
+/* Lead text gets a little classical italic */
+body.site-public .lead {
+    font-family: 'Lora', Georgia, serif;
+    font-size: 1.15rem;
+    color: var(--text-muted);
+}
+
+body.site-public .text-muted {
+    color: var(--text-muted) !important;
+}
+
+/* Links — burgundy with a thin gold underline on hover */
+body.site-public a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-color: rgba(169,133,83,0.35);
+    text-underline-offset: 0.2em;
+    transition: color .15s, text-decoration-color .15s;
+}
+body.site-public a:hover {
+    color: var(--accent-2);
+    text-decoration-color: var(--accent-2);
+}
+/* Nav links stay un-underlined */
+body.site-public .nav-link,
+body.site-public .navbar-brand,
+body.site-public .btn { text-decoration: none; }
+
+/* ---------------------------------------------------------------------
+   Navbar / footer — warmer than #343a40, evokes walnut + brass
+   --------------------------------------------------------------------- */
+body.site-public .navbar.bg-dark {
+    background-color: #2b1d14 !important;
+    border-bottom: 2px solid var(--accent-2);
+}
+body.site-public .navbar .navbar-brand,
+body.site-public .navbar .nav-link {
+    font-family: 'Playfair Display', Georgia, serif;
+    letter-spacing: 0.02em;
+}
+body.site-public .navbar .nav-link {
+    color: rgba(255,255,255,0.85);
+}
+body.site-public .navbar .nav-link:hover {
+    color: #fff;
+    border-bottom: 1px solid var(--accent-2);
+}
+body.site-public .navbar-nav .nav-link.active {
+    border-bottom: 2px solid var(--accent-2);
+}
+body.site-public footer {
+    background: #2b1d14;
+    border-top: 2px solid var(--accent-2);
+    color: #ece5d7;
+    font-family: 'Lora', Georgia, serif;
+}
+
+/* ---------------------------------------------------------------------
+   Cards — warm cream background, thin gold border, sepia shadow
+   --------------------------------------------------------------------- */
+body.site-public .card {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 4px;       /* less rounded → more print-like */
+    box-shadow: 0 1px 3px rgba(122, 31, 43, 0.06);
+    transition: box-shadow .2s, border-color .2s;
+}
+body.site-public .card:hover {
+    border-color: var(--accent-2);
+    box-shadow: 0 4px 14px rgba(122, 31, 43, 0.12);
+}
+body.site-public .card-title,
+body.site-public .card .card-title {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-weight: 600;
+    color: var(--text);
+}
+body.site-public .card-text {
+    color: var(--text);
+}
+/* Small-caps treatment for the article date / meta block at the bottom of cards */
+body.site-public .card-footer,
+body.site-public .article-meta {
+    background: transparent;
+    border-top: 1px solid var(--rule);
+    font-family: 'Lora', Georgia, serif;
+    font-variant: small-caps;
+    letter-spacing: 0.08em;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------
+   Buttons — classical outlined treatment for primary actions
+   --------------------------------------------------------------------- */
+body.site-public .btn-primary {
+    background-color: var(--accent);
+    border-color: var(--accent);
+    font-family: 'Playfair Display', serif;
+    letter-spacing: 0.04em;
+}
+body.site-public .btn-primary:hover,
+body.site-public .btn-primary:focus {
+    background-color: #5e1620;
+    border-color: #5e1620;
+}
+body.site-public .btn-outline-primary {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+body.site-public .btn-outline-primary:hover {
+    background-color: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+body.site-public .btn-secondary {
+    background-color: var(--accent-2);
+    border-color: var(--accent-2);
+    color: #1f1a13;
+}
+
+/* ---------------------------------------------------------------------
+   Decorative ornament  ❦  for section dividers between articles, etc.
+   Use as:  <div class="ornament">❦</div>
+   --------------------------------------------------------------------- */
+body.site-public .ornament {
+    text-align: center;
+    color: var(--accent-2);
+    font-size: 1.15rem;
+    margin: 2.25rem 0;
+    letter-spacing: 1rem;     /* spreads multiple glyphs apart */
+    user-select: none;
+}
+body.site-public .ornament::before {
+    content: "❦";
+}
+body.site-public .ornament-line {
+    border: 0;
+    height: 0;
+    text-align: center;
+    overflow: visible;
+    margin: 2rem 0;
+}
+body.site-public .ornament-line::after {
+    content: "❦";
+    display: inline-block;
+    padding: 0 0.8em;
+    color: var(--accent-2);
+    background: var(--bg-page);
+    position: relative;
+    top: -0.7em;
+}
+body.site-public .ornament-line {
+    border-top: 1px solid var(--rule);
+}
+
+/* ---------------------------------------------------------------------
+   Article reading view — drop cap + comfortable reading column.
+   Targets the article body if it's inside .article-body; otherwise opt
+   in by adding the class. We DON'T globally style every <article> to
+   avoid surprising changes in unrelated pages.
+   --------------------------------------------------------------------- */
+body.site-public .article-body p:first-of-type::first-letter {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    color: var(--accent);
+    float: left;
+    font-size: 3.5em;
+    line-height: 0.85;
+    padding: 0.1em 0.12em 0 0;
+}
+body.site-public .article-body {
+    font-size: 1.125rem;
+    line-height: 1.75;
+}
+body.site-public .article-body blockquote {
+    border-left: 3px solid var(--accent-2);
+    padding: 0.25em 0 0.25em 1.2em;
+    font-style: italic;
+    color: var(--text);
+    margin: 1.5em 0;
+}
+
+/* ---------------------------------------------------------------------
+   Form controls — softer warm tone (still Bootstrap-compatible)
+   --------------------------------------------------------------------- */
+body.site-public .form-control,
+body.site-public .form-select {
+    background-color: #fff;
+    border-color: var(--rule);
+    color: var(--text);
+}
+body.site-public .form-control:focus,
+body.site-public .form-select:focus {
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 0.2rem rgba(169,133,83,0.15);
+}
+
+/* =====================================================================
+   Phase 2 — Card frames, article header, hero treatment, listing
+   dividers. All scoped to body.site-public.
+   ===================================================================== */
+
+/* Philatelic card: classical postage-stamp look — thin gold rule, a
+   parchment "gap" inside, then a hairline burgundy inner frame. Hover
+   lifts subtly with a warm sepia shadow. Use class="card-philatelic"
+   on any .card. */
+body.site-public .card-philatelic {
+    background: var(--bg-card);
+    border: 1px solid var(--accent-2);
+    border-radius: 4px;
+    /* Layered shadows: outer subtle lift + inner double-frame illusion */
+    box-shadow:
+        inset 0 0 0 4px var(--bg-card),
+        inset 0 0 0 5px rgba(122, 31, 43, 0.18),
+        0 1px 3px rgba(122, 31, 43, 0.08);
+    padding: 6px;
+    transition: box-shadow .2s ease, transform .2s ease;
+    overflow: hidden;
+}
+body.site-public .card-philatelic:hover {
+    box-shadow:
+        inset 0 0 0 4px var(--bg-card),
+        inset 0 0 0 5px rgba(122, 31, 43, 0.35),
+        0 6px 18px rgba(122, 31, 43, 0.16);
+    transform: translateY(-2px);
+}
+/* Reset the inner image so the perforation/frame sits OUTSIDE the picture */
+body.site-public .card-philatelic .card-img-top {
+    border-radius: 2px;
+    border-bottom: 1px solid var(--rule);
+}
+body.site-public .card-philatelic .card-body { padding: 1rem 1rem 0.5rem; }
+body.site-public .card-philatelic .card-title {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.25;
+    margin-bottom: 0.5rem;
+}
+/* Title underline rule that mimics a vintage book chapter opener */
+body.site-public .card-philatelic .card-title::after {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 1px;
+    margin-top: 0.6rem;
+    background: var(--accent-2);
+    opacity: 0.7;
+}
+body.site-public .card-philatelic .card-footer {
+    background: transparent;
+    border-top: 1px dashed var(--rule);
+    padding: 0.5rem 1rem 0.75rem;
+    font-variant: small-caps;
+    letter-spacing: 0.1em;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+/* Ornament divider you can drop between rows of cards. Use:
+   <hr class="ornament-rule"> */
+body.site-public .ornament-rule {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(to right,
+        transparent, var(--rule) 20%, var(--rule) 80%, transparent);
+    position: relative;
+    overflow: visible;
+    margin: 1rem 0 2rem;
+}
+body.site-public .ornament-rule::after {
+    content: "❦";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 0 0.7em;
+    background: var(--bg-page);
+    color: var(--accent-2);
+    font-size: 1.1rem;
+}
+
+/* ---------------------------------------------------------------------
+   Article reading view — classical "chapter opener" treatment
+   --------------------------------------------------------------------- */
+/* Hero image gets a thin warm frame so it sits like a tipped-in plate */
+body.site-public .article-hero {
+    border: 1px solid var(--accent-2);
+    padding: 6px;
+    background: var(--bg-card);
+    box-shadow: 0 2px 8px rgba(122, 31, 43, 0.08);
+    border-radius: 4px;
+}
+body.site-public .article-hero img {
+    display: block;
+    width: 100%;
+    border-radius: 2px;
+    border: 1px solid var(--rule);
+}
+
+/* Centred title block with ornament between title and body. Use:
+   <div class="article-title-block">
+     <h1>...</h1>
+     <p class="article-subtitle">...</p>
+     <p class="article-meta">...</p>
+     <div class="ornament"></div>
+   </div>
+*/
+body.site-public .article-title-block {
+    text-align: center;
+    padding: 1.5rem 0 0.5rem;
+}
+body.site-public .article-title-block h1 {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: clamp(1.8rem, 3.2vw, 2.8rem);
+    line-height: 1.15;
+    margin-bottom: 0.6rem;
+    color: var(--text);
+}
+body.site-public .article-title-block .article-subtitle {
+    font-family: 'Playfair Display', serif;
+    font-weight: 400;
+    font-style: italic;
+    font-size: 1.2rem;
+    color: var(--text-muted);
+    margin-bottom: 0.8rem;
+}
+body.site-public .article-title-block .article-meta {
+    font-variant: small-caps;
+    letter-spacing: 0.15em;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 0;
+}
+
+/* Closing ornament after an article body */
+body.site-public .article-end-ornament {
+    text-align: center;
+    color: var(--accent-2);
+    font-size: 1.2rem;
+    letter-spacing: 0.5em;
+    margin: 2.5rem 0 1rem;
+    user-select: none;
+}
+body.site-public .article-end-ornament::before { content: "✦ ❦ ✦"; }
+
+/* ---------------------------------------------------------------------
+   Page-level heading treatment — used on the /articles index, /about,
+   /catalogue. Centres + adds a small gold rule underneath.
+   --------------------------------------------------------------------- */
+body.site-public .page-heading {
+    text-align: center;
+    margin: 1.5rem 0 0.5rem;
+}
+body.site-public .page-heading h1 {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: clamp(1.9rem, 3.4vw, 2.6rem);
+    margin-bottom: 0.4rem;
+}
+body.site-public .page-heading .page-heading-sub {
+    font-family: 'Lora', Georgia, serif;
+    font-style: italic;
+    color: var(--text-muted);
+    max-width: 38em;
+    margin: 0 auto 1rem;
+}
+body.site-public .page-heading::after {
+    content: "";
+    display: block;
+    width: 60px;
+    height: 1px;
+    background: var(--accent-2);
+    margin: 1rem auto 1.5rem;
+}

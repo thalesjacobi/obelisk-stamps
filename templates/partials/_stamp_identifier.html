@@ -8,7 +8,7 @@
     <p class="text-muted">Upload an image of a stamp to identify it and get estimated pricing.</p>
     {% endif %}
 
-    <form id="stamp-upload-form" enctype="multipart/form-data" class="mb-4">
+    <form id="stamp-upload-form" enctype="multipart/form-data" class="mb-4 d-none">
         <input type="hidden" id="currency" name="currency" value="{{ active_currency }}">
         <div class="row align-items-end">
             <div class="col-md-8 mb-3">
@@ -38,10 +38,25 @@
         </div>
     </div>
 
-    <!-- AI Warmup Status (hidden once ready) -->
+    <!-- AI Warmup — user-initiated. The ML API is a Cloud Run container
+         that goes cold after a few minutes of inactivity; first request after
+         cold-start takes ~1 minute. We don't ping it automatically because
+         every page load would incur a billable wake-up. Click to wake. -->
+    <div id="ml-warmup-prompt" class="alert alert-secondary d-flex align-items-center gap-2 mb-3" role="status">
+        <span class="flex-grow-1">
+            <strong>Heads up:</strong> Stamp Quest AI sleeps when idle and takes ~1 minute to wake up.
+            Click <strong>Wake up AI</strong> before uploading so it's ready when you click Identify.
+        </span>
+        <button type="button" id="ml-warmup-btn" class="btn btn-sm btn-outline-primary flex-shrink-0">
+            ⚡ Wake up AI
+        </button>
+    </div>
     <div id="ml-warmup-bar" class="alert alert-info d-flex align-items-center gap-2 mb-3 d-none" role="status">
         <span class="spinner-border spinner-border-sm flex-shrink-0" aria-hidden="true"></span>
         <span id="ml-warmup-text">Preparing Stamp Quest AI&hellip; this takes about a minute on first load.</span>
+    </div>
+    <div id="ml-warmup-ready" class="alert alert-success d-none mb-3" role="status">
+        ✓ Stamp Quest AI is awake and ready.
     </div>
 
     <!-- Error Section -->
