@@ -860,9 +860,9 @@
                 <ul class="text-muted small mb-3" style="padding-left:1.2rem">
                     <li>Recommended interval: <strong>hourly</strong> (60 min) for typical use,
                         or <strong>every 5 minutes</strong> if you need minute-precise timing.</li>
-                    <li>Method: <strong>GET</strong>. Response is a plain-text <code>OK</code>
-                        (status 200). HEAD requests return 200 without triggering the sweep —
-                        fine for liveness checks, useless for publishing.</li>
+                    <li>Method: <strong>GET</strong> or <strong>HEAD</strong> — both run the
+                        sweep. (UptimeRobot defaults to HEAD; that's fine.) GET returns a
+                        plain-text <code>OK</code> body; HEAD returns just the headers.</li>
                 </ul>
                 <label class="form-label small fw-semibold mb-1">Cron URL</label>
                 <div class="input-group mb-2">
@@ -1001,8 +1001,8 @@
                     </div>
                     <div class="modal-body">
                         <p class="small text-muted">
-                            Last {{ 100 }} hits (newest first). <strong>Method</strong> shows whether the
-                            monitor used GET (which actually runs the sweep) or HEAD (liveness-only).
+                            Last {{ 100 }} hits (newest first). <strong>Method</strong> shows the HTTP
+                            verb your uptime monitor used — both GET and HEAD run the sweep.
                             <strong>Published</strong> lists any articles auto-published during that hit;
                             most rows will be empty because nothing was due yet.
                         </p>

@@ -4629,12 +4629,14 @@ def public_cron_publish_scheduled():
     execute("INSERT INTO site_settings (`key`, value) VALUES ('cron_last_hit_at', %s) "
             "ON DUPLICATE KEY UPDATE value = %s", (now_utc_iso, now_utc_iso))
 
-    if request.method == "HEAD":
-        _append_cron_hit(now_utc_iso, "HEAD", [])
-        return ("", 200)
-
+    # Run the sweep on BOTH HEAD and GET. Many uptime monitors (UptimeRobot,
+    # Pingdom) default to HEAD for cheaper checks — if we treated HEAD as
+    # liveness-only, the cron job would silently never fire.
     published = _sweep_scheduled_publishes()  # list of (id, title) tuples
-    _append_cron_hit(now_utc_iso, "GET", published)
+    _append_cron_hit(now_utc_iso, request.method, published)
+    if request.method == "HEAD":
+        # HEAD responses have no body per HTTP spec; sweep still ran above.
+        return ("", 200)
     return ("OK", 200, {"Content-Type": "text/plain; charset=utf-8"})
 
 
@@ -4898,11 +4900,12 @@ def public_cron_daily_media_generation():
     last_run_date = get_setting("daily_media_last_run_date") or ""
     forced = (request.args.get("force") or "").strip().lower() in ("1", "true", "yes")
 
-    # HEAD: always 200, no side effects
-    if request.method == "HEAD":
-        return ("", 200)
-
+    # NOTE: HEAD and GET both run the throttle check; HEAD just suppresses
+    # the response body per HTTP spec. (We don't no-op HEAD anymore because
+    # most uptime monitors default to HEAD and would silently never trigger.)
     if not forced and last_run_date == today_utc:
+        if request.method == "HEAD":
+            return ("", 200)
         return ("ALREADY_RAN_TODAY\n", 200, {"Content-Type": "text/plain; charset=utf-8"})
 
     execute("INSERT INTO site_settings (`key`, value) VALUES ('daily_media_last_run_date', %s) "
@@ -4916,6 +4919,8 @@ def public_cron_daily_media_generation():
         kwargs={"forced": forced},
         daemon=True,
     ).start()
+    if request.method == "HEAD":
+        return ("", 200)
     return ("STARTED\n", 200, {"Content-Type": "text/plain; charset=utf-8"})
 
 
