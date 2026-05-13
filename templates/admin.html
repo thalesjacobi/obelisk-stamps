@@ -736,7 +736,7 @@
             <div class="card-header"><strong>Carousel Image Style</strong></div>
             <div class="card-body">
                 <p class="text-muted small mb-3">
-                    This style description is appended to every DALL-E 3 prompt when generating
+                    This style description is appended to every OpenAI image-generation prompt when generating
                     Instagram carousels. It ensures all images share a consistent visual language.
                     Changes take effect on the next carousel generation.
                 </p>
@@ -2250,7 +2250,7 @@ function draftBatchGenerate() {
                    .map(function(cb) { return parseInt(cb.dataset.id); });
     if (!ids.length) return;
     if (!confirm('Generate carousels for ' + ids.length + ' article' + (ids.length > 1 ? 's' : '') + '?\n'
-        + 'Each takes ~2-3 min and uses DALL-E 3 (~$0.40 each).\n'
+        + 'Each takes ~2-3 min and uses OpenAI image generation (~$0.42 each).\n'
         + 'Keep this browser tab OPEN — closing it will stop the batch.')) return;
 
     // Tell server which IDs we're about to process (it clears stale statuses)

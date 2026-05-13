@@ -81,7 +81,47 @@ else:
     if not OPENAI_API_KEY:
         print("WARNING: OPENAI_API_KEY not set — chatbot disabled")
 
-# Style suffix appended to every DALL-E 3 prompt in the Instagram carousel
+
+# ──────────────────────────────────────────────────────────────────────
+# OpenAI image-generation: model + helper
+# ──────────────────────────────────────────────────────────────────────
+# dall-e-3 was deprecated and replaced by gpt-image-1 in 2025. gpt-image-1
+# always returns the image as base64 in `b64_json` (no URL field), uses
+# `quality` values low/medium/high/auto (no "standard"), and does not
+# accept a `style` parameter. This wrapper centralises those differences
+# so we only change one place when the model rotates again.
+OPENAI_IMAGE_MODEL    = "gpt-image-1"
+OPENAI_IMAGE_QUALITY  = "medium"      # medium ≈ DALL-E 3 standard (~$0.04 / 1024×1024)
+OPENAI_IMAGE_SIZE     = "1024x1024"
+
+
+def _generate_image_bytes(prompt, size=None, quality=None):
+    """Generate one image via OpenAI's current image model.
+    Returns raw PNG bytes. Raises on failure (callers handle).
+    """
+    if not _openai_client:
+        raise RuntimeError("OpenAI client not configured")
+    import base64 as _b64
+    resp = _openai_client.images.generate(
+        model=OPENAI_IMAGE_MODEL,
+        prompt=prompt,
+        size=size or OPENAI_IMAGE_SIZE,
+        quality=quality or OPENAI_IMAGE_QUALITY,
+        n=1,
+    )
+    b64 = resp.data[0].b64_json
+    if not b64:
+        # Some clients still return a URL when response_format is overridden.
+        url = getattr(resp.data[0], "url", None)
+        if url:
+            import requests as _r
+            dl = _r.get(url, timeout=30); dl.raise_for_status()
+            return dl.content
+        raise RuntimeError("OpenAI image response had no b64_json and no url")
+    return _b64.b64decode(b64)
+
+
+# Style suffix appended to every image prompt in the Instagram carousel
 GIFT_PERSONA_PRESETS = [
     "🏛️ Architecture enthusiasts",
     "🎨 Art lovers",
@@ -4780,7 +4820,7 @@ def _daily_media_generation_runner(max_articles=None, forced=False):
                 print(f"[DailyMedia] Article {aid}: generating carousel "
                       f"({draft['carousel_count']}/10 currently).", flush=True)
                 _add_activity_log(aid, "Daily Media — Carousel",
-                                  "Generating missing carousel images via DALL-E 3.",
+                                  "Generating missing carousel images via OpenAI image model.",
                                   component="carousel")
                 result = _generate_carousel_for_article_sync(aid)
                 per_log["steps"].append({
@@ -6059,20 +6099,11 @@ def admin_article_generate_carousel(article_id):
         for seq, (slot_idx, (prompt, punchline)) in enumerate(slot_assignments, 1):
             slot_num = slot_idx + 1  # 1-based slot number for frontend/filename
             try:
-                img_resp = _openai_client.images.generate(
-                    model="dall-e-3",
-                    prompt=f"{prompt}. {active_style}",
-                    size="1024x1024",
-                    quality="standard",
-                    style="vivid",
-                    n=1,
-                )
-                dl = http_requests.get(img_resp.data[0].url, timeout=30)
-                dl.raise_for_status()
+                img_bytes = _generate_image_bytes(f"{prompt}. {active_style}")
                 local_filename = f"image_{slot_num}.png"
                 gcs_object_name = f"articles/{article_id}/carousel/{local_filename}"
-                (carousel_dir / local_filename).write_bytes(dl.content)
-                gcs_url = upload_bytes_to_gcs(dl.content, gcs_object_name, content_type="image/png")
+                (carousel_dir / local_filename).write_bytes(img_bytes)
+                gcs_url = upload_bytes_to_gcs(img_bytes, gcs_object_name, content_type="image/png")
                 if gcs_url:
                     merged_i[slot_idx] = gcs_url
                     static_url = gcs_url
@@ -6128,7 +6159,7 @@ def admin_article_generate_carousel(article_id):
         # Activity log
         try:
             _add_activity_log(article_id, "Carousel generation",
-                              f"Generated {ok} of {N} images\nModel: dall-e-3 (1024×1024, quality=standard, style=vivid)",
+                              f"Generated {ok} of {N} images\nModel: {OPENAI_IMAGE_MODEL} ({OPENAI_IMAGE_SIZE}, quality={OPENAI_IMAGE_QUALITY})",
                               component="carousel")
         except Exception:
             pass  # non-fatal
@@ -6437,20 +6468,11 @@ def admin_article_regenerate_carousel_image(article_id):
     # Read active style from site settings (fallback to hardcoded constant)
     active_style = get_setting('carousel_style', CAROUSEL_STYLE_SUFFIX)
 
-    # ── Generate new image via DALL-E 3 ──
+    # ── Generate new image via OpenAI image model (gpt-image-1) ──
     carousel_dir = BASE_DIR / "static" / "articles" / str(article_id) / "carousel"
     carousel_dir.mkdir(parents=True, exist_ok=True)
     try:
-        img_resp = _openai_client.images.generate(
-            model="dall-e-3",
-            prompt=f"{new_prompt}. {active_style}",
-            size="1024x1024",
-            quality="standard",
-            style="vivid",
-            n=1,
-        )
-        dl = http_requests.get(img_resp.data[0].url, timeout=30)
-        dl.raise_for_status()
+        img_bytes = _generate_image_bytes(f"{new_prompt}. {active_style}")
     except _openai_module.BadRequestError as e:
         _add_activity_log(article_id, f"Carousel re-run slide {index + 1} failed",
                           f"Content policy: {e}", component="carousel")
@@ -6469,8 +6491,8 @@ def admin_article_regenerate_carousel_image(article_id):
     ts = int(_time.time())
     filename = f"image_{index + 1}_{ts}.png"
     gcs_object_name = f"articles/{article_id}/carousel/{filename}"
-    (carousel_dir / filename).write_bytes(dl.content)
-    gcs_url = upload_bytes_to_gcs(dl.content, gcs_object_name, content_type="image/png")
+    (carousel_dir / filename).write_bytes(img_bytes)
+    gcs_url = upload_bytes_to_gcs(img_bytes, gcs_object_name, content_type="image/png")
 
     # ── Archive old values + replace current slot ──
     import datetime as _dt
@@ -6504,7 +6526,7 @@ def admin_article_regenerate_carousel_image(article_id):
         return jsonify({"error": f"DB save failed: {e}"}), 500
 
     _add_activity_log(article_id, f"Carousel re-run slide {index + 1}",
-                      f"Model: dall-e-3\nPrompt: {new_prompt[:120]}...",
+                      f"Model: {OPENAI_IMAGE_MODEL}\nPrompt: {new_prompt[:120]}...",
                       component="carousel")
     static_url = gcs_url if gcs_url else url_for("static", filename=f"articles/{article_id}/carousel/{filename}")
     return jsonify({
@@ -17214,27 +17236,16 @@ def _generate_carousel_for_article_sync(article_id):
         attempted += 1
 
         try:
-            dalle_resp = _openai_client.images.generate(
-                model="dall-e-3",
-                prompt=f"{prompt}. {active_style}",
-                size="1024x1024",
-                quality="standard",
-                style="vivid",
-                n=1
-            )
-            image_url = dalle_resp.data[0].url
-
-            dl = http_requests.get(image_url, timeout=60)
-            dl.raise_for_status()
+            img_bytes = _generate_image_bytes(f"{prompt}. {active_style}")
 
             local_filename = f"image_{slot + 1}.png"
             gcs_object_name = f"articles/{article_id}/carousel/{local_filename}"
             carousel_dir = os.path.join("static", "articles", str(article_id), "carousel")
             os.makedirs(carousel_dir, exist_ok=True)
             with open(os.path.join(carousel_dir, local_filename), "wb") as f:
-                f.write(dl.content)
+                f.write(img_bytes)
 
-            gcs_url = upload_bytes_to_gcs(dl.content, gcs_object_name, content_type="image/png")
+            gcs_url = upload_bytes_to_gcs(img_bytes, gcs_object_name, content_type="image/png")
             if gcs_url:
                 existing_images[slot] = gcs_url
             else:
