@@ -17137,6 +17137,7 @@ def _generate_carousel_for_article_sync(article_id):
       }
     """
     import time as _time
+    import datetime as _dt   # used at the end of each slot to record carousel_created_at
 
     if not _openai_client:
         print(f"[CarouselSync] Article {article_id}: OpenAI client not configured — aborting", flush=True)
