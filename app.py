@@ -1310,6 +1310,73 @@ except Exception as e:
     print(f"WARNING: Could not initialise articles table: {e}")
 
 
+def init_scheduled_publish_audit():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS scheduled_publish_audit (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            article_id INT NOT NULL,
+            article_title VARCHAR(500),
+            action VARCHAR(20) NOT NULL,
+            old_scheduled_at DATETIME NULL,
+            new_scheduled_at DATETIME NULL,
+            actor VARCHAR(255),
+            source VARCHAR(100),
+            note TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_article (article_id),
+            INDEX idx_created (created_at)
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+try:
+    init_scheduled_publish_audit()
+except Exception as e:
+    print(f"WARNING: Could not initialise scheduled_publish_audit table: {e}")
+
+
+def _log_schedule_audit(article_id, action, old_at=None, new_at=None,
+                        actor=None, source=None, note=None, article_title=None):
+    """Append a row to scheduled_publish_audit. Never raises."""
+    try:
+        if article_title is None:
+            row = query_one("SELECT title FROM articles WHERE id = %s", (article_id,))
+            article_title = (row[0] if row else None) or ""
+        if actor is None:
+            try:
+                if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
+                    actor = getattr(current_user, "email", None) or "unknown-user"
+                else:
+                    actor = "system"
+            except Exception:
+                actor = "system"
+        def _fmt(v):
+            if v is None:
+                return None
+            if hasattr(v, "strftime"):
+                return v.strftime("%Y-%m-%d %H:%M:%S")
+            return str(v)
+        execute(
+            "INSERT INTO scheduled_publish_audit "
+            "(article_id, article_title, action, old_scheduled_at, new_scheduled_at, actor, source, note) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (int(article_id), (article_title or "")[:500], action,
+             _fmt(old_at), _fmt(new_at), (actor or "")[:255],
+             (source or "")[:100], (note or "")[:2000]),
+        )
+        print(f"[ScheduleAudit] article={article_id} action={action} "
+              f"old={_fmt(old_at)} new={_fmt(new_at)} actor={actor} source={source}",
+              flush=True)
+    except Exception as _e:
+        print(f"[ScheduleAudit] FAILED to log article={article_id} action={action}: {_e}",
+              flush=True)
+
+
 def init_site_settings():
     """Create site_settings table and seed default values if missing."""
     conn = get_db()
@@ -4342,7 +4409,7 @@ def _sweep_scheduled_publishes():
     """
     try:
         due = query_all(
-            "SELECT id, title FROM articles "
+            "SELECT id, title, scheduled_publish_at FROM articles "
             "WHERE is_published = 0 "
             "  AND scheduled_publish_at IS NOT NULL "
             "  AND scheduled_publish_at <= NOW()"
@@ -4358,8 +4425,12 @@ def _sweep_scheduled_publishes():
             f"WHERE id IN ({placeholders})",
             tuple(ids),
         )
-        for _id, _title in due:
+        for _id, _title, _old_at in due:
             print(f"[ScheduledPublish] Auto-published article {_id}: {_title!r}", flush=True)
+            _log_schedule_audit(int(_id), "publish", old_at=_old_at, new_at=None,
+                                source="_sweep_scheduled_publishes",
+                                article_title=_title,
+                                note="Sweep published due article; scheduled_publish_at cleared.")
             # If the article has a full carousel + narrated video, fire the
             # automation sequence in the background. The sequence calls each
             # social-network worker sequentially and waits for completion;
@@ -4381,6 +4452,19 @@ def _sweep_scheduled_publishes():
     except Exception as _e:
         print(f"[ScheduledPublish] Sweep failed: {_e}", flush=True)
         return []
+
+
+def _current_audit_source():
+    """Best-effort source label: '<endpoint> via <referrer>' for the current request."""
+    try:
+        from flask import request as _req, has_request_context
+        if not has_request_context():
+            return "background"
+        ep = _req.endpoint or _req.path or "request"
+        ref = _req.headers.get("Referer", "")
+        return f"{ep}" + (f" (ref={ref[:120]})" if ref else "")
+    except Exception:
+        return "request"
 
 
 def _article_eligible_for_auto_publish_actions(article_id):
@@ -4986,6 +5070,32 @@ def admin_daily_media_run_log_clear():
     return jsonify({"ok": True})
 
 
+@app.route("/admin/cron/scheduled-publish-audit")
+@login_required
+@admin_required
+def admin_scheduled_publish_audit():
+    """Return scheduled_publish_audit rows, newest first. Optional ?limit=N (default 200)."""
+    try:
+        limit = max(1, min(int(request.args.get("limit", 200)), 2000))
+    except Exception:
+        limit = 200
+    rows = query_all(
+        "SELECT id, article_id, article_title, action, old_scheduled_at, "
+        "new_scheduled_at, actor, source, note, created_at "
+        "FROM scheduled_publish_audit ORDER BY id DESC LIMIT %s",
+        (limit,),
+    ) or []
+    def _iso(v):
+        return v.strftime("%Y-%m-%dT%H:%M:%SZ") if v else None
+    entries = [{
+        "id": r[0], "article_id": r[1], "article_title": r[2], "action": r[3],
+        "old_scheduled_at_utc_iso": _iso(r[4]), "new_scheduled_at_utc_iso": _iso(r[5]),
+        "actor": r[6], "source": r[7], "note": r[8],
+        "created_at_utc_iso": _iso(r[9]),
+    } for r in rows]
+    return jsonify({"ok": True, "entries": entries, "total": len(entries)})
+
+
 @app.route("/admin/cron/daily-media-force-run", methods=["POST"])
 @login_required
 @admin_required
@@ -5239,17 +5349,22 @@ def admin_article_schedule_publish(article_id):
     Only works on draft articles — already-published articles can't be
     scheduled (publish them or unpublish first).
     """
-    row = query_one("SELECT is_published FROM articles WHERE id = %s", (article_id,))
+    row = query_one("SELECT is_published, scheduled_publish_at, title FROM articles WHERE id = %s", (article_id,))
     if not row:
         return jsonify({"error": "Article not found."}), 404
     if bool(row[0]):
         return jsonify({"error": "This article is already published. Unpublish first to schedule a new publish time."}), 400
+    _old_scheduled_at = row[1]
+    _article_title = row[2]
 
     data = request.get_json() or {}
     raw = (data.get("scheduled_at") or "").strip()
 
     if not raw:
         execute("UPDATE articles SET scheduled_publish_at = NULL WHERE id = %s", (article_id,))
+        _log_schedule_audit(article_id, "clear", old_at=_old_scheduled_at, new_at=None,
+                            source=_current_audit_source(), article_title=_article_title,
+                            note="Schedule cleared via admin endpoint.")
         return jsonify({"ok": True, "scheduled_at": None})
 
     # The browser sends a UTC ISO string (e.g. "2026-05-10T18:00:00.000Z").
@@ -5290,6 +5405,9 @@ def admin_article_schedule_publish(article_id):
         "UPDATE articles SET scheduled_publish_at = %s WHERE id = %s",
         (dt_utc.strftime("%Y-%m-%d %H:%M:%S"), article_id),
     )
+    _log_schedule_audit(article_id, "set", old_at=_old_scheduled_at, new_at=dt_utc,
+                        source=_current_audit_source(), article_title=_article_title,
+                        note=f"Schedule set; raw_input={raw!r}")
     return jsonify({
         "ok": True,
         "scheduled_at_utc_iso": dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -5337,7 +5455,18 @@ def admin_article_save(article_id):
 @admin_required
 def admin_article_delete(article_id):
     try:
+        pre = query_one(
+            "SELECT title, scheduled_publish_at, is_published FROM articles WHERE id = %s",
+            (article_id,))
         execute("DELETE FROM articles WHERE id = %s", (article_id,))
+        if pre:
+            _title, _sched_at, _is_pub = pre
+            _log_schedule_audit(article_id, "delete",
+                                old_at=_sched_at, new_at=None,
+                                source=_current_audit_source(),
+                                article_title=_title,
+                                note=f"Article deleted (was_published={bool(_is_pub)}, "
+                                     f"had_schedule={_sched_at is not None}).")
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -16959,11 +17088,37 @@ def _pipeline_generate_ideas_inner():
                 "ON DUPLICATE KEY UPDATE value = %s",
                 ("pipeline_idea_prompt", custom_prompt, custom_prompt))
 
+    # Collect every existing title we should not duplicate: live articles
+    # (published + drafts) AND queued ideas in any non-rejected state.
+    existing_article_titles = [r[0] for r in (query_all(
+        "SELECT title FROM articles WHERE title IS NOT NULL AND title != ''"
+    ) or []) if r[0]]
+    existing_queue_titles = [r[0] for r in (query_all(
+        "SELECT title FROM article_queue "
+        "WHERE status != 'rejected' AND title IS NOT NULL AND title != ''"
+    ) or []) if r[0]]
+    existing_titles_all = existing_article_titles + existing_queue_titles
+
+    def _norm_title(s):
+        return re.sub(r'[^a-z0-9]+', ' ', (s or '').lower()).strip()
+    existing_titles_norm = {_norm_title(t) for t in existing_titles_all if _norm_title(t)}
+
     all_ideas = []
+    skipped_duplicates = []
     chunk_size = 30
-    for chunk_start in range(0, total_articles, chunk_size):
-        chunk_n = min(chunk_size, total_articles - chunk_start)
-        previous_titles = "\n".join([i["title"] for i in all_ideas[-50:]]) if all_ideas else "None yet"
+    max_attempts = max(4, (total_articles // chunk_size) * 3 + 4)
+    attempt = 0
+    while len(all_ideas) < total_articles and attempt < max_attempts:
+        attempt += 1
+        remaining = total_articles - len(all_ideas)
+        # Over-request a bit so dupes don't force another round-trip.
+        chunk_n = min(chunk_size, remaining + 5)
+        # Build the avoid-list: in-batch ideas so far + every existing title.
+        # Cap at ~400 titles to keep the prompt small but cover the whole corpus.
+        avoid_titles = [i["title"] for i in all_ideas] + existing_titles_all
+        if len(avoid_titles) > 400:
+            avoid_titles = avoid_titles[:400]
+        previous_titles = "\n".join(f"- {t}" for t in avoid_titles) if avoid_titles else "None yet"
 
         # Build system prompt from custom prompt + structural instructions
         base_prompt = custom_prompt or (
@@ -16977,7 +17132,10 @@ def _pipeline_generate_ideas_inner():
         system_prompt = (
             base_prompt + "\n\n"
             "Generate exactly " + str(chunk_n) + " unique article ideas.\n\n"
-            "AVOID these previously generated titles:\n" + previous_titles + "\n\n"
+            "CRITICAL — DO NOT repeat or closely paraphrase any of these existing "
+            "article titles (these are already published, drafted, or queued — "
+            "new ideas must cover meaningfully different topics and angles):\n"
+            + previous_titles + "\n\n"
             "For each article provide:\n"
             "- title: An engaging, SEO-friendly title (50-80 chars)\n"
             "- subtitle: A complementary subtitle (40-60 chars)\n"
@@ -17006,21 +17164,33 @@ def _pipeline_generate_ideas_inner():
         except Exception as e:
             return jsonify({"error": f"OpenAI error: {str(e)}"}), 500
 
-        for idx, idea in enumerate(ideas):
-            date_idx = chunk_start + idx
+        for idea in ideas:
+            date_idx = len(all_ideas)
             if date_idx >= len(target_dates):
                 break
+            t_raw = idea.get("title", "Untitled")
+            t_norm = _norm_title(t_raw)
+            if t_norm and t_norm in existing_titles_norm:
+                skipped_duplicates.append(t_raw)
+                continue
+            existing_titles_norm.add(t_norm)
+            existing_titles_all.append(t_raw)
             td = target_dates[date_idx]
             execute(
                 "INSERT INTO article_queue (title, subtitle, description, target_date, status, batch_id, prompt_used) "
                 "VALUES (%s, %s, %s, %s, 'pending', %s, %s)",
-                (idea.get("title", "Untitled"), idea.get("subtitle", ""),
+                (t_raw, idea.get("subtitle", ""),
                  idea.get("description", ""), td.strftime("%Y-%m-%d"), batch_id,
                  base_prompt[:2000])
             )
             all_ideas.append(idea)
 
-    return jsonify({"ok": True, "count": len(all_ideas), "batch_id": batch_id})
+    short_by = max(0, total_articles - len(all_ideas))
+    return jsonify({"ok": True, "count": len(all_ideas), "batch_id": batch_id,
+                    "requested": total_articles,
+                    "short_by": short_by,
+                    "attempts": attempt,
+                    "skipped_duplicates": skipped_duplicates})
 
 
 @app.route("/admin/article-pipeline/<int:queue_id>/status", methods=["POST"])
