@@ -4868,6 +4868,40 @@ def _pick_drafts_needing_media(limit):
     return picks
 
 
+# Publish-schedule slots (UTC). Two articles/day: 10:00 and 14:00.
+_DAILY_PUBLISH_SLOTS_UTC = [(10, 0), (14, 0)]
+
+
+def _next_free_publish_slot():
+    """Return a naive UTC datetime for the next free publish slot.
+
+    Walks forward day-by-day starting from today, returning the first
+    (10:00, 14:00) slot in UTC that is (a) strictly in the future and
+    (b) not already taken by another draft's scheduled_publish_at.
+    """
+    import datetime as _dt
+    taken_rows = query_all(
+        "SELECT scheduled_publish_at FROM articles "
+        "WHERE is_published = 0 AND scheduled_publish_at IS NOT NULL"
+    ) or []
+    taken = set()
+    for (v,) in taken_rows:
+        if v:
+            taken.add(v.strftime("%Y-%m-%d %H:%M"))
+    now = _dt.datetime.utcnow()
+    day = now.date()
+    for _ in range(120):  # safety bound — ~4 months out
+        for hh, mm in _DAILY_PUBLISH_SLOTS_UTC:
+            slot = _dt.datetime(day.year, day.month, day.day, hh, mm)
+            if slot <= now:
+                continue
+            if slot.strftime("%Y-%m-%d %H:%M") in taken:
+                continue
+            return slot
+        day = day + _dt.timedelta(days=1)
+    return None
+
+
 def _daily_media_generation_runner(max_articles=None, forced=False):
     """Background worker: generate carousel + narrated video for drafts that
     need them, then set the cover image to slide 2 + enable slideshow.
@@ -4999,6 +5033,49 @@ def _daily_media_generation_runner(max_articles=None, forced=False):
         except Exception as _e:
             print(f"[DailyMedia] Article {aid}: finalize crashed: {_e}", flush=True)
             per_log["steps"].append({"step": "finalize", "ok": False, "error": str(_e)[:200]})
+
+        # 4. Auto-schedule publish — only if the article is fully ready
+        #    (10/10 carousel + narrated video) AND has no existing schedule.
+        try:
+            srow = query_one(
+                "SELECT is_published, scheduled_publish_at, carousel_images, "
+                "video_narrated_url, title FROM articles WHERE id = %s", (aid,))
+            if srow:
+                _is_pub, _existing_sched, _imgs_json, _vid_url, _title = srow
+                cnt = _carousel_url_count(_imgs_json)
+                ready = (not _is_pub) and cnt >= 10 and bool(_vid_url)
+                if not ready:
+                    per_log["steps"].append({
+                        "step": "auto_schedule", "ok": True, "skipped_not_ready": True,
+                        "carousel_count": cnt, "has_narrated": bool(_vid_url),
+                    })
+                elif _existing_sched:
+                    per_log["steps"].append({
+                        "step": "auto_schedule", "ok": True, "skipped_existing_schedule": True,
+                        "scheduled_at_utc_iso": _existing_sched.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    })
+                else:
+                    slot = _next_free_publish_slot()
+                    if slot is None:
+                        per_log["steps"].append({"step": "auto_schedule", "ok": False,
+                                                 "error": "no free slot in 120 days"})
+                    else:
+                        execute("UPDATE articles SET scheduled_publish_at = %s WHERE id = %s",
+                                (slot.strftime("%Y-%m-%d %H:%M:%S"), aid))
+                        _log_schedule_audit(
+                            aid, "set", old_at=None, new_at=slot,
+                            source="_daily_media_generation_runner",
+                            article_title=_title,
+                            note="Auto-scheduled after media generation completed.")
+                        per_log["steps"].append({
+                            "step": "auto_schedule", "ok": True,
+                            "scheduled_at_utc_iso": slot.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        })
+                        print(f"[DailyMedia] Article {aid}: auto-scheduled for "
+                              f"{slot.strftime('%Y-%m-%d %H:%M')} UTC.", flush=True)
+        except Exception as _e:
+            print(f"[DailyMedia] Article {aid}: auto-schedule crashed: {_e}", flush=True)
+            per_log["steps"].append({"step": "auto_schedule", "ok": False, "error": str(_e)[:200]})
 
         per_log["finished_at"] = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         processed.append(per_log)
@@ -5412,6 +5489,43 @@ def admin_article_schedule_publish(article_id):
         "ok": True,
         "scheduled_at_utc_iso": dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
+
+
+@app.route("/admin/articles/<int:article_id>/auto-schedule", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_auto_schedule(article_id):
+    """Assign the next free 10:00/14:00 UTC publish slot to a draft article.
+
+    Refuses if the article is published, already scheduled, or doesn't have
+    full media (10/10 carousel + narrated video).
+    """
+    row = query_one(
+        "SELECT is_published, scheduled_publish_at, carousel_images, "
+        "video_narrated_url, title FROM articles WHERE id = %s", (article_id,))
+    if not row:
+        return jsonify({"error": "Article not found."}), 404
+    is_pub, existing_sched, imgs_json, vid_url, title = row
+    if is_pub:
+        return jsonify({"error": "Article is already published."}), 400
+    if existing_sched:
+        return jsonify({"error": "Article already has a scheduled publish time. "
+                                 "Clear it first before auto-scheduling."}), 400
+    cnt = _carousel_url_count(imgs_json)
+    if cnt < 10 or not vid_url:
+        return jsonify({"error": f"Article is not fully ready "
+                                 f"(carousel {cnt}/10, narrated={'yes' if vid_url else 'no'})."}), 400
+    slot = _next_free_publish_slot()
+    if slot is None:
+        return jsonify({"error": "No free slot available within 120 days."}), 500
+    execute("UPDATE articles SET scheduled_publish_at = %s WHERE id = %s",
+            (slot.strftime("%Y-%m-%d %H:%M:%S"), article_id))
+    _log_schedule_audit(article_id, "set", old_at=None, new_at=slot,
+                        source=_current_audit_source(),
+                        article_title=title,
+                        note="Manual auto-schedule via Drafts list button.")
+    return jsonify({"ok": True,
+                    "scheduled_at_utc_iso": slot.strftime("%Y-%m-%dT%H:%M:%SZ")})
 
 
 @app.route("/admin/articles/<int:article_id>/save", methods=["POST"])

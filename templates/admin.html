@@ -512,6 +512,16 @@
                                 {% endif %}
                             </td>
                             <td>
+                                {% if not a.scheduled_publish_at_utc_iso
+                                      and a.carousel_count and a.carousel_count >= 10
+                                      and a.has_narrated %}
+                                    <button type="button"
+                                            class="btn btn-outline-primary btn-sm js-auto-schedule"
+                                            data-article-id="{{ a.id }}"
+                                            title="Assign the next free 10:00 / 14:00 UTC publish slot">
+                                        <i class="fa-regular fa-calendar-plus me-1"></i>Auto-schedule
+                                    </button>
+                                {% endif %}
                                 <a href="/admin/articles/{{ a.id }}/edit" class="btn btn-outline-secondary btn-sm">Edit</a>
                             </td>
                         </tr>
@@ -2307,6 +2317,35 @@ function draftRetryArticle(id) {
     if (bar) { bar.classList.remove('d-none'); bar.classList.add('d-flex'); }
     _processNextInQueue();
 }
+
+// Auto-schedule button on the Drafts tab — assigns the next free
+// 10:00/14:00 UTC publish slot to a fully-ready draft.
+document.addEventListener('click', function(ev) {
+    var btn = ev.target.closest && ev.target.closest('.js-auto-schedule');
+    if (!btn) return;
+    ev.preventDefault();
+    var id = parseInt(btn.dataset.articleId) || null;
+    if (!id) return;
+    btn.disabled = true;
+    var originalHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Scheduling…';
+    fetch('/admin/articles/' + id + '/auto-schedule', { method: 'POST' })
+        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, body: j }; }); })
+        .then(function(res) {
+            if (!res.ok || res.body.error) {
+                alert('Auto-schedule failed: ' + (res.body.error || 'unknown error'));
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                return;
+            }
+            window.location.reload();
+        })
+        .catch(function(err) {
+            alert('Auto-schedule failed: ' + err);
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        });
+});
 
 // On page load, restore any historical results so the user sees them
 // (and clears stale "running" entries from the old broken background-thread
