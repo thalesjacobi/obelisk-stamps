@@ -17036,6 +17036,122 @@ def admin_get_engagement(article_id):
     })
 
 
+# Platforms users can manually enter metrics for, in display order.
+_MANUAL_METRIC_PLATFORMS = [
+    ("yt",        "YouTube"),
+    ("ig",        "Instagram"),
+    ("fb",        "Facebook"),
+    ("x",         "X"),
+    ("bluesky",   "Bluesky"),
+    ("tiktok",    "TikTok"),
+    ("pinterest", "Pinterest"),
+    ("threads",   "Threads"),
+    ("linkedin",  "LinkedIn"),
+    ("reddit",   "Reddit"),
+]
+
+
+@app.route("/admin/articles/<int:article_id>/metrics", methods=["GET"])
+@login_required
+@admin_required
+def admin_article_metrics_get(article_id):
+    """Return latest metrics snapshot per platform for the manual-entry modal."""
+    row = query_one("SELECT id, title FROM articles WHERE id = %s", (article_id,))
+    if not row:
+        return jsonify({"error": "Article not found"}), 404
+    # Latest row per platform via correlated subquery (MAX(fetched_at)).
+    rows = query_all(
+        "SELECT e.platform, e.likes, e.views, e.shares, e.comments, "
+        "       e.content_type, e.fetched_at "
+        "FROM article_engagement e "
+        "INNER JOIN ( "
+        "  SELECT platform, MAX(fetched_at) AS mf "
+        "  FROM article_engagement WHERE article_id = %s GROUP BY platform "
+        ") latest ON latest.platform = e.platform AND latest.mf = e.fetched_at "
+        "WHERE e.article_id = %s",
+        (article_id, article_id),
+    ) or []
+    by_platform = {}
+    for r in rows:
+        by_platform[r[0]] = {
+            "likes": int(r[1] or 0),
+            "views": int(r[2] or 0),
+            "shares": int(r[3] or 0),
+            "comments": int(r[4] or 0),
+            "content_type": r[5],
+            "fetched_at_utc_iso": r[6].strftime("%Y-%m-%dT%H:%M:%SZ") if r[6] else None,
+        }
+    platforms = [{
+        "key": key, "label": label,
+        "current": by_platform.get(key, {"likes": 0, "views": 0,
+                                         "shares": 0, "comments": 0}),
+    } for key, label in _MANUAL_METRIC_PLATFORMS]
+    return jsonify({"ok": True, "article_id": article_id,
+                    "title": row[1], "platforms": platforms})
+
+
+@app.route("/admin/articles/<int:article_id>/metrics", methods=["POST"])
+@login_required
+@admin_required
+def admin_article_metrics_save(article_id):
+    """Append manual metrics entries to article_engagement.
+
+    Body: {"entries": [{"platform":"yt","views":100,"likes":5,
+                        "comments":0,"shares":0}, ...]}
+    Each entry becomes one new row (content_type='manual'). Empty entries
+    (all zeros AND no existing row) are skipped to avoid noise.
+    """
+    if not query_one("SELECT id FROM articles WHERE id = %s", (article_id,)):
+        return jsonify({"error": "Article not found"}), 404
+    data = request.get_json() or {}
+    entries = data.get("entries") or []
+    valid_keys = {k for k, _ in _MANUAL_METRIC_PLATFORMS}
+    import datetime as _dt
+    now = _dt.datetime.utcnow()
+    saved = 0
+    skipped = 0
+    for ent in entries:
+        plat = (ent.get("platform") or "").strip().lower()
+        if plat not in valid_keys:
+            skipped += 1
+            continue
+        def _i(v):
+            try:
+                return max(0, int(v))
+            except Exception:
+                return 0
+        likes    = _i(ent.get("likes"))
+        views    = _i(ent.get("views"))
+        shares   = _i(ent.get("shares"))
+        comments = _i(ent.get("comments"))
+        # Skip all-zero entries when there's no prior data for that platform
+        if (likes + views + shares + comments) == 0:
+            existing = query_one(
+                "SELECT 1 FROM article_engagement "
+                "WHERE article_id = %s AND platform = %s LIMIT 1",
+                (article_id, plat))
+            if not existing:
+                skipped += 1
+                continue
+        execute(
+            "INSERT INTO article_engagement "
+            "(article_id, platform, content_type, likes, views, shares, comments, fetched_at) "
+            "VALUES (%s, %s, 'manual', %s, %s, %s, %s, %s)",
+            (article_id, plat, likes, views, shares, comments,
+             now.strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        saved += 1
+    actor = "unknown"
+    try:
+        if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
+            actor = getattr(current_user, "email", None) or "unknown"
+    except Exception:
+        pass
+    print(f"[ManualMetrics] article={article_id} saved={saved} skipped={skipped} "
+          f"actor={actor}", flush=True)
+    return jsonify({"ok": True, "saved": saved, "skipped": skipped})
+
+
 @app.route("/admin/engagement/poll-all", methods=["POST"])
 @login_required
 @admin_required
@@ -17064,24 +17180,31 @@ def admin_analytics():
             self.__dict__.update(kw)
 
     try:
+        # Use only the LATEST snapshot per (article_id, platform) so that
+        # appended time-series rows from manual entry don't double-count.
         raw_articles = query_all("""
             SELECT a.id, a.title, a.slug, a.is_published, a.created_at,
-                COALESCE(e.total_likes, 0) as total_likes,
-                COALESCE(e.total_views, 0) as total_views,
-                COALESCE(e.total_shares, 0) as total_shares,
-                COALESCE(e.total_comments, 0) as total_comments,
-                e.last_fetched
+                COALESCE(SUM(latest.likes), 0)    AS total_likes,
+                COALESCE(SUM(latest.views), 0)    AS total_views,
+                COALESCE(SUM(latest.shares), 0)   AS total_shares,
+                COALESCE(SUM(latest.comments), 0) AS total_comments,
+                MAX(latest.fetched_at) AS last_fetched
             FROM articles a
             LEFT JOIN (
-                SELECT article_id,
-                    SUM(likes) as total_likes, SUM(views) as total_views,
-                    SUM(shares) as total_shares, SUM(comments) as total_comments,
-                    MAX(fetched_at) as last_fetched
-                FROM article_engagement
-                GROUP BY article_id
-            ) e ON a.id = e.article_id
+                SELECT e.article_id, e.platform, e.likes, e.views, e.shares,
+                       e.comments, e.fetched_at
+                FROM article_engagement e
+                INNER JOIN (
+                    SELECT article_id, platform, MAX(fetched_at) AS mf
+                    FROM article_engagement
+                    GROUP BY article_id, platform
+                ) mx ON mx.article_id = e.article_id
+                     AND mx.platform   = e.platform
+                     AND mx.mf         = e.fetched_at
+            ) latest ON latest.article_id = a.id
             WHERE a.is_published = 1
-            ORDER BY COALESCE(e.total_views, 0) DESC
+            GROUP BY a.id, a.title, a.slug, a.is_published, a.created_at
+            ORDER BY total_views DESC
         """)
     except Exception:
         raw_articles = query_all("SELECT id, title, slug, is_published, created_at, 0,0,0,0, NULL FROM articles WHERE is_published = 1 ORDER BY id DESC")
@@ -17091,11 +17214,20 @@ def admin_analytics():
 
     try:
         raw_platform = query_all("""
-            SELECT platform,
-                SUM(likes) as total_likes, SUM(views) as total_views,
-                SUM(shares) as total_shares, SUM(comments) as total_comments
-            FROM article_engagement
-            GROUP BY platform
+            SELECT e.platform,
+                COALESCE(SUM(e.likes), 0)    AS total_likes,
+                COALESCE(SUM(e.views), 0)    AS total_views,
+                COALESCE(SUM(e.shares), 0)   AS total_shares,
+                COALESCE(SUM(e.comments), 0) AS total_comments
+            FROM article_engagement e
+            INNER JOIN (
+                SELECT article_id, platform, MAX(fetched_at) AS mf
+                FROM article_engagement
+                GROUP BY article_id, platform
+            ) mx ON mx.article_id = e.article_id
+                 AND mx.platform   = e.platform
+                 AND mx.mf         = e.fetched_at
+            GROUP BY e.platform
             ORDER BY total_views DESC
         """)
     except Exception:

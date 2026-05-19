@@ -85,7 +85,15 @@
                                 {{ a.last_fetched.strftime("%d %b %Y, %H:%M") if a.last_fetched else '—' }}
                                 {% else %}—{% endif %}
                             </td>
-                            <td><a href="{{ url_for('admin_article_edit', article_id=a.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a></td>
+                            <td>
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-primary js-edit-metrics"
+                                        data-article-id="{{ a.id }}"
+                                        data-article-title="{{ a.title }}">
+                                    <i class="fa-solid fa-pen me-1"></i>Edit metrics
+                                </button>
+                                <a href="{{ url_for('admin_article_edit', article_id=a.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -97,6 +105,51 @@
         </div>
     </div>
 
+    <!-- Manual metrics modal -->
+    <div class="modal fade" id="metricsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        Edit metrics — <span id="metrics-modal-title" class="fw-normal text-muted"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted">
+                        Enter the latest numbers from each network. Saving appends a new
+                        snapshot with today's timestamp — the dashboard shows the most
+                        recent per platform, so you can revisit and update anytime.
+                    </p>
+                    <div id="metrics-loading" class="text-center py-4 text-muted">
+                        <div class="spinner-border spinner-border-sm me-2"></div>Loading…
+                    </div>
+                    <div id="metrics-form" class="d-none">
+                        <table class="table table-sm align-middle">
+                            <thead>
+                                <tr>
+                                    <th style="width:18%">Platform</th>
+                                    <th class="text-end">Views</th>
+                                    <th class="text-end">Likes</th>
+                                    <th class="text-end">Comments</th>
+                                    <th class="text-end">Shares</th>
+                                    <th class="text-end small text-muted" style="width:14%">Last entry</th>
+                                </tr>
+                            </thead>
+                            <tbody id="metrics-rows"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" id="metrics-save-btn" class="btn btn-primary">
+                        <i class="fa-solid fa-floppy-disk me-1"></i>Save metrics
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {% if ga_measurement_id %}
     <div class="text-center">
         <a href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener" class="btn btn-outline-primary">
@@ -105,4 +158,101 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+(function() {
+    var modalEl = document.getElementById('metricsModal');
+    if (!modalEl) return;
+    var modal = window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+    var currentArticleId = null;
+
+    function formatDt(iso) {
+        if (!iso) return '—';
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return '—';
+        return d.toLocaleDateString() + ' ' +
+               d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderRows(platforms) {
+        var tbody = document.getElementById('metrics-rows');
+        tbody.innerHTML = '';
+        platforms.forEach(function(p) {
+            var tr = document.createElement('tr');
+            tr.dataset.platform = p.key;
+            var c = p.current || {};
+            tr.innerHTML =
+                '<td><strong>' + p.label + '</strong></td>' +
+                '<td><input type="number" min="0" class="form-control form-control-sm text-end js-m-views" value="' + (c.views || 0) + '"></td>' +
+                '<td><input type="number" min="0" class="form-control form-control-sm text-end js-m-likes" value="' + (c.likes || 0) + '"></td>' +
+                '<td><input type="number" min="0" class="form-control form-control-sm text-end js-m-comments" value="' + (c.comments || 0) + '"></td>' +
+                '<td><input type="number" min="0" class="form-control form-control-sm text-end js-m-shares" value="' + (c.shares || 0) + '"></td>' +
+                '<td class="text-end small text-muted">' + formatDt(c.fetched_at_utc_iso) + '</td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    document.addEventListener('click', function(ev) {
+        var btn = ev.target.closest && ev.target.closest('.js-edit-metrics');
+        if (!btn) return;
+        ev.preventDefault();
+        currentArticleId = parseInt(btn.dataset.articleId) || null;
+        if (!currentArticleId) return;
+        document.getElementById('metrics-modal-title').textContent = btn.dataset.articleTitle || '';
+        document.getElementById('metrics-loading').classList.remove('d-none');
+        document.getElementById('metrics-form').classList.add('d-none');
+        if (modal) modal.show();
+        fetch('/admin/articles/' + currentArticleId + '/metrics')
+            .then(function(r) { return r.json(); })
+            .then(function(j) {
+                if (j.error) { alert('Failed: ' + j.error); if (modal) modal.hide(); return; }
+                renderRows(j.platforms || []);
+                document.getElementById('metrics-loading').classList.add('d-none');
+                document.getElementById('metrics-form').classList.remove('d-none');
+            })
+            .catch(function(err) {
+                alert('Failed to load metrics: ' + err);
+                if (modal) modal.hide();
+            });
+    });
+
+    document.getElementById('metrics-save-btn').addEventListener('click', function() {
+        if (!currentArticleId) return;
+        var entries = [];
+        document.querySelectorAll('#metrics-rows tr').forEach(function(tr) {
+            entries.push({
+                platform: tr.dataset.platform,
+                views:    parseInt(tr.querySelector('.js-m-views').value)    || 0,
+                likes:    parseInt(tr.querySelector('.js-m-likes').value)    || 0,
+                comments: parseInt(tr.querySelector('.js-m-comments').value) || 0,
+                shares:   parseInt(tr.querySelector('.js-m-shares').value)   || 0,
+            });
+        });
+        var saveBtn = document.getElementById('metrics-save-btn');
+        saveBtn.disabled = true;
+        var originalHtml = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+        fetch('/admin/articles/' + currentArticleId + '/metrics', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entries: entries }),
+        })
+            .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, body: j }; }); })
+            .then(function(res) {
+                if (!res.ok || res.body.error) {
+                    alert('Save failed: ' + (res.body.error || 'unknown error'));
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = originalHtml;
+                    return;
+                }
+                window.location.reload();
+            })
+            .catch(function(err) {
+                alert('Save failed: ' + err);
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = originalHtml;
+            });
+    });
+})();
+</script>
 {% endblock %}
