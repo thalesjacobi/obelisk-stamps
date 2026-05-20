@@ -17152,6 +17152,133 @@ def admin_article_metrics_save(article_id):
     return jsonify({"ok": True, "saved": saved, "skipped": skipped})
 
 
+@app.route("/admin/engagement/bulk-import", methods=["POST"])
+@login_required
+@admin_required
+def admin_engagement_bulk_import():
+    """Bulk-import manual metrics for one platform from pasted spreadsheet rows.
+
+    Body:
+      {
+        "platform": "yt",
+        "rows": [{"title": "...", "views": 38, "likes": 1, "comments": 0, "shares": 0}, ...],
+        "commit": true | false   # false = dry-run (returns match preview)
+      }
+    Matches each row's title to a published article by normalized title
+    (lowercase, alphanumeric+space). Exact match first, then substring match.
+    Returns {matched: [...], unmatched: [...], ambiguous: [...], saved: N}.
+    """
+    data = request.get_json() or {}
+    platform = (data.get("platform") or "").strip().lower()
+    rows = data.get("rows") or []
+    commit = bool(data.get("commit"))
+    valid_keys = {k for k, _ in _MANUAL_METRIC_PLATFORMS}
+    if platform not in valid_keys:
+        return jsonify({"error": f"Unknown platform: {platform!r}"}), 400
+    if not isinstance(rows, list) or not rows:
+        return jsonify({"error": "No rows to import."}), 400
+
+    def _norm(s):
+        return re.sub(r'[^a-z0-9 ]+', ' ', (s or '').lower()).strip()
+
+    articles = query_all("SELECT id, title FROM articles WHERE is_published = 1") or []
+    by_norm = {}
+    for aid, atitle in articles:
+        n = _norm(atitle)
+        by_norm.setdefault(n, []).append((aid, atitle))
+
+    def _match(title_raw):
+        nt = _norm(title_raw)
+        if not nt:
+            return None, "empty"
+        if nt in by_norm and len(by_norm[nt]) == 1:
+            return by_norm[nt][0], "exact"
+        # Substring fallback: find article titles where the pasted title is
+        # contained, or vice versa. Reject when more than one matches.
+        candidates = []
+        for n, lst in by_norm.items():
+            if not n:
+                continue
+            if nt in n or n in nt:
+                for cand in lst:
+                    candidates.append(cand)
+        if len(candidates) == 1:
+            return candidates[0], "substring"
+        if len(candidates) > 1:
+            return candidates, "ambiguous"
+        return None, "no_match"
+
+    def _i(v):
+        try:
+            return max(0, int(float(str(v).replace(",", "").strip())))
+        except Exception:
+            return 0
+
+    matched = []
+    unmatched = []
+    ambiguous = []
+    for row in rows:
+        title_raw = (row.get("title") or "").strip()
+        m, status = _match(title_raw)
+        metrics = {
+            "views":    _i(row.get("views")),
+            "likes":    _i(row.get("likes")),
+            "comments": _i(row.get("comments")),
+            "shares":   _i(row.get("shares")),
+        }
+        if status in ("exact", "substring"):
+            matched.append({
+                "input_title":   title_raw,
+                "article_id":    m[0],
+                "article_title": m[1],
+                "match_type":    status,
+                "metrics":       metrics,
+            })
+        elif status == "ambiguous":
+            ambiguous.append({
+                "input_title": title_raw,
+                "candidates": [{"article_id": c[0], "article_title": c[1]} for c in m],
+                "metrics": metrics,
+            })
+        else:
+            unmatched.append({"input_title": title_raw, "reason": status,
+                              "metrics": metrics})
+
+    saved = 0
+    if commit and matched:
+        import datetime as _dt
+        now_str = _dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        for m in matched:
+            mt = m["metrics"]
+            if (mt["likes"] + mt["views"] + mt["shares"] + mt["comments"]) == 0:
+                # Skip all-zero rows for bulk import (different from per-article
+                # form, which lets you reset to zero explicitly).
+                continue
+            execute(
+                "INSERT INTO article_engagement "
+                "(article_id, platform, content_type, likes, views, shares, comments, fetched_at) "
+                "VALUES (%s, %s, 'manual', %s, %s, %s, %s, %s)",
+                (m["article_id"], platform, mt["likes"], mt["views"],
+                 mt["shares"], mt["comments"], now_str),
+            )
+            saved += 1
+        actor = "unknown"
+        try:
+            if hasattr(current_user, "is_authenticated") and current_user.is_authenticated:
+                actor = getattr(current_user, "email", None) or "unknown"
+        except Exception:
+            pass
+        print(f"[BulkMetrics] platform={platform} matched={len(matched)} saved={saved} "
+              f"unmatched={len(unmatched)} ambiguous={len(ambiguous)} actor={actor}",
+              flush=True)
+
+    return jsonify({
+        "ok": True, "platform": platform, "commit": commit,
+        "matched": matched, "unmatched": unmatched, "ambiguous": ambiguous,
+        "saved": saved,
+    })
+
+
 @app.route("/admin/engagement/poll-all", methods=["POST"])
 @login_required
 @admin_required

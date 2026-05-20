@@ -14,11 +14,16 @@
 <div class="container-fluid py-4" style="max-width:1200px">
     <div class="d-flex align-items-center mb-4">
         <h2 class="mb-0"><i class="fa-solid fa-chart-line me-2"></i>Analytics Dashboard</h2>
-        <form method="post" action="{{ url_for('admin_engagement_poll_all') }}" class="ms-auto">
-            <button type="submit" class="btn btn-primary">
-                <i class="fa-solid fa-arrows-rotate me-1"></i>Refresh All Articles
+        <div class="ms-auto d-flex gap-2">
+            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#bulkImportModal">
+                <i class="fa-solid fa-file-import me-1"></i>Bulk Import
             </button>
-        </form>
+            <form method="post" action="{{ url_for('admin_engagement_poll_all') }}" class="mb-0">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-arrows-rotate me-1"></i>Refresh All Articles
+                </button>
+            </form>
+        </div>
     </div>
 
     <!-- Platform Performance Summary -->
@@ -102,6 +107,83 @@
             {% else %}
             <p class="text-muted mb-0">No published articles yet.</p>
             {% endif %}
+        </div>
+    </div>
+
+    <!-- Bulk import modal -->
+    <div class="modal fade" id="bulkImportModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Bulk import metrics</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Platform</label>
+                            <select id="bulk-platform" class="form-select">
+                                <option value="yt">YouTube</option>
+                                <option value="ig">Instagram</option>
+                                <option value="fb">Facebook</option>
+                                <option value="x">X</option>
+                                <option value="bluesky">Bluesky</option>
+                                <option value="tiktok">TikTok</option>
+                                <option value="pinterest">Pinterest</option>
+                                <option value="threads">Threads</option>
+                                <option value="linkedin">LinkedIn</option>
+                                <option value="reddit">Reddit</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Instructions</label>
+                            <div class="small text-muted">
+                                Paste rows directly from YouTube Studio, IG Insights, Meta Business Suite, etc.
+                                The first row must contain headers. We look for these column names (case-insensitive):
+                                <strong>title</strong> (required), and any of <strong>views</strong>, <strong>likes</strong>,
+                                <strong>comments</strong>, <strong>shares</strong>. Tab or comma separated both work.
+                                Title matching is fuzzy — minor wording differences are OK.
+                            </div>
+                        </div>
+                    </div>
+                    <textarea id="bulk-paste" class="form-control font-monospace" rows="8"
+                              placeholder="title&#9;views&#9;likes&#9;comments&#9;shares&#10;The World's First Postage Stamp...&#9;38&#9;1&#9;0&#9;0"></textarea>
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="button" id="bulk-preview-btn" class="btn btn-outline-primary">
+                            <i class="fa-solid fa-magnifying-glass me-1"></i>Preview matches
+                        </button>
+                    </div>
+                    <div id="bulk-results" class="mt-3 d-none">
+                        <h6 class="text-success"><i class="fa-solid fa-check me-1"></i>Matched <span id="bulk-matched-count">0</span></h6>
+                        <div class="table-responsive mb-3" style="max-height:280px">
+                            <table class="table table-sm table-bordered mb-0">
+                                <thead><tr><th>Input title</th><th>→ Article</th><th class="text-end">Views</th><th class="text-end">Likes</th><th class="text-end">Comments</th><th class="text-end">Shares</th><th>Match</th></tr></thead>
+                                <tbody id="bulk-matched-rows"></tbody>
+                            </table>
+                        </div>
+                        <h6 class="text-warning d-none" id="bulk-unmatched-header"><i class="fa-solid fa-triangle-exclamation me-1"></i>Unmatched <span id="bulk-unmatched-count">0</span></h6>
+                        <div class="table-responsive mb-3 d-none" id="bulk-unmatched-wrap" style="max-height:200px">
+                            <table class="table table-sm table-bordered mb-0">
+                                <thead><tr><th>Input title</th><th>Reason</th></tr></thead>
+                                <tbody id="bulk-unmatched-rows"></tbody>
+                            </table>
+                        </div>
+                        <h6 class="text-warning d-none" id="bulk-ambiguous-header"><i class="fa-solid fa-question me-1"></i>Ambiguous <span id="bulk-ambiguous-count">0</span></h6>
+                        <div class="table-responsive d-none" id="bulk-ambiguous-wrap" style="max-height:200px">
+                            <table class="table table-sm table-bordered mb-0">
+                                <thead><tr><th>Input title</th><th>Possible articles</th></tr></thead>
+                                <tbody id="bulk-ambiguous-rows"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" id="bulk-save-btn" class="btn btn-primary" disabled>
+                        <i class="fa-solid fa-floppy-disk me-1"></i>Save matched
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -215,6 +297,146 @@
                 if (modal) modal.hide();
             });
     });
+
+    // --- Bulk import handlers ---
+    function parsePasted(text) {
+        // Detect delimiter: tab > comma > 2+ spaces
+        var lines = text.split(/\r?\n/).filter(function(l) { return l.trim().length > 0; });
+        if (lines.length < 2) return { error: 'Need a header row plus at least one data row.' };
+        function splitRow(line) {
+            if (line.indexOf('\t') !== -1) return line.split('\t');
+            if (line.indexOf(',') !== -1)  return line.split(',');
+            return line.split(/\s{2,}/);
+        }
+        var headers = splitRow(lines[0]).map(function(h) { return h.trim().toLowerCase(); });
+        var titleIdx = headers.indexOf('title');
+        if (titleIdx === -1) {
+            // YouTube Studio's first column is sometimes blank or "Short". Fall back
+            // to first column.
+            titleIdx = 0;
+        }
+        var idx = {
+            views:    headers.indexOf('views'),
+            likes:    headers.indexOf('likes'),
+            comments: headers.indexOf('comments'),
+            shares:   headers.indexOf('shares'),
+        };
+        var rows = [];
+        for (var i = 1; i < lines.length; i++) {
+            var parts = splitRow(lines[i]);
+            var row = {
+                title:    (parts[titleIdx] || '').trim(),
+                views:    idx.views    >= 0 ? parts[idx.views]    : 0,
+                likes:    idx.likes    >= 0 ? parts[idx.likes]    : 0,
+                comments: idx.comments >= 0 ? parts[idx.comments] : 0,
+                shares:   idx.shares   >= 0 ? parts[idx.shares]   : 0,
+            };
+            if (row.title) rows.push(row);
+        }
+        return { rows: rows };
+    }
+
+    var bulkPreviewState = null;
+
+    document.getElementById('bulk-preview-btn').addEventListener('click', function() {
+        var text = document.getElementById('bulk-paste').value;
+        var parsed = parsePasted(text);
+        if (parsed.error) { alert(parsed.error); return; }
+        var platform = document.getElementById('bulk-platform').value;
+        var btn = this;
+        btn.disabled = true;
+        var orig = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Matching…';
+        fetch('/admin/engagement/bulk-import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ platform: platform, rows: parsed.rows, commit: false }),
+        })
+            .then(function(r) { return r.json(); })
+            .then(function(j) {
+                btn.disabled = false; btn.innerHTML = orig;
+                if (j.error) { alert('Preview failed: ' + j.error); return; }
+                bulkPreviewState = { platform: platform, rows: parsed.rows };
+
+                var matched = j.matched || [];
+                document.getElementById('bulk-matched-count').textContent = matched.length;
+                var mt = document.getElementById('bulk-matched-rows');
+                mt.innerHTML = matched.map(function(m) {
+                    var mtr = m.metrics || {};
+                    var badge = m.match_type === 'exact'
+                        ? '<span class="badge bg-success">exact</span>'
+                        : '<span class="badge bg-info text-dark">fuzzy</span>';
+                    return '<tr><td>' + escapeHtml(m.input_title) +
+                           '</td><td>' + escapeHtml(m.article_title) +
+                           '</td><td class="text-end">' + mtr.views +
+                           '</td><td class="text-end">' + mtr.likes +
+                           '</td><td class="text-end">' + mtr.comments +
+                           '</td><td class="text-end">' + mtr.shares +
+                           '</td><td>' + badge + '</td></tr>';
+                }).join('');
+
+                var unmatched = j.unmatched || [];
+                document.getElementById('bulk-unmatched-count').textContent = unmatched.length;
+                document.getElementById('bulk-unmatched-header').classList.toggle('d-none', unmatched.length === 0);
+                document.getElementById('bulk-unmatched-wrap').classList.toggle('d-none', unmatched.length === 0);
+                document.getElementById('bulk-unmatched-rows').innerHTML = unmatched.map(function(u) {
+                    return '<tr><td>' + escapeHtml(u.input_title) + '</td><td><code>' + escapeHtml(u.reason) + '</code></td></tr>';
+                }).join('');
+
+                var ambiguous = j.ambiguous || [];
+                document.getElementById('bulk-ambiguous-count').textContent = ambiguous.length;
+                document.getElementById('bulk-ambiguous-header').classList.toggle('d-none', ambiguous.length === 0);
+                document.getElementById('bulk-ambiguous-wrap').classList.toggle('d-none', ambiguous.length === 0);
+                document.getElementById('bulk-ambiguous-rows').innerHTML = ambiguous.map(function(a) {
+                    var cands = (a.candidates || []).map(function(c) { return escapeHtml(c.article_title); }).join('<br>');
+                    return '<tr><td>' + escapeHtml(a.input_title) + '</td><td>' + cands + '</td></tr>';
+                }).join('');
+
+                document.getElementById('bulk-results').classList.remove('d-none');
+                document.getElementById('bulk-save-btn').disabled = matched.length === 0;
+            })
+            .catch(function(err) {
+                btn.disabled = false; btn.innerHTML = orig;
+                alert('Preview failed: ' + err);
+            });
+    });
+
+    document.getElementById('bulk-save-btn').addEventListener('click', function() {
+        if (!bulkPreviewState) { alert('Click Preview first.'); return; }
+        var btn = this;
+        btn.disabled = true;
+        var orig = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+        fetch('/admin/engagement/bulk-import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                platform: bulkPreviewState.platform,
+                rows:     bulkPreviewState.rows,
+                commit:   true,
+            }),
+        })
+            .then(function(r) { return r.json(); })
+            .then(function(j) {
+                if (j.error) {
+                    alert('Save failed: ' + j.error);
+                    btn.disabled = false; btn.innerHTML = orig;
+                    return;
+                }
+                alert('Saved ' + (j.saved || 0) + ' rows.');
+                window.location.reload();
+            })
+            .catch(function(err) {
+                alert('Save failed: ' + err);
+                btn.disabled = false; btn.innerHTML = orig;
+            });
+    });
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
 
     document.getElementById('metrics-save-btn').addEventListener('click', function() {
         if (!currentArticleId) return;
