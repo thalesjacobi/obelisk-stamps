@@ -1965,7 +1965,11 @@ def _fetch_ig_engagement(article_id):
             resp = _req.get(f"https://graph.instagram.com/{post_id}",
                 params={"fields": "like_count,comments_count,media_type", "access_token": IG_ACCESS_TOKEN}, timeout=15)
             data = resp.json()
-            if 'error' not in data:
+            if 'error' in data:
+                print(f"[IG engagement] {content_type} post {post_id}: API error "
+                      f"{data['error'].get('code')}/{data['error'].get('error_subcode')} "
+                      f"{data['error'].get('message','')!r}", flush=True)
+            else:
                 results.append({
                     'platform': 'ig', 'content_type': content_type,
                     'post_id': post_id,
@@ -1973,7 +1977,7 @@ def _fetch_ig_engagement(article_id):
                     'comments': data.get('comments_count', 0),
                 })
         except Exception as e:
-            print(f"IG engagement fetch error: {e}")
+            print(f"[IG engagement] fetch error post {post_id}: {e}", flush=True)
     # Also check NV posts
     rows = query_all("SELECT `key`, value FROM site_settings WHERE `key` LIKE %s", (f"ig_narrated_post_id_{article_id}_%",))
     for row in (rows or []):
@@ -1984,7 +1988,11 @@ def _fetch_ig_engagement(article_id):
             resp = _req.get(f"https://graph.instagram.com/{post_id}",
                 params={"fields": "like_count,comments_count,media_type", "access_token": IG_ACCESS_TOKEN}, timeout=15)
             data = resp.json()
-            if 'error' not in data:
+            if 'error' in data:
+                print(f"[IG engagement] narrated_video post {post_id}: API error "
+                      f"{data['error'].get('code')}/{data['error'].get('error_subcode')} "
+                      f"{data['error'].get('message','')!r}", flush=True)
+            else:
                 results.append({
                     'platform': 'ig', 'content_type': 'narrated_video',
                     'post_id': post_id,
@@ -1992,7 +2000,7 @@ def _fetch_ig_engagement(article_id):
                     'comments': data.get('comments_count', 0),
                 })
         except Exception as e:
-            print(f"IG NV engagement fetch error: {e}")
+            print(f"[IG engagement] NV fetch error post {post_id}: {e}", flush=True)
     return results
 
 
@@ -2014,7 +2022,11 @@ def _fetch_fb_engagement(article_id):
                         params={"fields": "likes.summary(true),shares,comments.summary(true)",
                                 "access_token": FB_PAGE_ACCESS_TOKEN}, timeout=15)
                     data = resp.json()
-                    if 'error' not in data:
+                    if 'error' in data:
+                        print(f"[FB engagement] {content_type} post {post_id}: API error "
+                              f"{data['error'].get('code')}/{data['error'].get('error_subcode')} "
+                              f"{data['error'].get('message','')!r}", flush=True)
+                    else:
                         results.append({
                             'platform': 'fb', 'content_type': content_type,
                             'post_id': post_id,
@@ -2023,7 +2035,7 @@ def _fetch_fb_engagement(article_id):
                             'comments': data.get('comments', {}).get('summary', {}).get('total_count', 0),
                         })
                 except Exception as e:
-                    print(f"FB engagement fetch error: {e}")
+                    print(f"[FB engagement] fetch error post {post_id}: {e}", flush=True)
             continue
         if not post_id:
             continue
@@ -2032,7 +2044,11 @@ def _fetch_fb_engagement(article_id):
                 params={"fields": "likes.summary(true),shares,comments.summary(true)",
                         "access_token": FB_PAGE_ACCESS_TOKEN}, timeout=15)
             data = resp.json()
-            if 'error' not in data:
+            if 'error' in data:
+                print(f"[FB engagement] {content_type} post {post_id}: API error "
+                      f"{data['error'].get('code')}/{data['error'].get('error_subcode')} "
+                      f"{data['error'].get('message','')!r}", flush=True)
+            else:
                 results.append({
                     'platform': 'fb', 'content_type': content_type,
                     'post_id': post_id,
@@ -2041,7 +2057,7 @@ def _fetch_fb_engagement(article_id):
                     'comments': data.get('comments', {}).get('summary', {}).get('total_count', 0),
                 })
         except Exception as e:
-            print(f"FB engagement fetch error: {e}")
+            print(f"[FB engagement] fetch error post {post_id}: {e}", flush=True)
     return results
 
 
@@ -17294,6 +17310,208 @@ def admin_engagement_poll_all():
         except Exception as e:
             results[art_id] = {'title': art_title, 'error': str(e)}
     return jsonify({'ok': True, 'articles': results})
+
+
+@app.route("/admin/diagnostics/engagement")
+@login_required
+@admin_required
+def admin_engagement_diagnostics():
+    """Engagement-fetch diagnostic.
+
+    Calls each configured platform's API for a specific article and returns
+    the RAW JSON response — including error payloads — so we can see exactly
+    why poll-all returns zeros. Pass ?article_id=N to target a specific
+    article; defaults to the most recently published one.
+    """
+    import requests as _req
+
+    try:
+        article_id = int(request.args.get("article_id", 0)) or 0
+    except Exception:
+        article_id = 0
+    if not article_id:
+        row = query_one(
+            "SELECT id FROM articles WHERE is_published = 1 "
+            "ORDER BY published_at DESC, id DESC LIMIT 1")
+        if not row:
+            return jsonify({"error": "No published articles found."}), 404
+        article_id = int(row[0])
+    arow = query_one(
+        "SELECT id, title, slug, published_at FROM articles WHERE id = %s",
+        (article_id,))
+    if not arow:
+        return jsonify({"error": f"Article {article_id} not found."}), 404
+
+    out = {
+        "article": {
+            "id": arow[0], "title": arow[1], "slug": arow[2],
+            "published_at": arow[3].strftime("%Y-%m-%d %H:%M:%S") if arow[3] else None,
+        },
+        "platforms": {},
+    }
+
+    # Collect all post-id-style settings for this article (any prefix)
+    id_rows = query_all(
+        "SELECT `key`, value FROM site_settings WHERE `key` LIKE %s "
+        "OR `key` LIKE %s OR `key` LIKE %s OR `key` LIKE %s OR `key` LIKE %s "
+        "OR `key` LIKE %s OR `key` LIKE %s",
+        (f"instagram_media_id_{article_id}%",
+         f"ig_%_post_id_{article_id}%",
+         f"fb_%_post_id_{article_id}%",
+         f"x_%_tweet_id_{article_id}%",
+         f"threads_%_post_id_{article_id}%",
+         f"youtube_video_id_{article_id}%",
+         f"pinterest_pin_id_{article_id}%")
+    ) or []
+    stored_ids = [{"key": r[0], "value": r[1]} for r in id_rows]
+    out["stored_post_ids"] = stored_ids
+
+    def _safe_get(url, params=None, headers=None):
+        try:
+            resp = _req.get(url, params=params or {}, headers=headers or {}, timeout=15)
+            try:
+                body = resp.json()
+            except Exception:
+                body = {"_raw_text": resp.text[:2000]}
+            return {"http_status": resp.status_code, "body": body, "url": resp.url}
+        except Exception as e:
+            return {"error": f"{type(e).__name__}: {e}"}
+
+    # ---- Instagram
+    ig = {"configured": bool(IG_USER_ID and IG_ACCESS_TOKEN),
+          "user_id": IG_USER_ID or None,
+          "token_tail": (IG_ACCESS_TOKEN[-6:] if IG_ACCESS_TOKEN else None),
+          "calls": []}
+    if ig["configured"]:
+        ig_ids = [s for s in stored_ids if s["key"].startswith(("instagram_media_id_", "ig_"))]
+        for s in ig_ids[:3]:
+            pid = s["value"]
+            ig["calls"].append({
+                "post_setting_key": s["key"], "post_id": pid,
+                "basic": _safe_get(f"https://graph.instagram.com/{pid}",
+                                   {"fields": "like_count,comments_count,media_type,media_product_type",
+                                    "access_token": IG_ACCESS_TOKEN}),
+                "insights": _safe_get(f"https://graph.instagram.com/{pid}/insights",
+                                      {"metric": "plays,reach,total_interactions,saved",
+                                       "access_token": IG_ACCESS_TOKEN}),
+            })
+        ig["account_check"] = _safe_get(
+            f"https://graph.instagram.com/v21.0/{IG_USER_ID}",
+            {"fields": "username,followers_count,media_count",
+             "access_token": IG_ACCESS_TOKEN})
+    out["platforms"]["instagram"] = ig
+
+    # ---- Facebook
+    fb = {"configured": bool(FB_PAGE_ID and FB_PAGE_ACCESS_TOKEN),
+          "page_id": FB_PAGE_ID or None,
+          "token_tail": (FB_PAGE_ACCESS_TOKEN[-6:] if FB_PAGE_ACCESS_TOKEN else None),
+          "calls": []}
+    if fb["configured"]:
+        fb_ids = [s for s in stored_ids if s["key"].startswith("fb_")]
+        for s in fb_ids[:3]:
+            pid = s["value"]
+            fb["calls"].append({
+                "post_setting_key": s["key"], "post_id": pid,
+                "basic": _safe_get(f"https://graph.facebook.com/v21.0/{pid}",
+                                   {"fields": "likes.summary(true),shares,comments.summary(true)",
+                                    "access_token": FB_PAGE_ACCESS_TOKEN}),
+            })
+        fb["page_check"] = _safe_get(
+            f"https://graph.facebook.com/v21.0/{FB_PAGE_ID}",
+            {"fields": "name,fan_count,followers_count",
+             "access_token": FB_PAGE_ACCESS_TOKEN})
+    out["platforms"]["facebook"] = fb
+
+    # ---- X
+    x = {"configured": bool(X_CONFIGURED), "calls": []}
+    if X_CONFIGURED:
+        try:
+            from requests_oauthlib import OAuth1Session as _O1
+            oauth = _O1(X_API_KEY, client_secret=X_API_SECRET,
+                        resource_owner_key=X_ACCESS_TOKEN,
+                        resource_owner_secret=X_ACCESS_TOKEN_SECRET)
+            x_ids = [s for s in stored_ids if s["key"].startswith("x_")]
+            for s in x_ids[:3]:
+                tid = s["value"]
+                try:
+                    resp = oauth.get(f"https://api.x.com/2/tweets/{tid}",
+                                     params={"tweet.fields": "public_metrics"},
+                                     timeout=15)
+                    try:
+                        body = resp.json()
+                    except Exception:
+                        body = {"_raw_text": resp.text[:2000]}
+                    x["calls"].append({"post_setting_key": s["key"], "post_id": tid,
+                                       "http_status": resp.status_code, "body": body})
+                except Exception as e:
+                    x["calls"].append({"post_setting_key": s["key"], "post_id": tid,
+                                       "error": f"{type(e).__name__}: {e}"})
+        except Exception as e:
+            x["init_error"] = str(e)
+    out["platforms"]["x"] = x
+
+    # ---- YouTube
+    yt = {"configured": bool(get_setting("youtube_refresh_token")), "calls": []}
+    if yt["configured"]:
+        try:
+            tok = _req.post("https://oauth2.googleapis.com/token", data={
+                "client_id": os.getenv("GOOGLE_CLIENT_ID", ""),
+                "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", ""),
+                "refresh_token": get_setting("youtube_refresh_token"),
+                "grant_type": "refresh_token",
+            }, timeout=15)
+            yt["token_exchange_status"] = tok.status_code
+            try:
+                tok_body = tok.json()
+            except Exception:
+                tok_body = {"_raw_text": tok.text[:500]}
+            access = tok_body.get("access_token", "")
+            if "error" in tok_body:
+                yt["token_exchange_error"] = tok_body
+            elif access:
+                yt_ids = [s for s in stored_ids if s["key"].startswith("youtube_video_id_")]
+                for s in yt_ids[:3]:
+                    vid = s["value"]
+                    yt["calls"].append({
+                        "post_setting_key": s["key"], "video_id": vid,
+                        "stats": _safe_get("https://www.googleapis.com/youtube/v3/videos",
+                                           {"part": "statistics,snippet", "id": vid,
+                                            "access_token": access}),
+                    })
+        except Exception as e:
+            yt["error"] = f"{type(e).__name__}: {e}"
+    out["platforms"]["youtube"] = yt
+
+    # ---- Threads
+    th = {"configured": bool(THREADS_CONFIGURED), "calls": []}
+    if th["configured"]:
+        th_ids = [s for s in stored_ids if s["key"].startswith("threads_")]
+        for s in th_ids[:3]:
+            pid = s["value"]
+            th["calls"].append({
+                "post_setting_key": s["key"], "post_id": pid,
+                "basic": _safe_get(f"{_THREADS_API_URL}/{pid}",
+                                   {"fields": "likes,replies,reposts,quotes,views",
+                                    "access_token": THREADS_ACCESS_TOKEN}),
+            })
+    out["platforms"]["threads"] = th
+
+    # ---- Summary of likely root cause
+    hints = []
+    for p in ("instagram", "facebook"):
+        info = out["platforms"].get(p, {})
+        for c in info.get("calls", []):
+            b = (c.get("basic") or {}).get("body") or {}
+            if isinstance(b, dict) and b.get("error"):
+                hints.append(f"{p}: {b['error'].get('message','(no message)')} "
+                             f"(code={b['error'].get('code')}, "
+                             f"sub={b['error'].get('error_subcode')})")
+    if not any(out["platforms"][p].get("calls") for p in out["platforms"]):
+        hints.append("No stored post IDs found for this article — pick another, "
+                     "or the posting code never recorded them.")
+    out["likely_issues"] = hints
+
+    return jsonify(out)
 
 
 @app.route("/admin/analytics")
