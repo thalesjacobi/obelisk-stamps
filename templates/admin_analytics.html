@@ -138,10 +138,9 @@
                         <div class="col-md-8">
                             <label class="form-label">Instructions</label>
                             <div class="small text-muted">
-                                Paste rows directly from YouTube Studio, IG Insights, Meta Business Suite, etc.
-                                The first row must contain headers. We look for these column names (case-insensitive):
-                                <strong>title</strong> (required), and any of <strong>views</strong>, <strong>likes</strong>,
-                                <strong>comments</strong>, <strong>shares</strong>. Tab or comma separated both work.
+                                <strong>YouTube Studio:</strong> select all rows on Content → Shorts, Ctrl+C, paste — auto-detected, no headers needed.<br>
+                                <strong>Other platforms:</strong> paste a spreadsheet table with a header row containing
+                                <code>title</code> (required) plus any of <code>views</code>, <code>likes</code>, <code>comments</code>, <code>shares</code>. Tab or comma separated.
                                 Title matching is fuzzy — minor wording differences are OK.
                             </div>
                         </div>
@@ -299,8 +298,54 @@
     });
 
     // --- Bulk import handlers ---
-    function parsePasted(text) {
-        // Detect delimiter: tab > comma > 2+ spaces
+
+    // YouTube Studio multi-line block parser.
+    // Block structure (one per video):
+    //   Video thumbnail: <title>
+    //   <duration>
+    //   <title>                   (repeated)
+    //   <description>
+    //   Public | Unlisted | Private
+    //   None | (restrictions)
+    //   <date>
+    //   Published                 (anchor line)
+    //   <views>
+    //   <comments>
+    //   <like-percent or "–">
+    //   <like count "N like(s)">  (only when percent is not "–")
+    function parseYouTubeStudio(text) {
+        var lines = text.split(/\r?\n/).map(function(l) { return l.trim(); });
+        var rows = [];
+        for (var i = 0; i < lines.length; i++) {
+            if (lines[i].indexOf('Video thumbnail:') !== 0) continue;
+            var title = lines[i].slice('Video thumbnail:'.length).trim();
+            // Find the next "Published" within ~12 lines
+            var pubIdx = -1;
+            for (var j = i + 1; j < Math.min(i + 14, lines.length); j++) {
+                if (lines[j] === 'Published') { pubIdx = j; break; }
+            }
+            if (pubIdx === -1) continue;
+            var views    = parseInt((lines[pubIdx + 1] || '').replace(/[^\d]/g, '')) || 0;
+            var comments = parseInt((lines[pubIdx + 2] || '').replace(/[^\d]/g, '')) || 0;
+            var likeRatioLine = (lines[pubIdx + 3] || '').trim();
+            var likes = 0;
+            // If the ratio line is just an em/en/hyphen dash, there are no likes yet.
+            if (/^[\-–—]+$/.test(likeRatioLine)) {
+                likes = 0;
+            } else {
+                // Otherwise the next line should be "N like(s)"
+                var likeCountLine = (lines[pubIdx + 4] || '').trim();
+                var m = likeCountLine.match(/(\d+)\s+likes?/i);
+                if (m) likes = parseInt(m[1]) || 0;
+            }
+            rows.push({ title: title, views: views, likes: likes,
+                        comments: comments, shares: 0 });
+            i = pubIdx + 4; // advance past this block
+        }
+        return rows;
+    }
+
+    function parseHeaderRow(text) {
         var lines = text.split(/\r?\n/).filter(function(l) { return l.trim().length > 0; });
         if (lines.length < 2) return { error: 'Need a header row plus at least one data row.' };
         function splitRow(line) {
@@ -310,11 +355,7 @@
         }
         var headers = splitRow(lines[0]).map(function(h) { return h.trim().toLowerCase(); });
         var titleIdx = headers.indexOf('title');
-        if (titleIdx === -1) {
-            // YouTube Studio's first column is sometimes blank or "Short". Fall back
-            // to first column.
-            titleIdx = 0;
-        }
+        if (titleIdx === -1) titleIdx = 0;
         var idx = {
             views:    headers.indexOf('views'),
             likes:    headers.indexOf('likes'),
@@ -334,6 +375,16 @@
             if (row.title) rows.push(row);
         }
         return { rows: rows };
+    }
+
+    function parsePasted(text) {
+        // Auto-detect YouTube Studio block format
+        if (text.indexOf('Video thumbnail:') !== -1) {
+            var rows = parseYouTubeStudio(text);
+            if (rows.length === 0) return { error: 'YouTube Studio format detected but no video blocks parsed. Check the paste.' };
+            return { rows: rows, source: 'youtube_studio' };
+        }
+        return parseHeaderRow(text);
     }
 
     var bulkPreviewState = null;
