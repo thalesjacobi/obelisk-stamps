@@ -4813,7 +4813,7 @@ def admin_cron_hit_log_clear():
 # first successful run that day).
 # ──────────────────────────────────────────────────────────────────────────
 
-_DAILY_MEDIA_MAX_ARTICLES = 4
+_DAILY_MEDIA_MAX_ARTICLES = 8
 _DAILY_MEDIA_NARRATED_DEFAULT_CFG = {
     "format":        "vertical",
     "voice":         "onyx",
@@ -4918,6 +4918,49 @@ def _next_free_publish_slot():
     return None
 
 
+def _schedule_all_ready_drafts():
+    """Assign next-free publish slots to every draft that is fully ready
+    (10/10 carousel + narrated video) and has no scheduled_publish_at yet.
+
+    Returns a list of {"id", "title", "scheduled_at_utc_iso"} dicts.
+    Never raises — per-row failures are swallowed and logged.
+    """
+    import datetime as _dt
+    rows = query_all(
+        "SELECT id, title, carousel_images, video_narrated_url "
+        "FROM articles "
+        "WHERE is_published = 0 AND scheduled_publish_at IS NULL "
+        "ORDER BY updated_at ASC"
+    ) or []
+    out = []
+    for r in rows:
+        aid, title, imgs_json, vid_url = int(r[0]), r[1], r[2], r[3]
+        if _carousel_url_count(imgs_json) < 10 or not vid_url:
+            continue
+        try:
+            slot = _next_free_publish_slot()
+            if slot is None:
+                print(f"[DailyMedia] No free slot for ready draft {aid}.", flush=True)
+                break
+            execute("UPDATE articles SET scheduled_publish_at = %s WHERE id = %s",
+                    (slot.strftime("%Y-%m-%d %H:%M:%S"), aid))
+            _log_schedule_audit(
+                aid, "set", old_at=None, new_at=slot,
+                source="_schedule_all_ready_drafts",
+                article_title=title,
+                note="Auto-scheduled ready draft during daily pre-pass.")
+            out.append({
+                "id": aid,
+                "title": title or "(untitled)",
+                "scheduled_at_utc_iso": slot.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            })
+            print(f"[DailyMedia] Pre-scheduled ready draft {aid} for "
+                  f"{slot.strftime('%Y-%m-%d %H:%M')} UTC.", flush=True)
+        except Exception as _e:
+            print(f"[DailyMedia] Pre-schedule crashed for {aid}: {_e}", flush=True)
+    return out
+
+
 def _daily_media_generation_runner(max_articles=None, forced=False):
     """Background worker: generate carousel + narrated video for drafts that
     need them, then set the cover image to slide 2 + enable slideshow.
@@ -4930,13 +4973,23 @@ def _daily_media_generation_runner(max_articles=None, forced=False):
     n = int(max_articles or _DAILY_MEDIA_MAX_ARTICLES)
     start_iso = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Pass 1: schedule every ready+unscheduled draft. This catches drafts that
+    # already had full media before this run (or from prior runs that didn't
+    # finish auto-scheduling), so the schedule fills out weeks ahead instead
+    # of only by drafts processed in the current media-generation pass.
+    scheduled_now = _schedule_all_ready_drafts()
+    if scheduled_now:
+        print(f"[DailyMedia] Pre-pass scheduled {len(scheduled_now)} "
+              f"already-ready draft(s).", flush=True)
+
     drafts = _pick_drafts_needing_media(n)
     print(f"[DailyMedia] Starting run; max={n}, picked={len(drafts)} draft(s) "
           f"(forced={forced}).", flush=True)
     if not drafts:
         _append_daily_media_log({
             "started_at": start_iso, "finished_at": start_iso,
-            "forced": forced, "processed": [], "note": "No drafts need media."
+            "forced": forced, "processed": [], "note": "No drafts need media.",
+            "pre_scheduled": scheduled_now,
         })
         return
 
@@ -5098,10 +5151,11 @@ def _daily_media_generation_runner(max_articles=None, forced=False):
 
     finished_iso = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     _append_daily_media_log({
-        "started_at":  start_iso,
-        "finished_at": finished_iso,
-        "forced":      forced,
-        "processed":   processed,
+        "started_at":    start_iso,
+        "finished_at":   finished_iso,
+        "forced":        forced,
+        "processed":     processed,
+        "pre_scheduled": scheduled_now,
     })
     print(f"[DailyMedia] Run complete. Processed {len(processed)} article(s).", flush=True)
 
