@@ -4631,6 +4631,15 @@ def _run_auto_publish_actions(article_id):
         if ("youtube" in text or "yt shorts" in text) and "youtube" not in networks:
             networks.append("youtube")
 
+    # Always include YouTube — even if the admin forgot to add a "Post to
+    # YouTube" action to the global list, we want every narrated video to
+    # land on the channel. If YouTube isn't connected, the YT branch below
+    # logs "skipped" and continues without raising.
+    if "youtube" not in networks:
+        networks.append("youtube")
+        print(f"[AutoPublish] Article {article_id}: YouTube auto-injected into sequence "
+              f"(was missing from saved actions).", flush=True)
+
     if not networks:
         print(f"[AutoPublish] Article {article_id}: no recognised 'Post to <Network>' actions — nothing to do.", flush=True)
         return
@@ -5297,6 +5306,47 @@ def admin_articles():
     ) or []
     clicks_by_article = {r[0]: int(r[1] or 0) for r in click_rows}
 
+    # Per-article published-network markers: scan site_settings for the
+    # post-id keys each platform's worker writes on success. One batched
+    # LIKE-OR query keeps this O(1) regardless of article count.
+    _NET_KEY_PATTERNS = [
+        ("youtube",   "yt_video_id_%"),
+        ("instagram", "ig_narrated_post_id_%"),
+        ("instagram", "ig_carousel_id_%"),
+        ("facebook",  "fb_narrated_post_id_%"),
+        ("x",         "x_narrated_tweet_id_%"),
+        ("threads",   "threads_narrated_post_id_%"),
+        ("pinterest", "pinterest_narrated_pin_id_%"),
+        ("tiktok",    "tiktok_narrated_video_id_%"),
+        ("linkedin",  "linkedin_narrated_post_id_%"),
+        ("bluesky",   "bluesky_narrated_post_uri_%"),
+        ("reddit",    "reddit_narrated_post_id_%"),
+        ("telegram",  "telegram_narrated_message_id_%"),
+        ("vimeo",     "vimeo_narrated_video_id_%"),
+        ("mastodon",  "mastodon_narrated_post_id_%"),
+    ]
+    where_sql = " OR ".join("`key` LIKE %s" for _ in _NET_KEY_PATTERNS)
+    net_rows = query_all(
+        f"SELECT `key` FROM site_settings WHERE {where_sql}",
+        tuple(pat for _, pat in _NET_KEY_PATTERNS),
+    ) or []
+    nets_by_article = {}
+    for (k,) in net_rows:
+        # Each key ends in _<article_id>_<run_ts>. Match against the prefix
+        # to identify the platform, then extract the article_id token.
+        for net, pat in _NET_KEY_PATTERNS:
+            prefix = pat.rstrip("%")
+            if k.startswith(prefix):
+                tail = k[len(prefix):]
+                # tail is "<article_id>_<run_ts>" — split on first underscore
+                aid_str = tail.split("_", 1)[0]
+                try:
+                    aid = int(aid_str)
+                except ValueError:
+                    break
+                nets_by_article.setdefault(aid, set()).add(net)
+                break
+
     # Per-article engagement totals (latest snapshot only — avoid double-counting history)
     eng_rows = query_all("""
         SELECT e.article_id,
@@ -5328,6 +5378,8 @@ def admin_articles():
             "updated_at": r[5].strftime("%d %b %Y %H:%M") if r[5] else None,
             "link_clicks": clicks_by_article.get(r[0], 0),
             "engagement":  engagement_by_article.get(r[0], 0),
+            # Stable, alphabetical order so icons don't jump around between page loads.
+            "published_networks": sorted(nets_by_article.get(r[0], set())),
             "carousel_count":   _carousel_count(r[6]),
             "has_narrated":     bool(r[7]),
             # UTC ISO — the template wraps it in <time data-utc="..."> and JS
