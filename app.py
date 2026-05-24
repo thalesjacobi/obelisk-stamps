@@ -5306,59 +5306,36 @@ def admin_articles():
     ) or []
     clicks_by_article = {r[0]: int(r[1] or 0) for r in click_rows}
 
-    # Per-article published-network markers: scan site_settings for the
-    # post-id keys each platform's worker writes on success. One batched
-    # LIKE-OR query keeps this O(1) regardless of article count.
-    _NET_KEY_PATTERNS = [
-        ("youtube",   "youtube_video_id_%"),
-        ("instagram", "ig_narrated_post_id_%"),
-        ("facebook",  "fb_narrated_post_id_%"),
-        ("x",         "x_narrated_tweet_id_%"),
-        ("threads",   "threads_narrated_post_id_%"),
-        ("pinterest", "pinterest_narrated_pin_id_%"),
-        ("tiktok",    "tiktok_narrated_video_id_%"),
-        ("linkedin",  "linkedin_narrated_post_id_%"),
-        ("bluesky",   "bluesky_narrated_post_uri_%"),
-        ("reddit",    "reddit_narrated_post_id_%"),
-        ("telegram",  "telegram_narrated_post_id_%"),
-        ("vimeo",     "vimeo_narrated_video_id_%"),
-        ("mastodon",  "mastodon_narrated_post_id_%"),
-    ]
-    where_sql = " OR ".join("`key` LIKE %s" for _ in _NET_KEY_PATTERNS)
-    net_rows = query_all(
-        f"SELECT `key` FROM site_settings WHERE {where_sql}",
-        tuple(pat for _, pat in _NET_KEY_PATTERNS),
-    ) or []
-    nets_by_article = {}
-    for (k,) in net_rows:
-        # Each key ends in _<article_id>_<run_ts>. Match against the prefix
-        # to identify the platform, then extract the article_id token.
-        for net, pat in _NET_KEY_PATTERNS:
-            prefix = pat.rstrip("%")
-            if k.startswith(prefix):
-                tail = k[len(prefix):]
-                # tail is "<article_id>_<run_ts>" — split on first underscore
-                aid_str = tail.split("_", 1)[0]
-                try:
-                    aid = int(aid_str)
-                except ValueError:
-                    break
-                nets_by_article.setdefault(aid, set()).add(net)
-                break
-
-    # Fallback: any platform with an engagement row counts as "published
-    # there". Catches articles published before auto-publish was wired up
-    # and articles whose metrics were imported manually via Bulk Import.
-    _ENG_CODE_TO_NET = {
+    # Per-article published-network detection: posting_log is the canonical
+    # record (every platform worker calls log_social_post on success).
+    # article_engagement is a secondary signal — covers articles whose
+    # metrics were imported via Bulk Import without a posting_log row.
+    _PLAT_CODE_TO_NET = {
         "yt": "youtube", "ig": "instagram", "fb": "facebook", "x": "x",
         "bluesky": "bluesky", "tiktok": "tiktok", "pinterest": "pinterest",
         "threads": "threads", "linkedin": "linkedin", "reddit": "reddit",
+        "telegram": "telegram", "vimeo": "vimeo", "mastodon": "mastodon",
+        "vk": "vk", "tumblr": "tumblr",
     }
+    nets_by_article = {}
+    try:
+        log_rows = query_all(
+            "SELECT DISTINCT article_id, platform FROM posting_log"
+        ) or []
+    except Exception:
+        # Table may not exist on older deployments — fall through to
+        # the engagement-only signal.
+        log_rows = []
+    for aid, plat in log_rows:
+        net = _PLAT_CODE_TO_NET.get((plat or "").lower())
+        if net:
+            nets_by_article.setdefault(int(aid), set()).add(net)
+
     eng_platform_rows = query_all(
         "SELECT DISTINCT article_id, platform FROM article_engagement"
     ) or []
     for aid, plat in eng_platform_rows:
-        net = _ENG_CODE_TO_NET.get((plat or "").lower())
+        net = _PLAT_CODE_TO_NET.get((plat or "").lower())
         if net:
             nets_by_article.setdefault(int(aid), set()).add(net)
 
