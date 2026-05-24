@@ -17257,6 +17257,14 @@ def admin_engagement_bulk_import():
         n = _norm(atitle)
         by_norm.setdefault(n, []).append((aid, atitle))
 
+    # Common English stopwords that add no signal to title matching.
+    _STOP = {"the", "a", "an", "of", "and", "or", "to", "in", "on", "for",
+             "with", "from", "by", "at", "is", "as", "how", "its", "it",
+             "this", "that", "through", "into", "be", "are", "was", "were"}
+
+    def _tokens(s):
+        return {t for t in _norm(s).split() if t and t not in _STOP and len(t) > 1}
+
     def _match(title_raw):
         nt = _norm(title_raw)
         if not nt:
@@ -17276,6 +17284,37 @@ def admin_engagement_bulk_import():
             return candidates[0], "substring"
         if len(candidates) > 1:
             return candidates, "ambiguous"
+        # Token-set Jaccard fallback: tolerates word reorderings, added
+        # subtitles, and synonym swaps. Accept only if the best score is
+        # both above the floor (0.45) and clearly ahead of the runner-up
+        # (margin >= 0.10) — otherwise it's too ambiguous to commit to.
+        input_tokens = _tokens(title_raw)
+        if len(input_tokens) < 2:
+            return None, "no_match"
+        scored = []
+        for n, lst in by_norm.items():
+            cand_tokens = _tokens(n)
+            if not cand_tokens:
+                continue
+            inter = len(input_tokens & cand_tokens)
+            if inter == 0:
+                continue
+            union = len(input_tokens | cand_tokens)
+            jacc = inter / union
+            # Also require at least half of the input's meaningful tokens
+            # to appear in the candidate — guards against a long candidate
+            # title swamping a short input by sheer token count.
+            coverage = inter / max(1, len(input_tokens))
+            score = (jacc + coverage) / 2
+            for cand in lst:
+                scored.append((score, cand))
+        if not scored:
+            return None, "no_match"
+        scored.sort(key=lambda x: x[0], reverse=True)
+        best_score, best_cand = scored[0]
+        runner_score = scored[1][0] if len(scored) > 1 else 0.0
+        if best_score >= 0.45 and (best_score - runner_score) >= 0.10:
+            return best_cand, "fuzzy"
         return None, "no_match"
 
     def _i(v):
@@ -17296,7 +17335,7 @@ def admin_engagement_bulk_import():
             "comments": _i(row.get("comments")),
             "shares":   _i(row.get("shares")),
         }
-        if status in ("exact", "substring"):
+        if status in ("exact", "substring", "fuzzy"):
             matched.append({
                 "input_title":   title_raw,
                 "article_id":    m[0],
