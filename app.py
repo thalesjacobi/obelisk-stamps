@@ -5310,9 +5310,8 @@ def admin_articles():
     # post-id keys each platform's worker writes on success. One batched
     # LIKE-OR query keeps this O(1) regardless of article count.
     _NET_KEY_PATTERNS = [
-        ("youtube",   "yt_video_id_%"),
+        ("youtube",   "youtube_video_id_%"),
         ("instagram", "ig_narrated_post_id_%"),
-        ("instagram", "ig_carousel_id_%"),
         ("facebook",  "fb_narrated_post_id_%"),
         ("x",         "x_narrated_tweet_id_%"),
         ("threads",   "threads_narrated_post_id_%"),
@@ -5321,7 +5320,7 @@ def admin_articles():
         ("linkedin",  "linkedin_narrated_post_id_%"),
         ("bluesky",   "bluesky_narrated_post_uri_%"),
         ("reddit",    "reddit_narrated_post_id_%"),
-        ("telegram",  "telegram_narrated_message_id_%"),
+        ("telegram",  "telegram_narrated_post_id_%"),
         ("vimeo",     "vimeo_narrated_video_id_%"),
         ("mastodon",  "mastodon_narrated_post_id_%"),
     ]
@@ -5346,6 +5345,22 @@ def admin_articles():
                     break
                 nets_by_article.setdefault(aid, set()).add(net)
                 break
+
+    # Fallback: any platform with an engagement row counts as "published
+    # there". Catches articles published before auto-publish was wired up
+    # and articles whose metrics were imported manually via Bulk Import.
+    _ENG_CODE_TO_NET = {
+        "yt": "youtube", "ig": "instagram", "fb": "facebook", "x": "x",
+        "bluesky": "bluesky", "tiktok": "tiktok", "pinterest": "pinterest",
+        "threads": "threads", "linkedin": "linkedin", "reddit": "reddit",
+    }
+    eng_platform_rows = query_all(
+        "SELECT DISTINCT article_id, platform FROM article_engagement"
+    ) or []
+    for aid, plat in eng_platform_rows:
+        net = _ENG_CODE_TO_NET.get((plat or "").lower())
+        if net:
+            nets_by_article.setdefault(int(aid), set()).add(net)
 
     # Per-article engagement totals (latest snapshot only — avoid double-counting history)
     eng_rows = query_all("""
