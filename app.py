@@ -17665,7 +17665,7 @@ def admin_analytics():
         # Use only the LATEST snapshot per (article_id, platform) so that
         # appended time-series rows from manual entry don't double-count.
         raw_articles = query_all("""
-            SELECT a.id, a.title, a.slug, a.is_published, a.created_at,
+            SELECT a.id, a.title, a.slug, a.is_published, a.created_at, a.updated_at,
                 COALESCE(SUM(latest.likes), 0)    AS total_likes,
                 COALESCE(SUM(latest.views), 0)    AS total_views,
                 COALESCE(SUM(latest.shares), 0)   AS total_shares,
@@ -17685,14 +17685,14 @@ def admin_analytics():
                      AND mx.mf         = e.fetched_at
             ) latest ON latest.article_id = a.id
             WHERE a.is_published = 1
-            GROUP BY a.id, a.title, a.slug, a.is_published, a.created_at
-            ORDER BY total_views DESC
+            GROUP BY a.id, a.title, a.slug, a.is_published, a.created_at, a.updated_at
+            ORDER BY a.updated_at DESC
         """)
     except Exception:
-        raw_articles = query_all("SELECT id, title, slug, is_published, created_at, 0,0,0,0, NULL FROM articles WHERE is_published = 1 ORDER BY id DESC")
+        raw_articles = query_all("SELECT id, title, slug, is_published, created_at, updated_at, 0,0,0,0, NULL FROM articles WHERE is_published = 1 ORDER BY updated_at DESC")
     articles = [_Row(id=r[0], title=r[1], slug=r[2], status=r[3], created_at=r[4],
-                     total_likes=r[5], total_views=r[6], total_shares=r[7],
-                     total_comments=r[8], last_fetched=r[9]) for r in (raw_articles or []) if r]
+                     total_likes=r[6], total_views=r[7], total_shares=r[8],
+                     total_comments=r[9], last_fetched=r[10]) for r in (raw_articles or []) if r]
 
     try:
         raw_platform = query_all("""
@@ -17718,6 +17718,7 @@ def admin_analytics():
                             total_shares=r[3], total_comments=r[4]) for r in (raw_platform or [])]
 
     return render_template("admin_analytics.html",
+                           active_tab="analytics",
                            articles=articles,
                            platform_totals=platform_totals,
                            ga_measurement_id=GA_MEASUREMENT_ID)

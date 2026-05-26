@@ -11,7 +11,8 @@
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4" style="max-width:1200px">
+<div>
+    {% include '_admin_nav.html' %}
     <div class="d-flex align-items-center mb-4">
         <h2 class="mb-0"><i class="fa-solid fa-chart-line me-2"></i>Analytics Dashboard</h2>
         <div class="ms-auto d-flex gap-2">
@@ -244,7 +245,17 @@
 (function() {
     var modalEl = document.getElementById('metricsModal');
     if (!modalEl) return;
-    var modal = window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+    // Bootstrap's JS is loaded at the end of layout.html, AFTER this script
+    // runs, so we can't construct the Modal here. Build it lazily the first
+    // time we need to show it — by then bootstrap is on window.
+    var modal = null;
+    function getModal() {
+        if (modal) return modal;
+        if (window.bootstrap && bootstrap.Modal) {
+            modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        }
+        return modal;
+    }
     var currentArticleId = null;
 
     function formatDt(iso) {
@@ -282,18 +293,18 @@
         document.getElementById('metrics-modal-title').textContent = btn.dataset.articleTitle || '';
         document.getElementById('metrics-loading').classList.remove('d-none');
         document.getElementById('metrics-form').classList.add('d-none');
-        if (modal) modal.show();
+        var m = getModal(); if (m) m.show();
         fetch('/admin/articles/' + currentArticleId + '/metrics')
             .then(function(r) { return r.json(); })
             .then(function(j) {
-                if (j.error) { alert('Failed: ' + j.error); if (modal) modal.hide(); return; }
+                if (j.error) { alert('Failed: ' + j.error); { var mh = getModal(); if (mh) mh.hide(); } return; }
                 renderRows(j.platforms || []);
                 document.getElementById('metrics-loading').classList.add('d-none');
                 document.getElementById('metrics-form').classList.remove('d-none');
             })
             .catch(function(err) {
                 alert('Failed to load metrics: ' + err);
-                if (modal) modal.hide();
+                { var mh = getModal(); if (mh) mh.hide(); }
             });
     });
 
