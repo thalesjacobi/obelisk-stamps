@@ -1,0 +1,118 @@
+{% extends "layout.html" %}
+{% block body_class %}site-admin{% endblock %}
+
+{% block head %}
+<style>
+    /* --- Doc body typography --- */
+    .doc-body { font-family: 'Lora', Georgia, serif; line-height: 1.65; color: #1f2937; }
+    .doc-body h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 2.1rem; margin-top: 0; }
+    .doc-body h2 { font-family: 'Playfair Display', Georgia, serif; font-size: 1.55rem;
+                   margin-top: 2.5rem; padding-bottom: .3rem; border-bottom: 1px solid #e5e7eb; }
+    .doc-body h3 { font-size: 1.2rem; margin-top: 1.8rem; }
+    .doc-body h4 { font-size: 1.05rem; margin-top: 1.2rem; color: #374151; }
+    .doc-body p, .doc-body li { font-size: .98rem; }
+    .doc-body code { background: #f3f4f6; padding: .12em .35em; border-radius: 3px;
+                     font-size: .87em; color: #be185d; }
+    .doc-body pre { background: #1f2937; color: #f3f4f6; padding: 1rem 1.2rem;
+                    border-radius: 6px; overflow-x: auto; font-size: .85rem; line-height: 1.5; }
+    .doc-body pre code { background: transparent; color: inherit; padding: 0; font-size: inherit; }
+    .doc-body blockquote { border-left: 3px solid #93c5fd; padding: .25rem 1rem;
+                           color: #4b5563; background: #f9fafb; margin: 1rem 0; }
+    .doc-body table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .92rem; }
+    .doc-body th, .doc-body td { border: 1px solid #e5e7eb; padding: .45rem .7rem;
+                                  text-align: left; vertical-align: top; }
+    .doc-body th { background: #f3f4f6; }
+    .doc-body a { color: #1d4ed8; text-decoration: none; }
+    .doc-body a:hover { text-decoration: underline; }
+    .doc-body .headerlink { opacity: 0; margin-left: .35em; font-weight: normal;
+                            text-decoration: none; font-size: .8em; color: #9ca3af; }
+    .doc-body h1:hover .headerlink, .doc-body h2:hover .headerlink,
+    .doc-body h3:hover .headerlink, .doc-body h4:hover .headerlink { opacity: 1; }
+
+    /* --- Sidebar TOC --- */
+    .doc-toc { position: sticky; top: 1rem; max-height: calc(100vh - 2rem);
+               overflow-y: auto; padding: 1rem 1.25rem; background: #f9fafb;
+               border: 1px solid #e5e7eb; border-radius: 6px; font-size: .88rem; }
+    .doc-toc h6 { text-transform: uppercase; letter-spacing: .05em; font-size: .72rem;
+                  color: #6b7280; margin: 0 0 .6rem; }
+    .doc-toc ul { list-style: none; padding-left: 0; margin: 0; }
+    .doc-toc ul ul { padding-left: 1rem; margin-top: .2rem; }
+    .doc-toc li { margin: .2rem 0; }
+    .doc-toc a { color: #374151; text-decoration: none; }
+    .doc-toc a:hover { color: #1d4ed8; }
+    .doc-toc > ul > li > a { font-weight: 600; }
+
+    /* --- Codehilite (Pygments) override for inline code blocks --- */
+    .codehilite { background: #1f2937; border-radius: 6px; margin: 1rem 0; }
+    .codehilite pre { margin: 0; }
+    .codehilite .k, .codehilite .kd, .codehilite .kr { color: #c084fc; }     /* keywords */
+    .codehilite .s, .codehilite .s1, .codehilite .s2 { color: #86efac; }     /* strings */
+    .codehilite .c, .codehilite .c1, .codehilite .cm { color: #6b7280; }     /* comments */
+    .codehilite .nf, .codehilite .nc { color: #fbbf24; }                     /* function / class */
+    .codehilite .nb { color: #93c5fd; }                                      /* builtin */
+    .codehilite .mi, .codehilite .mf { color: #fde68a; }                     /* numbers */
+
+    /* --- Doc-picker (index) cards --- */
+    .doc-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem 1.25rem;
+                margin-bottom: .75rem; transition: all .15s; background: #fff; }
+    .doc-card:hover { border-color: #3b82f6; box-shadow: 0 2px 8px rgba(0,0,0,.06);
+                      transform: translateY(-1px); }
+    .doc-card a { text-decoration: none; color: inherit; }
+    .doc-card h5 { margin: 0 0 .3rem; color: #1d4ed8; }
+    .doc-card .muted { color: #6b7280; font-size: .85rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div>
+    {% include '_admin_nav.html' %}
+
+    {% if current %}
+    <div class="row g-4">
+        {# --- Sidebar with all-docs picker + this doc's TOC --- #}
+        <aside class="col-lg-3 d-none d-lg-block">
+            <div class="doc-toc">
+                {% if docs|length > 1 %}
+                <h6>All documents</h6>
+                <ul>
+                    {% for d in docs %}
+                    <li><a href="{{ url_for('admin_docs', slug=d.slug) }}"
+                           {% if d.slug == current.slug %}style="color:#1d4ed8;font-weight:600;"{% endif %}>{{ d.title }}</a></li>
+                    {% endfor %}
+                </ul>
+                <hr style="margin: .9rem 0; opacity: .4;">
+                {% endif %}
+                {% if toc_html %}
+                <h6>On this page</h6>
+                {{ toc_html|safe }}
+                {% endif %}
+            </div>
+        </aside>
+
+        <article class="col-lg-9">
+            <div class="doc-body">
+                {{ body_html|safe }}
+            </div>
+        </article>
+    </div>
+    {% else %}
+    {# --- Index when no slug picked and more than one doc --- #}
+    <div class="mb-3">
+        <h2 class="mb-1"><i class="fa-solid fa-book me-2"></i>Documentation</h2>
+        <p class="text-muted">Internal technical documents.</p>
+    </div>
+    {% if docs %}
+        {% for d in docs %}
+        <a href="{{ url_for('admin_docs', slug=d.slug) }}" class="d-block">
+            <div class="doc-card">
+                <h5>{{ d.title }}</h5>
+                <div class="muted">{{ d.slug }}.md</div>
+            </div>
+        </a>
+        {% endfor %}
+    {% else %}
+        <p class="text-muted">No documents in <code>docs/</code> yet.</p>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

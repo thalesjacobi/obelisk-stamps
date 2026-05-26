@@ -28,7 +28,7 @@ from oauthlib.oauth2 import WebApplicationClient
 
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, flash, redirect, url_for, jsonify, \
-    send_from_directory, session, stream_with_context, Response
+    send_from_directory, session, stream_with_context, Response, abort
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_mail import Mail, Message
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -17722,6 +17722,77 @@ def admin_analytics():
                            articles=articles,
                            platform_totals=platform_totals,
                            ga_measurement_id=GA_MEASUREMENT_ID)
+
+
+# ------------------------------------------------------------
+# ADMIN DOCS VIEWER
+# Renders any *.md file in docs/ as styled HTML with TOC and
+# syntax-highlighted code blocks. Editorial source-of-truth stays
+# the markdown file; this just gives us a browser-readable view.
+# ------------------------------------------------------------
+_DOCS_DIR = Path(__file__).parent / "docs"
+
+
+def _list_docs():
+    """Return [{slug, title, path}, ...] for every *.md in docs/."""
+    out = []
+    if not _DOCS_DIR.is_dir():
+        return out
+    for p in sorted(_DOCS_DIR.glob("*.md")):
+        # Use the first H1 line (if any) as the display title; fall back to slug.
+        title = p.stem.replace("_", " ").replace("-", " ").title()
+        try:
+            for line in p.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("# "):
+                    title = line[2:].strip()
+                    break
+        except Exception:
+            pass
+        out.append({"slug": p.stem, "title": title, "path": p})
+    return out
+
+
+@app.route("/admin/docs")
+@app.route("/admin/docs/<slug>")
+@login_required
+@admin_required
+def admin_docs(slug=None):
+    """Render an internal markdown doc as styled HTML. Lists all docs at /admin/docs;
+    individual docs at /admin/docs/<slug> (slug = filename without .md)."""
+    try:
+        import markdown as _md
+    except ImportError:
+        return ("markdown library not installed. Add `markdown` to requirements.txt "
+                "and redeploy."), 500
+
+    docs = _list_docs()
+    if slug is None:
+        # Index: redirect to first doc if exactly one, otherwise show list
+        if len(docs) == 1:
+            return redirect(url_for("admin_docs", slug=docs[0]["slug"]))
+        return render_template("admin_docs.html", active_tab="docs",
+                               docs=docs, current=None, body_html=None, toc_html=None)
+
+    # Render a specific doc
+    target = next((d for d in docs if d["slug"] == slug), None)
+    if not target:
+        abort(404)
+    src = target["path"].read_text(encoding="utf-8")
+    md = _md.Markdown(extensions=[
+        "extra",         # tables, fenced code, footnotes, etc.
+        "toc",           # table of contents (TOC) + anchored headings
+        "codehilite",    # Pygments-based syntax highlighting on code blocks
+        "sane_lists",
+    ], extension_configs={
+        "codehilite": {"guess_lang": False, "css_class": "codehilite"},
+        "toc":        {"permalink": True, "anchorlink": False},
+    })
+    body_html = md.convert(src)
+    toc_html  = getattr(md, "toc", "") or ""
+    return render_template("admin_docs.html", active_tab="docs",
+                           docs=docs, current=target,
+                           body_html=body_html, toc_html=toc_html)
 
 
 # ------------------------------------------------------------

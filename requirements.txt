@@ -46,3 +46,7 @@ lumaai>=1.0.0
 
 # Google Cloud Storage (persistent file hosting)
 google-cloud-storage>=2.10.0
+
+# Internal docs rendering (admin /admin/docs viewer)
+markdown>=3.6
+Pygments>=2.18
