@@ -1254,6 +1254,50 @@ def get_setting(key, default=None):
     return row[0] if row else default
 
 
+def _acquire_post_lock(status_key, max_stale_minutes=15):
+    """Try to acquire a per-platform 'currently posting' lock.
+
+    Every per-network publish route follows the same pattern:
+      if status_key already starts with "running":
+          refuse with HTTP 409 (worker is in flight)
+      else:
+          set status_key = "running:0" and start the worker.
+
+    Without an expiry, a worker that crashes mid-flight (uncaught exception,
+    pod restart during deploy, OOM) leaves the lock set forever — the next
+    user click sees "Already posting this video" and is permanently blocked.
+
+    This helper adds a timestamp companion key ({status_key}_lock_at) so we
+    can detect stale locks (older than max_stale_minutes) and forcibly
+    reclaim them. Returns True if the caller should proceed, False if a
+    fresh in-flight lock is still held by another request.
+    """
+    import time as _t
+    lock_at_key = status_key + "_lock_at"
+    current = (get_setting(status_key) or "")
+    is_running = current.startswith("running")
+    now = int(_t.time())
+    if is_running:
+        try:
+            lock_at = int(get_setting(lock_at_key) or 0)
+        except (ValueError, TypeError):
+            lock_at = 0
+        age = now - lock_at if lock_at else 10 ** 9
+        if age <= max_stale_minutes * 60:
+            return False  # fresh lock — really still in flight
+        print(f"[Lock] Reclaiming stale lock {status_key} "
+              f"(age={age}s, status={current!r})", flush=True)
+    # Acquire (new or stolen from a crashed worker).
+    now_str = str(now)
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (status_key, "running:0", "running:0"))
+    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE value = %s",
+            (lock_at_key, now_str, now_str))
+    return True
+
+
 def init_articles_table():
     """Create the articles table if it doesn't exist."""
     conn = get_db()
@@ -8702,10 +8746,9 @@ def admin_post_to_youtube(article_id):
     status_key = f"yt_status_{article_id}_{run_ts}"
     title_key  = f"yt_title_{article_id}_{run_ts}"
     desc_key   = f"yt_desc_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already uploading this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
-            (status_key, "running:start", "running:start"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already uploading this video. "
+                                 "If it's stuck, wait 15 minutes and retry."}), 409
     # Save title/description so they can be restored on page reload
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
             (title_key, title, title))
@@ -9823,11 +9866,9 @@ def admin_post_narrated_to_instagram(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided."}), 400
     status_key = f"narrated_ig_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s",
-            (status_key, "running:start", "running:start"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. "
+                                 "If it's stuck, wait 15 minutes and retry."}), 409
     _add_activity_log(article_id, "Instagram Reel Post Started",
                       f"run_ts={run_ts}\nvideo_url={video_url[:120]}",
                       component="narrated")
@@ -11576,10 +11617,8 @@ def admin_post_narrated_to_x(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"x_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. If it\'s stuck, wait 15 minutes and retry."}), 409
     threading.Thread(target=_post_narrated_x_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
@@ -12248,10 +12287,8 @@ def admin_post_narrated_to_threads(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"threads_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. If it\'s stuck, wait 15 minutes and retry."}), 409
     threading.Thread(target=_post_narrated_threads_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
@@ -12976,10 +13013,8 @@ def admin_post_narrated_to_pinterest(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"pinterest_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. If it\'s stuck, wait 15 minutes and retry."}), 409
     threading.Thread(target=_post_narrated_pinterest_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
@@ -13348,18 +13383,12 @@ def admin_post_narrated_to_tiktok(article_id):
                           "No video_url in request body.", component="narrated")
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"tiktok_narrated_status_{article_id}_{run_ts}"
-    existing_status = get_setting(status_key) or ""
-    if existing_status.startswith("running"):
+    if not _acquire_post_lock(status_key):
         _add_activity_log(article_id, "TikTok Upload Rejected (409)",
-                          f"Already posting this video. Existing status: {existing_status}\n"
-                          f"run_ts={run_ts}\n"
-                          "Clearing stale status so the next click can proceed.",
+                          f"Lock is fresh (<15 min old) for run_ts={run_ts}.",
                           component="narrated")
-        # Clear the stale status so the user's next click works
-        execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
-        return jsonify({"error": "Was already posting; cleared stale status — click again."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+        return jsonify({"error": "Already posting this video. "
+                                 "If it's stuck, wait 15 minutes and retry."}), 409
     _add_activity_log(article_id, "TikTok Upload Started",
                       f"run_ts={run_ts}\nvideo_url={video_url[:200]}\n"
                       f"caption_length={len(caption)} chars",
@@ -13857,10 +13886,8 @@ def admin_post_narrated_to_linkedin(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"linkedin_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. If it\'s stuck, wait 15 minutes and retry."}), 409
     threading.Thread(target=_post_narrated_linkedin_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
@@ -14512,10 +14539,8 @@ def admin_post_narrated_to_bluesky(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"bluesky_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. If it\'s stuck, wait 15 minutes and retry."}), 409
     threading.Thread(target=_post_narrated_bluesky_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
@@ -14932,10 +14957,8 @@ def admin_post_narrated_to_reddit(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"reddit_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. If it\'s stuck, wait 15 minutes and retry."}), 409
     threading.Thread(target=_post_narrated_reddit_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
@@ -15339,10 +15362,8 @@ def admin_post_narrated_to_telegram(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"telegram_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. If it\'s stuck, wait 15 minutes and retry."}), 409
     threading.Thread(target=_post_narrated_telegram_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
@@ -15554,10 +15575,8 @@ def admin_post_narrated_to_vimeo(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"vimeo_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. If it\'s stuck, wait 15 minutes and retry."}), 409
     threading.Thread(target=_post_narrated_vimeo_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
@@ -16010,10 +16029,8 @@ def admin_post_narrated_to_mastodon(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"mastodon_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. If it\'s stuck, wait 15 minutes and retry."}), 409
     threading.Thread(target=_post_narrated_mastodon_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
@@ -16458,10 +16475,8 @@ def admin_post_narrated_to_vk(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"vk_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. If it\'s stuck, wait 15 minutes and retry."}), 409
     threading.Thread(target=_post_narrated_vk_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
@@ -16866,10 +16881,8 @@ def admin_post_narrated_to_tumblr(article_id):
     if not video_url:
         return jsonify({"error": "No video URL provided"}), 400
     status_key = f"tumblr_narrated_status_{article_id}_{run_ts}"
-    if (get_setting(status_key) or "").startswith("running"):
-        return jsonify({"error": "Already posting this video."}), 409
-    execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE value = %s", (status_key, "running:0", "running:0"))
+    if not _acquire_post_lock(status_key):
+        return jsonify({"error": "Already posting this video. If it\'s stuck, wait 15 minutes and retry."}), 409
     threading.Thread(target=_post_narrated_tumblr_worker,
                      args=(article_id, video_url, caption, run_ts), daemon=True).start()
     return jsonify({"ok": True})
