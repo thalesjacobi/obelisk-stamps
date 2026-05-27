@@ -5482,7 +5482,40 @@ def admin_article_edit(article_id):
     vk_car_caption        = get_setting(f"vk_car_caption_{article_id}") or ""
     tumblr_car_caption    = get_setting(f"tumblr_car_caption_{article_id}") or ""
 
+    # Published-networks indicator — same algorithm as the Articles list
+    # (see SOCIAL_MEDIA_CONTENT_GENERATION spec §14.1). Union posting_log
+    # (canonical: written by every successful platform worker) with
+    # article_engagement (fallback: catches articles whose metrics were
+    # bulk-imported but never had a posting_log row). Map platform codes
+    # to canonical network names that the _published_networks_icons.html
+    # partial knows how to render.
+    _PLAT_CODE_TO_NET = {
+        "yt": "youtube", "ig": "instagram", "fb": "facebook", "x": "x",
+        "bluesky": "bluesky", "tiktok": "tiktok", "pinterest": "pinterest",
+        "threads": "threads", "linkedin": "linkedin", "reddit": "reddit",
+        "telegram": "telegram", "vimeo": "vimeo", "mastodon": "mastodon",
+        "vk": "vk", "tumblr": "tumblr",
+    }
+    _nets = set()
+    try:
+        for (plat,) in (query_all(
+                "SELECT DISTINCT platform FROM posting_log WHERE article_id = %s",
+                (article_id,)) or []):
+            n = _PLAT_CODE_TO_NET.get((plat or "").lower())
+            if n:
+                _nets.add(n)
+    except Exception:
+        pass
+    for (plat,) in (query_all(
+            "SELECT DISTINCT platform FROM article_engagement WHERE article_id = %s",
+            (article_id,)) or []):
+        n = _PLAT_CODE_TO_NET.get((plat or "").lower())
+        if n:
+            _nets.add(n)
+    published_networks = sorted(_nets)
+
     return render_template("article_edit.html", article=article,
+                           published_networks=published_networks,
                            carousel_style=article_carousel_style,
                            cinemagraph_prompt=get_setting('cinemagraph_prompt', _CINE_DEFAULT_PROMPT),
                            cinemagraph_article_prompt=get_setting(f'cinemagraph_prompt_{article_id}', ''),
@@ -8695,13 +8728,18 @@ def admin_youtube_status(article_id):
     run_ts      = request.args.get("ts", "0")
     status_key  = f"yt_status_{article_id}_{run_ts}"
     result_key  = f"yt_result_{article_id}_{run_ts}"
-    title_key   = f"yt_title_{article_id}_{run_ts}"
-    desc_key    = f"yt_desc_{article_id}_{run_ts}"
+    # Two write paths, two key conventions — see notes below admin_post_to_youtube.
+    # Read the manual-path keys first; fall back to the worker-path keys so videos
+    # uploaded via the auto-publish runner also restore their title/description.
+    title_key       = f"yt_title_{article_id}_{run_ts}"
+    desc_key        = f"yt_desc_{article_id}_{run_ts}"
+    title_key_alt   = f"yt_narrated_title_{article_id}_{run_ts}"
+    desc_key_alt    = f"yt_narrated_caption_{article_id}_{run_ts}"
     history_key = f"yt_history_{article_id}_{run_ts}"
     status  = get_setting(status_key) or "idle"
     result  = get_setting(result_key) or ""
-    title   = get_setting(title_key)  or ""
-    desc    = get_setting(desc_key)   or ""
+    title   = get_setting(title_key) or get_setting(title_key_alt) or ""
+    desc    = get_setting(desc_key)  or get_setting(desc_key_alt)  or ""
     history = json.loads(get_setting(history_key) or "[]")
     return jsonify({"status": status, "result": result,
                     "title": title, "description": desc, "history": history})
@@ -8715,11 +8753,13 @@ def admin_delete_youtube_post(article_id):
     import datetime as _dt
     data       = request.get_json() or {}
     run_ts     = str(data.get("run_ts", "0"))
-    status_key  = f"yt_status_{article_id}_{run_ts}"
-    result_key  = f"yt_result_{article_id}_{run_ts}"
-    title_key   = f"yt_title_{article_id}_{run_ts}"
-    desc_key    = f"yt_desc_{article_id}_{run_ts}"
-    history_key = f"yt_history_{article_id}_{run_ts}"
+    status_key      = f"yt_status_{article_id}_{run_ts}"
+    result_key      = f"yt_result_{article_id}_{run_ts}"
+    title_key       = f"yt_title_{article_id}_{run_ts}"
+    desc_key        = f"yt_desc_{article_id}_{run_ts}"
+    title_key_alt   = f"yt_narrated_title_{article_id}_{run_ts}"
+    desc_key_alt    = f"yt_narrated_caption_{article_id}_{run_ts}"
+    history_key     = f"yt_history_{article_id}_{run_ts}"
 
     result = get_setting(result_key) or ""
     if not result.startswith("done:"):
@@ -8752,8 +8792,8 @@ def admin_delete_youtube_post(article_id):
             # Continue to archive even if API delete fails
 
     # Archive
-    title   = get_setting(title_key) or ""
-    desc    = get_setting(desc_key) or ""
+    title   = get_setting(title_key) or get_setting(title_key_alt) or ""
+    desc    = get_setting(desc_key)  or get_setting(desc_key_alt)  or ""
     history = json.loads(get_setting(history_key) or "[]")
     history.append({
         "video_id": video_id, "url": yt_url, "title": title, "description": desc,
@@ -8762,7 +8802,7 @@ def admin_delete_youtube_post(article_id):
     hist_val = json.dumps(history)
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
-    for k in (status_key, result_key, title_key, desc_key):
+    for k in (status_key, result_key, title_key, desc_key, title_key_alt, desc_key_alt):
         execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
     _add_activity_log(article_id, "YouTube Post Deleted & Archived",
                       f"video_id={video_id}", component="narrated")
@@ -8777,19 +8817,21 @@ def admin_archive_youtube_post(article_id):
     import datetime as _dt
     data       = request.get_json() or {}
     run_ts     = str(data.get("run_ts", "0"))
-    status_key  = f"yt_status_{article_id}_{run_ts}"
-    result_key  = f"yt_result_{article_id}_{run_ts}"
-    title_key   = f"yt_title_{article_id}_{run_ts}"
-    desc_key    = f"yt_desc_{article_id}_{run_ts}"
-    history_key = f"yt_history_{article_id}_{run_ts}"
+    status_key      = f"yt_status_{article_id}_{run_ts}"
+    result_key      = f"yt_result_{article_id}_{run_ts}"
+    title_key       = f"yt_title_{article_id}_{run_ts}"
+    desc_key        = f"yt_desc_{article_id}_{run_ts}"
+    title_key_alt   = f"yt_narrated_title_{article_id}_{run_ts}"
+    desc_key_alt    = f"yt_narrated_caption_{article_id}_{run_ts}"
+    history_key     = f"yt_history_{article_id}_{run_ts}"
 
     result = get_setting(result_key) or ""
     if not result.startswith("done:"):
         return jsonify({"error": "No YouTube post to archive"}), 400
     yt_url   = result.replace("done:", "")
     video_id = yt_url.rstrip("/").split("/")[-1]
-    title    = get_setting(title_key) or ""
-    desc     = get_setting(desc_key) or ""
+    title    = get_setting(title_key) or get_setting(title_key_alt) or ""
+    desc     = get_setting(desc_key)  or get_setting(desc_key_alt)  or ""
     history  = json.loads(get_setting(history_key) or "[]")
     history.append({
         "video_id": video_id, "url": yt_url, "title": title, "description": desc,
@@ -8798,7 +8840,7 @@ def admin_archive_youtube_post(article_id):
     hist_val = json.dumps(history)
     execute("INSERT INTO site_settings (`key`, value) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE value = %s", (history_key, hist_val, hist_val))
-    for k in (status_key, result_key, title_key, desc_key):
+    for k in (status_key, result_key, title_key, desc_key, title_key_alt, desc_key_alt):
         execute("DELETE FROM site_settings WHERE `key` = %s", (k,))
     _add_activity_log(article_id, "YouTube Post Archived",
                       f"video_id={video_id}", component="narrated")
@@ -11191,37 +11233,114 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
         _, fin_info = _x_extract(fin_data)
         print(f"[X] FINALIZE ok (state={fin_info.get('state', 'n/a')})", flush=True)
 
-        # 5. Wait for processing — X's v2 STATUS endpoint (both path-based and
-        # query-string forms) currently returns 404 in production despite being
-        # documented. Workaround: sleep generously up front, then retry the
-        # tweet step on "media is invalid" errors (which X uses as a
-        # not-ready-yet signal as well as a true error).
+        # 5. Wait for processing.
+        #
+        # The right path is to poll X's STATUS endpoint until the video
+        # transcoder reports `state=succeeded`. Earlier versions of the v2
+        # media API returned 404 on the path-based status URL, so this used
+        # to be a "sleep and pray" loop. The query-string form
+        #     GET /2/media/upload?command=STATUS&media_id=<id>
+        # works reliably now, so prefer it; keep the path-based URL as a
+        # fallback for any account/region where it's still missing.
+        #
+        # If STATUS itself becomes unavailable on both URLs we fall back to
+        # a generous blind-wait + retry-on-"media invalid" loop sized for a
+        # ~5-minute transcode budget (large narrated videos can take
+        # 2-4 min in the X queue at peak times).
         _set_status("running:processing")
-        # Initial wait. For narrated videos (typically 50-200 MB) X's
-        # async transcoder takes 20-60s. Use the larger of:
-        #   - check_after_secs * 2 (X's hint, doubled for safety)
-        #   - 30s default
-        # Skip entirely if state was already "succeeded".
-        initial_wait = 0
-        if fin_info and fin_info.get("state") and fin_info["state"] != "succeeded":
-            cas = int(fin_info.get("check_after_secs") or 0)
-            initial_wait = max(30, cas * 2 if cas else 30)
-            initial_wait = min(initial_wait, 120)  # cap at 2 min
-            print(f"[X] FINALIZE state={fin_info.get('state')}; "
-                  f"check_after_secs={fin_info.get('check_after_secs')}; "
-                  f"sleeping {initial_wait}s before first tweet attempt", flush=True)
+
+        def _x_status_once(mid):
+            """Return (state, check_after_secs, raw_state_was_seen).
+            state ∈ {"succeeded","failed","in_progress","pending", None}.
+            None means the STATUS endpoint itself was unavailable (404/network)."""
+            for status_url in (
+                f"https://api.x.com/2/media/upload?command=STATUS&media_id={mid}",
+                f"https://api.x.com/2/media/upload/{mid}",
+            ):
+                try:
+                    r = _req.get(status_url, auth=auth, timeout=15)
+                except Exception:
+                    continue
+                if r.status_code == 404:
+                    continue
+                if r.status_code not in (200, 201):
+                    continue
+                try:
+                    j = r.json()
+                except Exception:
+                    continue
+                _, info = _x_extract(j)
+                if not info:
+                    # Some responses inline processing_info at the top level
+                    info = j.get("processing_info") or {}
+                state = (info.get("state") or "").lower() or None
+                cas = int(info.get("check_after_secs") or 0)
+                return state, cas, True
+            return None, 0, False
+
+        # If FINALIZE already returned succeeded, skip polling entirely.
+        state = (fin_info or {}).get("state", "").lower() if fin_info else ""
+        media_ready = (state == "succeeded")
+        media_failed = False
+
+        if not media_ready:
+            # Initial sleep: honour check_after_secs from FINALIZE if present,
+            # otherwise default to 15s. Don't cap at 0 even if processing_info
+            # is missing — X often returns no info field for async videos.
+            cas_initial = int((fin_info or {}).get("check_after_secs") or 0)
+            initial_wait = max(15, min(cas_initial, 60))
+            print(f"[X] FINALIZE state={state or 'unknown'}; "
+                  f"check_after_secs={cas_initial}; "
+                  f"sleeping {initial_wait}s before first STATUS check", flush=True)
             _time_mod.sleep(initial_wait)
 
-        # 6. Post tweet — retry on "media is invalid" (X's not-ready-yet signal).
-        # Wait pattern between retries: 20s, 40s, 60s (total ~2min on top of
-        # the initial wait). Most videos finish well within this window.
+            # Poll STATUS for up to 5 minutes total. status_unavailable trips
+            # when neither URL form works — in that case break and fall
+            # through to the blind-wait/retry-tweet path below.
+            poll_deadline = _time_mod.time() + 300  # 5 min cap
+            status_unavailable_count = 0
+            while _time_mod.time() < poll_deadline:
+                st, cas, was_seen = _x_status_once(media_id)
+                if not was_seen:
+                    status_unavailable_count += 1
+                    print(f"[X] STATUS endpoint unavailable "
+                          f"(attempt #{status_unavailable_count})", flush=True)
+                    if status_unavailable_count >= 2:
+                        break  # give up on STATUS; let tweet-retry handle it
+                    _time_mod.sleep(20)
+                    continue
+                print(f"[X] STATUS state={st!r} check_after_secs={cas}", flush=True)
+                if st == "succeeded":
+                    media_ready = True
+                    break
+                if st == "failed":
+                    media_failed = True
+                    break
+                # pending / in_progress: wait the suggested time, default 10s
+                _time_mod.sleep(max(10, min(cas, 30)))
+        else:
+            initial_wait = 0
+
+        if media_failed:
+            _x_log_failure("Media processing",
+                           0, "X reported state=failed for the uploaded media.",
+                           exception_msg="Video did not pass X's transcoder. "
+                           "Common causes: unsupported codec (need H.264/AAC), "
+                           "duration > 140s, file > 512MB.")
+            return
+
+        # 6. Post tweet. If STATUS confirmed succeeded, one shot is usually
+        # enough. If STATUS was unavailable, fall back to a longer retry
+        # loop on "media invalid" — pattern is 30/60/90/120s, total ~5 min.
         _set_status("running:tweeting")
         tweet_text = caption[:280] if caption else ""
         tweet_data = {}
         tweet_id = None
         last_err_body = ""
         last_status = 0
-        for attempt_num, retry_wait in enumerate([0, 20, 40, 60], start=1):
+        # If media_ready, do 1 attempt; if not (STATUS unavailable), retry liberally.
+        retry_schedule = [0] if media_ready else [0, 30, 60, 90, 120]
+        for attempt_num, retry_wait in enumerate(retry_schedule, start=1):
             if retry_wait:
                 print(f"[X] Tweet attempt {attempt_num} — waiting {retry_wait}s "
                       f"(media still processing)", flush=True)
@@ -11259,7 +11378,9 @@ def _post_narrated_x_worker(article_id, video_url, caption, run_ts):
             _x_log_failure("Tweet creation",
                            last_status,
                            last_err_body or _json.dumps(tweet_data),
-                           exception_msg=f"Failed after {attempt_num} attempts; initial_wait={initial_wait}s")
+                           exception_msg=f"Failed after {attempt_num} attempts; "
+                           f"media_ready_from_status={media_ready}; "
+                           f"initial_wait={initial_wait}s")
             return
 
         permalink = f"https://x.com/i/web/status/{tweet_id}"

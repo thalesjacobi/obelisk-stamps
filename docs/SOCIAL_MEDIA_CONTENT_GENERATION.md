@@ -539,6 +539,11 @@ Detailed contract per network. All workers receive `(article_id, video_url, capt
 - **Status keys:** `yt_status_{article_id}` with values `running:token / running:download / running:upload / running:publish / running:poll`.
 - **Result key:** `yt_result_{article_id}_{run_ts}` containing `done:{youtube_url}` or `error:{reason}`.
 - **Post-id markers:** `youtube_video_id_{article_id}_{run_ts}` written separately (used by the engagement poller).
+- **Title / description persistence (two key conventions — read with fallback):**
+  - The manual `POST /admin/articles/<id>/post-to-youtube` route writes the admin-entered title/description to `yt_title_{article_id}_{run_ts}` and `yt_desc_{article_id}_{run_ts}` BEFORE invoking the worker.
+  - The worker, after a successful upload, writes the *actual* posted title/description to `yt_narrated_title_{article_id}_{run_ts}` and `yt_narrated_caption_{article_id}_{run_ts}` (the `*_narrated_*` convention matches every other narrated-platform worker).
+  - **Auto-publish does not go through the manual route**, so for auto-published videos only the `yt_narrated_*` keys exist.
+  - Read paths (`/youtube-status`, `/delete-youtube-post`, `/archive-youtube-post`) MUST therefore check the manual key first and fall back to the worker key (`get_setting(yt_title) or get_setting(yt_narrated_title) or ""`). Otherwise the Edit-page panel renders empty Title/Description textareas for any auto-published video.
 - **Failure modes:** Token refresh failure surfaces as `error:reconnect:…` and the admin sees a "reconnect YouTube" prompt. Upload errors propagate the YouTube error body.
 - **Force-injected** into every auto-publish sequence (§7.1).
 
@@ -565,18 +570,26 @@ Detailed contract per network. All workers receive `(article_id, video_url, capt
 - **Caption budget:** Unbounded in practice; pass full caption.
 - **No polling step** — the API returns immediately with the post ID.
 
-### 8.4 X / Twitter (`_post_narrated_x_worker`, app.py:11044)
+### 8.4 X / Twitter (`_post_narrated_x_worker`, app.py:11086)
 
-- **Auth:** OAuth 1.1a (4-credential: consumer key+secret + access token + secret). The reference uses the v2 Media Upload API (path-based, not legacy v1.1 form-encoded).
-- **Endpoints:**
-  - `POST https://upload.twitter.com/2/media/upload/initialize` → media_id
-  - `POST https://upload.twitter.com/2/media/upload/{media_id}/append` with chunk
-  - `POST https://upload.twitter.com/2/media/upload/{media_id}/finalize`
-  - `GET https://upload.twitter.com/2/media/upload/{media_id}` → poll `processing_info.state`
-  - `POST https://api.twitter.com/2/tweets` with `{text, media: {media_ids:[media_id]}}`
-- **Caption budget:** 280 chars (shortened version).
-- **Status key:** `x_narrated_status_{id}_{run_ts}` (`running:download → running:upload → running:finalize → running:poll → running:publish`).
+- **Auth:** OAuth 1.1a (4-credential: consumer key+secret + access token + secret). The reference uses the v2 Media Upload API (REST-style, not legacy v1.1 form-encoded).
+- **Endpoints (host `api.x.com`):**
+  - `POST /2/media/upload/initialize` with JSON body `{total_bytes, media_type:"video/mp4", media_category:"tweet_video"}` → `{data:{id:<media_id>, processing_info:{...}}}`
+  - `POST /2/media/upload/{media_id}/append` with multipart form `{segment_index: N, media: <chunk bytes>}`. **Chunk size must be ≤ 1 MB** — v2 enforces a tighter limit than v1.1 (5 MB) and 5 MB chunks return HTTP 413.
+  - `POST /2/media/upload/{media_id}/finalize` → `{data:{processing_info:{state, check_after_secs}}}` or 200 with no `processing_info` if processing is synchronous.
+  - `GET /2/media/upload?command=STATUS&media_id={id}` → poll `processing_info.state`. The path-based variant `GET /2/media/upload/{id}` is the documented alternative but historically returned 404 in production. The worker tries the query-form first and falls back to the path form for robustness.
+  - `POST https://api.twitter.com/2/tweets` with JSON body `{text, media:{media_ids:[media_id]}}`
+- **Caption budget:** 280 chars (AI-shortened version, §5.2).
+- **Status key:** `x_narrated_status_{id}_{run_ts}` (`running:download → running:upload_init → running:upload_append → running:upload_finalize → running:processing → running:tweeting`).
 - **Result key:** `x_narrated_tweet_id_{id}_{run_ts}`.
+
+**Critical: large-video processing wait pattern.** X's transcoder is asynchronous and takes 30–300s depending on file size (a typical 60-second 720p narrated video is ~80–150 MB and processes in 60–180s; up to 4 min during peak load). The wait pattern:
+
+1. After FINALIZE, sleep `min(60, check_after_secs)` or 15s default (don't skip the initial sleep even if FINALIZE returned no `processing_info` — X often omits the block for asynchronous videos).
+2. Poll STATUS for up to **5 minutes total**. On `succeeded` → proceed. On `failed` → surface as "Media processing failed" (don't retry; the video was rejected — common causes: codec not H.264, audio not AAC, duration > 140s, file > 512 MB).
+3. If both STATUS URL forms return 404 twice in a row, abandon polling and fall through to a "blind wait + retry on `media invalid`" loop with the pattern [0, 30, 60, 90, 120]s on the tweet itself (~5 min of additional retries).
+
+The **"media IDs are invalid"** tweet error from X is overloaded: it's used both for genuinely invalid IDs *and* as a not-ready-yet signal during async processing. Always classify it as a retry candidate until either STATUS reports `failed` or the retry budget is exhausted. Total worst-case timeline is ~10 minutes (5 min STATUS poll + 5 min tweet retries) which catches even queued-during-peak videos.
 
 ### 8.5 Threads (`_post_narrated_threads_worker`, app.py:11907)
 
@@ -868,19 +881,24 @@ delete_setting(key)                   # DELETE WHERE `key`=%s
 
 ## 14. Admin Dashboards
 
-### 14.1 Articles list with published-networks icons
+### 14.1 Published-networks indicator (Articles list + Edit page)
 
-Layout: tabbed list (Published / Drafts / Pre-Draft Pipeline). Each row shows title, dates, link clicks, engagement total, and a row of small platform brand icons indicating which networks the article has been posted to.
+The same indicator appears in two surfaces:
 
-Network detection uses **two unioned signals**:
+- **Articles list** (`/admin/articles`, Published tab) — one icon row under each article title, so editors can scan dozens of articles and see distribution at a glance.
+- **Article edit page** (`/admin/articles/<id>/edit`) — one icon row in the page header next to the title, so editors looking at a single article can confirm where it landed without going back to the list.
+
+Both surfaces render the same shared partial `templates/_published_networks_icons.html`, which takes a `networks` iterable of canonical network names and emits one Font Awesome brand icon per network with the platform's brand colour and a "Published to {Network}" hover title. The partial is the single source of icon truth — adding a new network (e.g. when a new platform worker is wired up) only requires extending the partial's `_net_icons` dict.
+
+Network detection uses **two unioned signals** (run server-side, once per page load):
 
 ```sql
-SELECT DISTINCT article_id, platform FROM posting_log
+SELECT DISTINCT platform FROM posting_log         WHERE article_id = ?
 UNION
-SELECT DISTINCT article_id, platform FROM article_engagement
+SELECT DISTINCT platform FROM article_engagement  WHERE article_id = ?
 ```
 
-The platform code is then mapped to a network name via `_PLAT_CODE_TO_NET`:
+The Articles list runs a batched variant (no `WHERE article_id`) and joins by `article_id` in Python; the Edit page runs the per-article version above. The platform code is then mapped to a canonical network name via `_PLAT_CODE_TO_NET`:
 
 ```
 yt→youtube, ig→instagram, fb→facebook, x→x, bluesky→bluesky,
@@ -889,7 +907,9 @@ linkedin→linkedin, reddit→reddit, telegram→telegram, vimeo→vimeo,
 mastodon→mastodon, vk→vk, tumblr→tumblr
 ```
 
-`posting_log` is the canonical signal; `article_engagement` is the fallback for articles whose metrics were imported via bulk import but never had a `log_social_post` row (e.g. historical content published before the system existed).
+`posting_log` is the canonical signal — every successful platform worker calls `log_social_post` (§12.2). `article_engagement` is the fallback signal for articles whose metrics were imported via bulk import but never had a `log_social_post` row (e.g. historical content published before the system existed, or content posted manually from outside the platform).
+
+**Per-run icons on the edit page** are a separate concern: the Narrated Video Generator panel shows one accordion item per narrated run (see `video_narrated_runs` in §4.3), with a small row of icons in each run's collapsed header. Those icons are live-coloured during posting via JS but are *not* restored on page load — they will be grey for past runs until a backfill from the per-run site-settings markers (`{platform}_narrated_post_id_{article_id}_{run_ts}`, etc.) is wired up. The article-level header indicator above is the source of truth for "did this article ever reach network X".
 
 ### 14.2 Drafts list
 
@@ -956,6 +976,8 @@ Things to get right when reimplementing on another platform/language.
 **ASS subtitle escaping is platform-specific.** On Windows the libavfilter `subtitles=` filter needs `path.replace('\\', '/').replace(':', r'\:')` and the whole thing wrapped in single quotes. On POSIX the path can usually be passed verbatim. Detect and branch.
 
 **The `posting_log` table is your friend.** It's the only place that reliably captures "we posted X to Y at time Z". Engagement tables can be polluted by retries and imports; `auto_publish_actions` can be edited after the fact. `posting_log` is append-only and never lies. Build all your "did we post this?" UI off it.
+
+**Avoid divergent key conventions between manual and auto-publish write paths.** If a platform has both (a) a per-platform manual button on the Edit page that calls a `/post-to-<network>` route AND (b) an auto-publish worker that posts the same content without going through that route, both code paths must persist post metadata (title, caption, post id) under the same `site_settings` keys. Otherwise the Edit page restore logic will silently work for one path and silently fail for the other — symptom is "the caption I see on the actual network is missing from the panel after page reload". The YouTube worker historically wrote `yt_narrated_title_*` / `yt_narrated_caption_*` while the manual route wrote `yt_title_*` / `yt_desc_*`; the read endpoints had to be patched to check both with fallback. When reimplementing: pick **one** key convention per platform and use it from both paths.
 
 ---
 

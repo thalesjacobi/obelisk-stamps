@@ -423,37 +423,15 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% set _net_icons = {
-                            'youtube':   ('fa-youtube',     '#FF0000', 'YouTube'),
-                            'instagram': ('fa-instagram',   '#E1306C', 'Instagram'),
-                            'facebook':  ('fa-facebook',    '#1877F2', 'Facebook'),
-                            'x':         ('fa-x-twitter',   '#000000', 'X'),
-                            'threads':   ('fa-threads',     '#000000', 'Threads'),
-                            'tiktok':    ('fa-tiktok',      '#010101', 'TikTok'),
-                            'linkedin':  ('fa-linkedin',    '#0A66C2', 'LinkedIn'),
-                            'pinterest': ('fa-pinterest',   '#E60023', 'Pinterest'),
-                            'bluesky':   ('fa-bluesky',     '#1185FE', 'Bluesky'),
-                            'reddit':    ('fa-reddit',      '#FF4500', 'Reddit'),
-                            'telegram':  ('fa-telegram',    '#26A5E4', 'Telegram'),
-                            'vimeo':     ('fa-vimeo',       '#1AB7EA', 'Vimeo'),
-                            'mastodon':  ('fa-mastodon',    '#6364FF', 'Mastodon'),
-                            'vk':        ('fa-vk',          '#0077FF', 'VK'),
-                            'tumblr':    ('fa-tumblr',      '#36465D', 'Tumblr'),
-                        } %}
                         {% for a in pub %}
                         <tr>
                             <td>
                                 <div>{{ a.title }}</div>
                                 {% if a.published_networks %}
-                                <div class="mt-1" style="line-height:1;">
-                                    {% for n in a.published_networks %}
-                                        {% set ic = _net_icons.get(n) %}
-                                        {% if ic %}
-                                            <i class="fa-brands {{ ic[0] }} me-2"
-                                               style="color: {{ ic[1] }}; font-size: 0.95rem;"
-                                               title="Published to {{ ic[2] }}"></i>
-                                        {% endif %}
-                                    {% endfor %}
+                                <div class="mt-1">
+                                    {% with networks = a.published_networks %}
+                                        {% include '_published_networks_icons.html' %}
+                                    {% endwith %}
                                 </div>
                                 {% endif %}
                             </td>

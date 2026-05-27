@@ -245,9 +245,21 @@
 {% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center mb-3">
+<div class="d-flex align-items-center mb-3 flex-wrap gap-2">
     <a href="/admin/articles" class="text-decoration-none text-muted me-3">&larr; All Articles</a>
     <h4 class="mb-0">{% if article %}Edit Article{% else %}New Article{% endif %}</h4>
+
+    {# Same article-level "Posted to <network>" indicator as the Articles
+       list, so editors can see at a glance which networks this article has
+       reached. Source: posting_log ∪ article_engagement (see spec §14.1). #}
+    {% if published_networks %}
+    <div class="ms-3 d-flex align-items-center gap-2">
+        <span class="text-muted small">Posted to:</span>
+        {% with networks = published_networks, icon_size = '1.05rem' %}
+            {% include '_published_networks_icons.html' %}
+        {% endwith %}
+    </div>
+    {% endif %}
 
     <div class="ms-auto d-flex align-items-center gap-2">
         {% if article and article.is_published %}
