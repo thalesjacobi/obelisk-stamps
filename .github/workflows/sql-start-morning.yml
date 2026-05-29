@@ -1,0 +1,36 @@
+name: Cloud SQL Start (Morning)
+
+# Restart the Cloud SQL instance every morning.
+# Runs BEFORE scale-up-morning.yml (08:00 UTC) so the DB is ready
+# before the app's first warm instance comes online.
+#
+# Schedule: 07:55 UTC daily (5 min before Cloud Run scale-up).
+
+on:
+  schedule:
+    - cron: '55 7 * * *'   # 07:55 UTC daily
+  workflow_dispatch:
+
+jobs:
+  start-sql:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0.2.0
+        with:
+          project_id: obelisk-stamps
+          service_account_email: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          service_account_key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Start Cloud SQL instance obelisk-mysql
+        run: |
+          gcloud sql instances patch obelisk-mysql \
+            --activation-policy=ALWAYS \
+            --quiet
+          echo "Cloud SQL obelisk-mysql started. Waiting 60s for it to come fully online…"
+          sleep 60

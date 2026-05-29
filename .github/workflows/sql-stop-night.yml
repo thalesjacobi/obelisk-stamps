@@ -1,0 +1,36 @@
+name: Cloud SQL Stop (Night)
+
+# Stop the Cloud SQL instance every night to save ~£20-30/month.
+# The app is also scaled to 0 during this window (scale-down-night.yml)
+# so no requests will hit a stopped DB.
+#
+# Schedule: 22:05 UTC daily (5 min after Cloud Run scale-down so the
+# app is already idle before the DB goes away).
+
+on:
+  schedule:
+    - cron: '5 22 * * *'   # 22:05 UTC daily
+  workflow_dispatch:
+
+jobs:
+  stop-sql:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0.2.0
+        with:
+          project_id: obelisk-stamps
+          service_account_email: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          service_account_key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Stop Cloud SQL instance obelisk-mysql
+        run: |
+          gcloud sql instances patch obelisk-mysql \
+            --activation-policy=NEVER \
+            --quiet
+          echo "Cloud SQL obelisk-mysql stopped."
