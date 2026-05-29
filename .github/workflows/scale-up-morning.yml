@@ -1,0 +1,35 @@
+name: Scale Up (Morning)
+
+# Restore Cloud Run min-instances=1 each morning so background work
+# (auto-publish, daily media generation) has a warm instance to run in.
+#
+# Schedule: 08:00 UTC daily. First scheduled-publish slot is 10:00 UTC,
+# so this gives 2 hours of warm-up time before any auto-publish fires.
+
+on:
+  schedule:
+    - cron: '0 8 * * *'    # 08:00 UTC daily
+  workflow_dispatch:        # Allow manual trigger from the Actions tab
+
+jobs:
+  scale-up:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0.2.0
+        with:
+          project_id: obelisk-stamps
+          service_account_email: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          service_account_key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Scale Cloud Run service to 1 min-instance
+        run: |
+          gcloud run services update obelisk-stamps \
+            --region europe-west1 \
+            --min-instances 1
+          echo "Cloud Run obelisk-stamps scaled to min-instances=1 (warm instance for the publishing day)."

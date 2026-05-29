@@ -1,0 +1,36 @@
+name: Scale Down (Night)
+
+# Scale Cloud Run min-instances to 0 each night to save ~£30-50/month.
+# Cold start on first morning request is ~5 seconds; cron endpoints
+# (UptimeRobot) handle it transparently.
+#
+# Schedule: 22:00 UTC daily. The next scheduled-publish slot is 10:00 UTC,
+# so a 22:00-08:00 UTC window is safely free of any background work.
+
+on:
+  schedule:
+    - cron: '0 22 * * *'   # 22:00 UTC daily
+  workflow_dispatch:       # Allow manual trigger from the Actions tab
+
+jobs:
+  scale-down:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0.2.0
+        with:
+          project_id: obelisk-stamps
+          service_account_email: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          service_account_key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Scale Cloud Run service to 0 min-instances
+        run: |
+          gcloud run services update obelisk-stamps \
+            --region europe-west1 \
+            --min-instances 0
+          echo "Cloud Run obelisk-stamps scaled to min-instances=0 (cold-start on next request)."
