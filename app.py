@@ -2654,12 +2654,22 @@ def fetch_follower_counts():
 # ------------------------------------------------------------
 @app.route("/")
 def home():
-    catalogue_items = query_all(
-        "SELECT id, title, description, price, image_url, status, category, slug "
-        "FROM catalogue WHERE is_public = 1 ORDER BY id DESC"
-    )
+    # Latest 12 published articles for the home carousel.
+    latest_article_rows = query_all(
+        "SELECT id, slug, title, excerpt, image_url, published_at "
+        "FROM articles WHERE is_published = TRUE "
+        "ORDER BY published_at DESC LIMIT 12"
+    ) or []
+    latest_articles = [
+        {"id": r[0], "slug": r[1], "title": r[2], "excerpt": r[3],
+         "image_url": r[4],
+         "published_at": r[5].strftime("%d %B %Y").lstrip("0") if r[5] else None}
+        for r in latest_article_rows
+    ]
     currency = get_active_currency()
-    return render_template("home.html", catalogue_items=catalogue_items, user_currency=currency)
+    return render_template("home.html",
+                           latest_articles=latest_articles,
+                           user_currency=currency)
 
 
 @app.route("/about")
@@ -2759,13 +2769,61 @@ def article_view(slug):
         "id": row[0], "slug": row[1], "title": row[2], "subtitle": row[3],
         "content": row[4], "excerpt": row[5] or "",
         "image_url": row[6],
+        "published_at_raw": row[7],
         "published_at": row[7].strftime("%d %B %Y").lstrip("0") if row[7] else None,
         "carousel_images":       json.loads(row[8])  if row[8]  else [],
         "carousel_punchlines":   json.loads(row[9])  if row[9]  else [],
         "carousel_cinemagraphs": json.loads(row[10]) if row[10] else [],
         "show_slideshow": bool(row[11]),
+        "youtube_video_id":  None,
     }
-    return render_template("article.html", article=article)
+    # Prev (older) / next (newer) articles for inter-article navigation.
+    prev_article, next_article = None, None
+    if article["published_at_raw"]:
+        _p = query_one(
+            "SELECT slug, title FROM articles "
+            "WHERE is_published = TRUE AND published_at < %s "
+            "ORDER BY published_at DESC LIMIT 1",
+            (article["published_at_raw"],),
+        )
+        if _p:
+            prev_article = {"slug": _p[0], "title": _p[1]}
+        _n = query_one(
+            "SELECT slug, title FROM articles "
+            "WHERE is_published = TRUE AND published_at > %s "
+            "ORDER BY published_at ASC LIMIT 1",
+            (article["published_at_raw"],),
+        )
+        if _n:
+            next_article = {"slug": _n[0], "title": _n[1]}
+    # Look up the most-recent YouTube post for this article from the
+    # canonical posting_log table. post_id holds the YouTube video ID.
+    try:
+        yt = query_one(
+            "SELECT post_id FROM posting_log "
+            "WHERE article_id = %s AND platform = 'yt' AND post_id IS NOT NULL "
+            "  AND post_id <> '' "
+            "ORDER BY posted_at DESC LIMIT 1",
+            (article["id"],),
+        )
+        if yt and yt[0]:
+            article["youtube_video_id"] = yt[0]
+        else:
+            # Fallback: scan site_settings for the engagement-poller marker
+            # (covers videos posted before posting_log was wired up).
+            row2 = query_one(
+                "SELECT value FROM site_settings "
+                "WHERE `key` LIKE %s AND value IS NOT NULL AND value <> '' "
+                "ORDER BY `key` DESC LIMIT 1",
+                (f"youtube_video_id_{article['id']}_%",),
+            )
+            if row2 and row2[0]:
+                article["youtube_video_id"] = row2[0]
+    except Exception:
+        pass
+    return render_template("article.html", article=article,
+                           prev_article=prev_article,
+                           next_article=next_article)
 
 
 @app.route("/catalogue")
@@ -4971,6 +5029,57 @@ def _next_free_publish_slot():
     return None
 
 
+def _finalize_cover_and_slideshow(aid):
+    """Apply the cover-image + slideshow defaults to an article.
+
+    Rules (unchanged from the daily-media runner):
+      - Only touch fields if at least one carousel image exists
+      - Cover image: set ONLY if there is no current cover (never override)
+      - Slideshow: enable ONLY if currently disabled (never override True)
+
+    Returns a dict describing what (if anything) changed. Never raises.
+    """
+    try:
+        crow = query_one(
+            "SELECT carousel_images, image_url, show_slideshow "
+            "FROM articles WHERE id = %s", (aid,))
+        if not crow:
+            return {"ok": False, "error": "article not found"}
+        try:
+            images = json.loads(crow[0]) if crow[0] else []
+        except Exception:
+            images = []
+        images = [u for u in (images or [])[:10] if u]
+        if not images:
+            return {"ok": True, "skipped_no_carousel": True}
+        cover_to_use  = images[1] if len(images) >= 2 else images[0]
+        current_cover = (crow[1] or "").strip()
+        current_slides = bool(crow[2])
+        updates, params = [], []
+        cover_set_to, slideshow_enabled = None, False
+        if not current_cover:
+            updates.append("image_url = %s")
+            params.append(cover_to_use)
+            cover_set_to = cover_to_use
+        if not current_slides:
+            updates.append("show_slideshow = %s")
+            params.append(True)
+            slideshow_enabled = True
+        if updates:
+            params.append(aid)
+            execute(f"UPDATE articles SET {', '.join(updates)} WHERE id = %s",
+                    tuple(params))
+            return {"ok": True, "cover_set": cover_set_to,
+                    "slideshow_enabled": slideshow_enabled,
+                    "cover_kept_existing": bool(current_cover),
+                    "slideshow_kept_existing": current_slides}
+        return {"ok": True, "no_change": True,
+                "cover_kept_existing": bool(current_cover),
+                "slideshow_kept_existing": current_slides}
+    except Exception as _e:
+        return {"ok": False, "error": str(_e)[:200]}
+
+
 def _schedule_all_ready_drafts():
     """Assign next-free publish slots to every draft that is fully ready
     (10/10 carousel + narrated video) and has no scheduled_publish_at yet.
@@ -4991,6 +5100,15 @@ def _schedule_all_ready_drafts():
         if _carousel_url_count(imgs_json) < 10 or not vid_url:
             continue
         try:
+            # Apply cover-image + slideshow defaults BEFORE scheduling, so
+            # articles that became ready out-of-band (manually-generated
+            # media, regenerated media after scheduling, etc.) don't go
+            # live without a hero image and slideshow.
+            fin = _finalize_cover_and_slideshow(aid)
+            if fin.get("cover_set") or fin.get("slideshow_enabled"):
+                print(f"[DailyMedia] Pre-finalized ready draft {aid}: "
+                      f"cover_set={bool(fin.get('cover_set'))}, "
+                      f"slideshow_enabled={fin.get('slideshow_enabled')}", flush=True)
             slot = _next_free_publish_slot()
             if slot is None:
                 print(f"[DailyMedia] No free slot for ready draft {aid}.", flush=True)
@@ -5101,60 +5219,13 @@ def _daily_media_generation_runner(max_articles=None, forced=False):
                       flush=True)
                 per_log["steps"].append({"step": "narrated", "ok": False, "error": str(_e)[:200]})
 
-        # 3. Cover image + slideshow toggle — strict rules:
-        #    - Only touch these if at least one carousel image exists
-        #    - Cover image: set ONLY if there is no current cover (never override)
-        #    - Slideshow: enable ONLY if currently disabled (never override an explicit True)
-        try:
-            crow = query_one("SELECT carousel_images, image_url, show_slideshow FROM articles WHERE id = %s", (aid,))
-            if crow:
-                images = []
-                try:
-                    images = json.loads(crow[0]) if crow[0] else []
-                except Exception:
-                    images = []
-                images = [u for u in (images or [])[:10] if u]
-                if not images:
-                    # No carousel images → leave both fields alone, per user rule
-                    per_log["steps"].append({"step": "finalize", "ok": True, "skipped_no_carousel": True})
-                else:
-                    cover_to_use  = images[1] if len(images) >= 2 else images[0]
-                    current_cover = (crow[1] or "").strip()
-                    current_slides = bool(crow[2])
-                    updates = []
-                    params  = []
-                    cover_set_to = None
-                    slideshow_enabled = False
-                    # Cover: only if empty
-                    if not current_cover:
-                        updates.append("image_url = %s")
-                        params.append(cover_to_use)
-                        cover_set_to = cover_to_use
-                    # Slideshow: only enable if currently off
-                    if not current_slides:
-                        updates.append("show_slideshow = %s")
-                        params.append(True)
-                        slideshow_enabled = True
-                    if updates:
-                        params.append(aid)
-                        execute(f"UPDATE articles SET {', '.join(updates)} WHERE id = %s",
-                                tuple(params))
-                        per_log["steps"].append({
-                            "step": "finalize", "ok": True,
-                            "cover_set": cover_set_to,
-                            "slideshow_enabled": slideshow_enabled,
-                            "cover_kept_existing": bool(current_cover),
-                            "slideshow_kept_existing": current_slides,
-                        })
-                    else:
-                        per_log["steps"].append({
-                            "step": "finalize", "ok": True, "no_change": True,
-                            "cover_kept_existing": bool(current_cover),
-                            "slideshow_kept_existing": current_slides,
-                        })
-        except Exception as _e:
-            print(f"[DailyMedia] Article {aid}: finalize crashed: {_e}", flush=True)
-            per_log["steps"].append({"step": "finalize", "ok": False, "error": str(_e)[:200]})
+        # 3. Cover image + slideshow toggle — same rules whether the article
+        # was processed here or pre-scheduled by _schedule_all_ready_drafts.
+        fin = _finalize_cover_and_slideshow(aid)
+        per_log["steps"].append({"step": "finalize", **fin})
+        if not fin.get("ok"):
+            print(f"[DailyMedia] Article {aid}: finalize failed: "
+                  f"{fin.get('error')}", flush=True)
 
         # 4. Auto-schedule publish — only if the article is fully ready
         #    (10/10 carousel + narrated video) AND has no existing schedule.

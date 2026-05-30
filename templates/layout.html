@@ -76,7 +76,7 @@
             <ul class="navbar-nav d-none d-lg-flex flex-row align-items-center gap-1 ms-auto" style="font-size: .875rem;">
                 <li class="nav-item"><a class="nav-link {% if request.endpoint == 'home' %}active{% endif %}" href="/">Home</a></li>
                 <li class="nav-item"><a class="nav-link {% if request.endpoint == 'about' %}active{% endif %}" href="/about">About Us</a></li>
-                <li class="nav-item"><a class="nav-link {% if request.endpoint == 'catalogue' %}active{% endif %}" href="/catalogue">Catalogue</a></li>
+                {# Catalogue link hidden — /catalogue route still works directly. #}
                 <li class="nav-item"><a class="nav-link {% if request.endpoint == 'contact' %}active{% endif %}" href="/contact">Contact</a></li>
                 <li class="nav-item"><a class="nav-link {% if request.endpoint in ['articles','article_view'] %}active{% endif %}" href="/articles">Articles</a></li>
                 <li class="nav-item"><a class="nav-link {% if request.endpoint == 'stamp_quest_ai' %}active{% endif %}" href="/stamp-quest-ai">Stamp Quest AI</a></li>
@@ -121,7 +121,7 @@
                     <ul class="dropdown-menu dropdown-menu-end shadow mt-1">
                         <li><a class="dropdown-item {% if request.endpoint == 'home' %}active{% endif %}" href="/">Home</a></li>
                         <li><a class="dropdown-item {% if request.endpoint == 'about' %}active{% endif %}" href="/about">About Us</a></li>
-                        <li><a class="dropdown-item {% if request.endpoint == 'catalogue' %}active{% endif %}" href="/catalogue">Catalogue</a></li>
+                        {# Catalogue link hidden — /catalogue route still works directly. #}
                         <li><a class="dropdown-item {% if request.endpoint == 'contact' %}active{% endif %}" href="/contact">Contact</a></li>
                         <li><a class="dropdown-item {% if request.endpoint in ['articles','article_view'] %}active{% endif %}" href="/articles">Articles</a></li>
                         <li><a class="dropdown-item {% if request.endpoint == 'stamp_quest_ai' %}active{% endif %}" href="/stamp-quest-ai">Stamp Quest AI</a></li>

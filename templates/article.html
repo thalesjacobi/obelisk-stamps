@@ -27,6 +27,91 @@
 }
 </script>
 
+<style>
+    /* === Inter-article prev/next navigation === */
+    .article-nav-card {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 0.25rem;
+        padding: 0.85rem 1.1rem;
+        border: 1px solid #e0d6c4;
+        border-radius: 8px;
+        background: #fbf8f1;
+        color: #2c2c2c;
+        transition: background .15s, border-color .15s, transform .15s;
+    }
+    a.article-nav-card:hover {
+        background: #f3ebd9;
+        border-color: #b9a173;
+        color: #2c2c2c;
+        transform: translateY(-1px);
+    }
+    .article-nav-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: #8a7045;
+    }
+    .article-nav-title {
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 1.02rem;
+        font-weight: 600;
+        line-height: 1.25;
+        color: #2c2c2c;
+    }
+    .article-nav-empty {
+        background: transparent;
+        border-style: dashed;
+        border-color: #d8ceba;
+    }
+</style>
+
+{% if article.youtube_video_id %}
+<style>
+    /* === YouTube Short embed — sits in the same floated-left spot
+           the slideshow used to occupy, so body text wraps around it. === */
+    .article-yt-wrap {
+        float: left;
+        width: 280px;
+        margin: 0.25rem 1.75rem 1.25rem 0;
+        background: #ebebeb;
+        border-radius: 10px;
+        padding: 10px 10px 8px;
+    }
+    .article-yt-label {
+        font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.07em; color: #888; text-align: center;
+        margin: 0 0 7px;
+    }
+    .article-yt-frame {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 9 / 16;
+        border-radius: 6px;
+        overflow: hidden;
+        background: #000;
+    }
+    .article-yt-frame iframe {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        display: block;
+    }
+    /* On narrow screens, drop the float so the embed sits centered
+       above the text rather than squeezing it. */
+    @media (max-width: 640px) {
+        .article-yt-wrap {
+            float: none;
+            margin: 0.5rem auto 1.5rem;
+        }
+    }
+</style>
+{% endif %}
+
 {% if article.carousel_images %}
 <style>
     /* === Ken Burns slideshow — public article page === */
@@ -37,12 +122,23 @@
     @keyframes asl-zoom{ from{transform:scale(1.0)}                 to{transform:scale(1.18)} }
 
     .asl-wrap {
-        float: left;
         width: 337px;
-        margin: 0.25rem 1.75rem 1.25rem 0;
         background: #ebebeb;
         border-radius: 10px;
         padding: 10px 10px 8px;
+    }
+    /* When the slideshow is injected inside the body next to the last
+       section (typically the Conclusion), float it right so the text
+       wraps around it. */
+    .article-body .asl-wrap {
+        float: right;
+        margin: 0.25rem 0 1.25rem 1.75rem;
+    }
+    @media (max-width: 640px) {
+        .article-body .asl-wrap {
+            float: none;
+            margin: 1rem auto 1.5rem;
+        }
     }
     .asl-label {
         font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
@@ -138,9 +234,38 @@
         <div class="ornament"></div>
     </div>
 
-    <!-- Ken Burns slideshow — floated left, only when carousel images exist -->
+    <!-- Narrated YouTube Short — floated left so body text wraps around
+         it; takes the spot the slideshow previously occupied so the
+         video is the first thing readers see beside the prose. -->
+    {% if article.youtube_video_id %}
+    <div class="article-yt-wrap">
+        <p class="article-yt-label">Watch the Story</p>
+        <div class="article-yt-frame">
+            <iframe src="https://www.youtube.com/embed/{{ article.youtube_video_id }}?rel=0&modestbranding=1"
+                    title="{{ article.title }} — narrated video"
+                    loading="lazy"
+                    allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    referrerpolicy="strict-origin-when-cross-origin"
+                    allowfullscreen></iframe>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="article-body" style="font-size: 1.1rem; line-height: 1.8;">
+        {{ article.content | safe }}
+    </div>
+    <!-- Clear BOTH floats: the YouTube embed on the left and the
+         JS-injected slideshow on the right. Without this, the
+         end-ornament and prev/next nav can ride up alongside the
+         slideshow instead of sitting cleanly below the article. -->
+    <div style="clear: both;"></div>
+
+    <!-- Ken Burns slideshow — rendered here but immediately moved by JS
+         to sit floated-right next to the article's last section (usually
+         the Conclusion). If no <h2> exists in the body the JS leaves it
+         here as a centered closing block. -->
     {% if article.show_slideshow and article.carousel_images %}
-    <div class="asl-wrap">
+    <div class="asl-wrap" id="asl-wrap" style="margin: 2rem auto 1.5rem;">
         <p class="asl-label">Visual Summary &mdash; Article in Motion</p>
         <div id="asl-viewport">
             <div class="asl-layer" id="asl-layer-a"><img id="asl-img-a" src="" alt=""><video id="asl-vid-a" autoplay loop muted playsinline style="display:none;"></video></div>
@@ -155,20 +280,61 @@
     </div>
     {% endif %}
 
-    <div class="article-body" style="font-size: 1.1rem; line-height: 1.8;">
-        {{ article.content | safe }}
-    </div>
-    <div style="clear: left;"></div>
-
     <div class="article-end-ornament"></div>
-    <div class="text-center">
-        <a href="/articles" class="btn btn-outline-secondary mb-4">&larr; Back to Articles</a>
-    </div>
+
+    <!-- Inter-article navigation: previous (older) left, next (newer) right. -->
+    <nav class="article-nav mt-4 mb-5" aria-label="Article navigation">
+        <div class="row g-3 align-items-stretch">
+            <div class="col-md-6">
+                {% if prev_article %}
+                <a href="/articles/{{ prev_article.slug }}"
+                   class="article-nav-card article-nav-prev d-block h-100 text-decoration-none">
+                    <span class="article-nav-label">&larr; Previous</span>
+                    <span class="article-nav-title">{{ prev_article.title }}</span>
+                </a>
+                {% else %}
+                <div class="article-nav-card article-nav-empty h-100">
+                    <span class="article-nav-label text-muted">No older article</span>
+                </div>
+                {% endif %}
+            </div>
+            <div class="col-md-6">
+                {% if next_article %}
+                <a href="/articles/{{ next_article.slug }}"
+                   class="article-nav-card article-nav-next d-block h-100 text-decoration-none text-end">
+                    <span class="article-nav-label">Next &rarr;</span>
+                    <span class="article-nav-title">{{ next_article.title }}</span>
+                </a>
+                {% else %}
+                <div class="article-nav-card article-nav-empty h-100 text-end">
+                    <span class="article-nav-label text-muted">No newer article</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
 
 </article>
 {% endblock %}
 
 {% block scripts %}
+{% if article.show_slideshow and article.carousel_images %}
+<script>
+/* Re-home the slideshow into the article body just before the last
+   <h2>. The CSS rule `.article-body .asl-wrap { float: right }` kicks
+   in automatically once it's inside the body, so the surrounding text
+   wraps around it (typically the Conclusion section). */
+(function () {
+    var body     = document.querySelector('.article-body');
+    var slideshow = document.getElementById('asl-wrap');
+    if (!body || !slideshow) return;
+    var h2s = body.querySelectorAll('h2');
+    if (h2s.length === 0) return;     // no sections → leave centered
+    body.insertBefore(slideshow, h2s[h2s.length - 1]);
+    slideshow.style.margin = '';      // drop the centered-fallback margin
+})();
+</script>
+{% endif %}
 {% if article.carousel_images %}
 <script>
 (function () {

@@ -522,6 +522,15 @@ def _post_narrated_<net>_worker(article_id, video_url, caption, run_ts):
 
 The result key naming convention (`{platform}_narrated_post_id_*`) is what makes the published-networks detection (§14.1) work. The status key is what the UI can poll to display "in flight" state.
 
+**Lock acquisition (every per-platform publish route).** Routes never set `status_key` directly. They call the shared `_acquire_post_lock(status_key, max_stale_minutes=15)` helper, which:
+
+1. Reads the current `status_key` value.
+2. If it starts with `running:`, also reads a companion `{status_key}_lock_at` (unix timestamp set on acquisition).
+3. Returns `False` (publish refused) if the lock is fresh (age ≤ 15 min).
+4. Otherwise (no lock, or lock with no companion timestamp, or stale lock) writes `running:0` to `status_key`, writes `now` to `{status_key}_lock_at`, and returns `True`.
+
+This means a worker that crashes mid-flight (uncaught exception, container restart, OOM during deploy) does **not** permanently trap the user — the next click ≥15 min later auto-reclaims the lock. Workers themselves don't need to manage the timestamp; the helper owns it.
+
 ---
 
 ## 8. Per-Network Workers
@@ -937,6 +946,7 @@ A few invariants the system follows everywhere:
 
 - **Background workers never raise to the caller.** Always wrap in `try/except`, log the traceback, mirror to the activity log, and set a status value like `error:<reason>` (truncated to 200 chars).
 - **Status keys are always cleared (set to NULL or deleted) on terminal states.** The UI polls the status key; absence means "idle/done", presence means "in flight or errored".
+- **Locks have a TTL, not just a clear-on-success contract.** Every per-platform publish route uses `_acquire_post_lock` which auto-expires after 15 minutes (see §7.3). Without this, a crashed worker would set `status_key=running:*` once and trap the user forever — every subsequent click would 409 with "Already posting this video". The companion `{status_key}_lock_at` timestamp is what makes staleness detectable.
 - **Activity logs flush incrementally** so a long-running job's progress is visible while it's still running.
 - **Run logs are dual-stored:** truncated to 65 KB in the DB column for quick UI display, full-fidelity copy uploaded to GCS as a `.log` artifact for forensics.
 - **Cleanup runs in `finally`:** every worker that creates temp files in the static dir cleans them up regardless of success/failure.
@@ -976,6 +986,8 @@ Things to get right when reimplementing on another platform/language.
 **ASS subtitle escaping is platform-specific.** On Windows the libavfilter `subtitles=` filter needs `path.replace('\\', '/').replace(':', r'\:')` and the whole thing wrapped in single quotes. On POSIX the path can usually be passed verbatim. Detect and branch.
 
 **The `posting_log` table is your friend.** It's the only place that reliably captures "we posted X to Y at time Z". Engagement tables can be polluted by retries and imports; `auto_publish_actions` can be edited after the fact. `posting_log` is append-only and never lies. Build all your "did we post this?" UI off it.
+
+**Lock = TTL, not "clear-on-success".** A "is this worker still in flight" lock that only clears in the happy-path return statement is a permanent trap waiting to happen — every crash, every deploy-time pod restart mid-upload, every uncaught OOM leaves it set forever. Always store an acquisition timestamp alongside the lock and treat it as stale after a generous TTL (15 minutes works for narrated videos that can legitimately take ~10 min on slow networks). The reference's `_acquire_post_lock` helper bundles both into one function call so platform routes can't accidentally write the lock without the timestamp.
 
 **Avoid divergent key conventions between manual and auto-publish write paths.** If a platform has both (a) a per-platform manual button on the Edit page that calls a `/post-to-<network>` route AND (b) an auto-publish worker that posts the same content without going through that route, both code paths must persist post metadata (title, caption, post id) under the same `site_settings` keys. Otherwise the Edit page restore logic will silently work for one path and silently fail for the other — symptom is "the caption I see on the actual network is missing from the panel after page reload". The YouTube worker historically wrote `yt_narrated_title_*` / `yt_narrated_caption_*` while the manual route wrote `yt_title_*` / `yt_desc_*`; the read endpoints had to be patched to check both with fallback. When reimplementing: pick **one** key convention per platform and use it from both paths.
 
