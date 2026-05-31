@@ -28,9 +28,13 @@ jobs:
           service_account_email: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
           service_account_key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
-      - name: Stop Cloud SQL instance obelisk-mysql
+      - name: Stop Cloud SQL instance obelisk-mysql (async)
         run: |
           gcloud sql instances patch obelisk-mysql \
             --activation-policy=NEVER \
+            --async \
             --quiet
-          echo "Cloud SQL obelisk-mysql stopped."
+          echo "Cloud SQL obelisk-mysql stop submitted asynchronously."
+          echo "Without --async, gcloud's client-side polling times out after ~9 minutes"
+          echo "with exit code 1 even though the server-side stop succeeds — that false"
+          echo "failure spams notifications. The actual stop completes within ~5 minutes."

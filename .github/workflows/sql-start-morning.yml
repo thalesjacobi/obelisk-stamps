@@ -1,14 +1,19 @@
 name: Cloud SQL Start (Morning)
 
 # Restart the Cloud SQL instance every morning.
-# Runs BEFORE scale-up-morning.yml (08:00 UTC) so the DB is ready
-# before the app's first warm instance comes online.
+# Runs at 07:30 UTC — gives the instance up to 30 minutes to fully
+# come online before Cloud Run scales up at 08:00 UTC. (SQL start
+# typically completes in 3-8 minutes server-side.)
 #
-# Schedule: 07:55 UTC daily (5 min before Cloud Run scale-up).
+# Uses --async so the workflow returns immediately after submitting
+# the patch. Without --async, gcloud client-side polling times out
+# after ~9 minutes with exit code 1, even though the server-side
+# patch operation succeeds. That false-failure spams notifications
+# without indicating any real problem.
 
 on:
   schedule:
-    - cron: '55 7 * * *'   # 07:55 UTC daily
+    - cron: '30 7 * * *'   # 07:30 UTC daily
   workflow_dispatch:
 
 jobs:
@@ -27,10 +32,11 @@ jobs:
           service_account_email: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
           service_account_key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
-      - name: Start Cloud SQL instance obelisk-mysql
+      - name: Start Cloud SQL instance obelisk-mysql (async)
         run: |
           gcloud sql instances patch obelisk-mysql \
             --activation-policy=ALWAYS \
+            --async \
             --quiet
-          echo "Cloud SQL obelisk-mysql started. Waiting 60s for it to come fully online…"
-          sleep 60
+          echo "Cloud SQL obelisk-mysql start submitted asynchronously."
+          echo "Instance will be online in ~3-8 minutes (well before Cloud Run scale-up at 08:00 UTC)."
