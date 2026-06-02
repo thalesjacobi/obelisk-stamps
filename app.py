@@ -8799,6 +8799,60 @@ def admin_youtube_oauth_callback():
     return redirect(url_for("admin_panel"))
 
 
+# Status-key prefix per platform code. Used by the cancel-publish
+# endpoint to know which row to delete in site_settings. The actual
+# key written by the worker is f"{prefix}{article_id}_{run_ts}".
+_PLATFORM_STATUS_PREFIX = {
+    "yt":        "yt_status_",
+    "ig":        "narrated_ig_status_",
+    "fb":        "fb_narrated_status_",
+    "x":         "x_narrated_status_",
+    "threads":   "threads_narrated_status_",
+    "pinterest": "pinterest_narrated_status_",
+    "tiktok":    "tiktok_narrated_status_",
+    "linkedin":  "linkedin_narrated_status_",
+    "bluesky":   "bluesky_narrated_status_",
+    "reddit":    "reddit_narrated_status_",
+    "telegram":  "telegram_narrated_status_",
+    "vimeo":     "vimeo_narrated_status_",
+    "mastodon":  "mastodon_narrated_status_",
+    "vk":        "vk_narrated_status_",
+    "tumblr":    "tumblr_narrated_status_",
+}
+
+
+@app.route("/admin/articles/<int:article_id>/cancel-publish", methods=["POST"])
+@login_required
+@admin_required
+def admin_cancel_publish(article_id):
+    """Cancel an in-flight publish by clearing its status + lock keys.
+
+    Python threads can't be cleanly killed, so the actual background
+    upload will continue and either complete (we ignore the result)
+    or error out. Clearing the status_key releases the per-platform
+    publish lock so the user can immediately start a new attempt, and
+    the UI exits its 'in flight' state.
+    """
+    data = request.get_json() or {}
+    platform = (data.get("platform") or "").strip().lower()
+    run_ts = str(data.get("run_ts") or "0")
+    prefix = _PLATFORM_STATUS_PREFIX.get(platform)
+    if not prefix:
+        return jsonify({"error": f"Unknown platform: {platform!r}"}), 400
+    status_key  = f"{prefix}{article_id}_{run_ts}"
+    lock_at_key = status_key + "_lock_at"
+    execute("DELETE FROM site_settings WHERE `key` = %s", (status_key,))
+    execute("DELETE FROM site_settings WHERE `key` = %s", (lock_at_key,))
+    _add_activity_log(
+        article_id, f"Cancelled {platform} publish",
+        f"User cancelled the in-flight publish. The background thread "
+        f"may continue but the lock is released for retry.\n"
+        f"status_key={status_key}\nrun_ts={run_ts}",
+        component="narrated")
+    return jsonify({"ok": True, "cancelled": True,
+                    "status_key": status_key})
+
+
 @app.route("/admin/articles/<int:article_id>/post-to-youtube", methods=["POST"])
 @login_required
 @admin_required

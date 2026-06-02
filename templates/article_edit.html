@@ -1956,6 +1956,140 @@ const SAVE_URL = ARTICLE_ID
     ? '/admin/articles/' + ARTICLE_ID + '/save'
     : '/admin/articles/new';
 
+// ── Universal publish-cancel button ────────────────────────────────────
+// Every per-platform "in flight" UI block has an ID matching one of:
+//   nv-<platform>-<runTs>-running         (YouTube)
+//   nv-<platform>-<runTs>-status-area     (IG, FB, X, Threads, …)
+//
+// When such a block becomes visible (d-none class removed), inject a
+// small × button into the spinner row (right-aligned via ms-auto) that
+// POSTs to /cancel-publish to clear the per-platform lock so the user
+// can immediately retry. Once a block is cancelled it stays hidden for
+// the rest of the page session even if pollers try to re-show it.
+//
+// This works for ALL 14 platforms without touching their templates.
+(function () {
+    if (!ARTICLE_ID) return;
+
+    /* { "<platform>-<runTs>": true } — blocks the user has cancelled */
+    var cancelledRuns = {};
+    /* { "<id>": true } — guards against MutationObserver loops when we
+       force-hide a cancelled block (our own write fires the observer). */
+    var ignoreNextMutation = {};
+
+    function cancelPublish(platform, runTs, runningEl) {
+        if (!confirm('Stop this publish attempt?\n\n'
+                   + 'The lock will be released so you can retry. '
+                   + 'The background upload may finish in the background '
+                   + '— if it does, click Refresh Metrics later to pick '
+                   + 'up the result.')) {
+            return;
+        }
+        fetch('/admin/articles/' + ARTICLE_ID + '/cancel-publish', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ platform: platform, run_ts: parseInt(runTs) || runTs }),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                if (j.error) { alert('Cancel failed: ' + j.error); return; }
+                /* Mark this run as cancelled so future poller-driven
+                   show-attempts are forcibly hidden by the observer. */
+                cancelledRuns[platform + '-' + runTs] = true;
+                if (runningEl) {
+                    runningEl.dataset.cancelled = '1';
+                    if (!runningEl.classList.contains('d-none')) {
+                        runningEl.classList.add('d-none');
+                    }
+                }
+                var btn = document.getElementById('nv-' + platform + '-' + runTs + '-post-btn');
+                if (btn) { btn.disabled = false; btn.style.pointerEvents = ''; }
+            })
+            .catch(function (err) { alert('Cancel failed: ' + err); });
+    }
+
+    function ensureCancelBtn(el) {
+        /* Skip if no spinner currently animating inside this block */
+        var spinner = el.querySelector('.spinner-border');
+        if (!spinner) return;
+        if (el.querySelector('.js-cancel-publish')) return;
+        /* Parse "nv-<platform>-<runTs>-(running|status-area)" */
+        var m = el.id.match(/^nv-([a-z]+)-(\d+)-(running|status-area)$/);
+        if (!m) return;
+        var platform = m[1], runTs = m[2];
+
+        var btn = document.createElement('button');
+        btn.type      = 'button';
+        btn.className = 'btn-close btn-close-sm js-cancel-publish ms-auto';
+        btn.setAttribute('aria-label', 'Cancel publish');
+        btn.title     = 'Stop this publish';
+        /* Sized to sit unobtrusively at the right of the spinner row. */
+        btn.style.cssText =
+            'width:.7rem; height:.7rem; background-size:.55rem; ' +
+            'opacity:.55; padding:.15rem; flex-shrink:0;';
+        btn.onmouseover = function () { btn.style.opacity = '1'; };
+        btn.onmouseout  = function () { btn.style.opacity = '.55'; };
+        btn.onclick     = function (ev) {
+            ev.preventDefault();
+            cancelPublish(platform, runTs, el);
+        };
+
+        /* Inject into the spinner's flex row so the × aligns with
+           "Processing video…" rather than floating at top-right.
+           Fall back to absolute positioning if no flex row found. */
+        var flexRow = spinner.closest('.d-flex');
+        if (flexRow && flexRow.parentElement === el) {
+            flexRow.appendChild(btn);
+        } else if (flexRow) {
+            flexRow.appendChild(btn);
+        } else {
+            btn.style.cssText += ';position:absolute;top:4px;right:4px;';
+            if (getComputedStyle(el).position === 'static') {
+                el.style.position = 'relative';
+            }
+            el.appendChild(btn);
+        }
+    }
+
+    function scan() {
+        document
+            .querySelectorAll('[id^="nv-"][id$="-running"], [id^="nv-"][id$="-status-area"]')
+            .forEach(function (el) {
+                /* If user cancelled this block, force it back to hidden
+                   any time a poller tries to re-show it. */
+                if (el.dataset.cancelled === '1') {
+                    if (!el.classList.contains('d-none')) {
+                        ignoreNextMutation[el.id] = true;
+                        el.classList.add('d-none');
+                    }
+                    return;
+                }
+                if (el.classList.contains('d-none')) return;
+                ensureCancelBtn(el);
+            });
+    }
+
+    /* Initial sweep + watch DOM mutations (class flips on d-none, new
+       run rows added dynamically, etc.). */
+    scan();
+    new MutationObserver(function (records) {
+        /* Skip mutations we caused ourselves to avoid feedback loops */
+        for (var i = 0; i < records.length; i++) {
+            var t = records[i].target;
+            if (t && t.id && ignoreNextMutation[t.id]) {
+                delete ignoreNextMutation[t.id];
+                return;
+            }
+        }
+        scan();
+    }).observe(document.body, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class'],
+        childList: true,
+    });
+})();
+
 // ── Local-time rendering for <time class="local-dt"> elements ─────────
 // All scheduled times are stored as UTC server-side. Each <time> tagged
 // with class="local-dt" carries the UTC ISO in its datetime / data-utc
