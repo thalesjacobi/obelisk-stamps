@@ -531,6 +531,19 @@ The result key naming convention (`{platform}_narrated_post_id_*`) is what makes
 
 This means a worker that crashes mid-flight (uncaught exception, container restart, OOM during deploy) does **not** permanently trap the user — the next click ≥15 min later auto-reclaims the lock. Workers themselves don't need to manage the timestamp; the helper owns it.
 
+### 7.4 Cancel-publish endpoint
+
+`POST /admin/articles/<id>/cancel-publish` with `{platform, run_ts}` lets the admin stop an in-flight attempt without waiting for the 15-min lock auto-expiry. The endpoint:
+
+1. Maps the platform code to its status-key prefix via the shared `_PLATFORM_STATUS_PREFIX` dict (covers all 15 platforms in one table).
+2. Deletes both `{prefix}{article_id}_{run_ts}` and its companion `*_lock_at` row from `site_settings`.
+3. Writes a `Cancelled <platform> publish` row to the article activity log for auditability.
+4. Returns `{ok: true, cancelled: true, status_key: ...}`.
+
+**Python threads can't be cleanly killed**, so the background upload may continue and either complete (we ignore the result) or error out (also harmless). Clearing the lock is what matters — it releases the publish slot for an immediate retry.
+
+**Universal UI side:** the admin article-edit page runs a single shared MutationObserver that watches for any element matching `nv-<platform>-<runTs>-(running|status-area)` becoming visible (class `d-none` removed). When such an element appears with a spinning `.spinner-border` inside, an injected × button is added to its flex row, right-aligned. Click → confirmation prompt → POST to `/cancel-publish` → mark the run cancelled in an in-memory `cancelledRuns` set. Future poller-driven attempts to re-show the same block are then force-hidden by the observer (with an `ignoreNextMutation` guard to avoid feedback loops). One observer covers all 15 platforms — no per-platform template edits required.
+
 ---
 
 ## 8. Per-Network Workers
@@ -599,6 +612,15 @@ Detailed contract per network. All workers receive `(article_id, video_url, capt
 3. If both STATUS URL forms return 404 twice in a row, abandon polling and fall through to a "blind wait + retry on `media invalid`" loop with the pattern [0, 30, 60, 90, 120]s on the tweet itself (~5 min of additional retries).
 
 The **"media IDs are invalid"** tweet error from X is overloaded: it's used both for genuinely invalid IDs *and* as a not-ready-yet signal during async processing. Always classify it as a retry candidate until either STATUS reports `failed` or the retry budget is exhausted. Total worst-case timeline is ~10 minutes (5 min STATUS poll + 5 min tweet retries) which catches even queued-during-peak videos.
+
+**Access-token permission trap (do not skip).** If "media IDs are invalid" persists *even when* the worker log shows `media_ready_from_status=True`, the access token's permissions are wrong. The X API freezes user-token permissions at the moment of token creation. If your app was originally **Read-only** when you minted the user token, and you later upgraded the app to **Read and write**, the existing token *can still upload media* (which is why you get a valid `media_id`) but *cannot attach that media to a tweet*. The fix:
+
+1. In the X Developer Console → your app → User authentication settings → set App permissions to **Read and write**.
+2. Tab over to **Keys and Tokens** → under OAuth 1.0 → click **Regenerate** on the Access Token.
+3. Copy the new Access Token + Access Token Secret immediately (X only shows them once).
+4. Update env vars `X_ACCESS_TOKEN` and `X_ACCESS_TOKEN_SECRET` and redeploy.
+
+If the user is on the **X Free API tier**, media uploads are blocked at the platform level — no code or token change works. The minimum tier that allows posting tweets with media is **Basic** ($100/month).
 
 ### 8.5 Threads (`_post_narrated_threads_worker`, app.py:11907)
 
@@ -735,10 +757,29 @@ Idempotent — running the sweep twice in the same second does nothing on the se
 `_schedule_all_ready_drafts()` (added as a runner pre-pass — see §10.2):
 
 1. Query all unpublished drafts with `scheduled_publish_at IS NULL` AND fully ready (≥10 carousel images + narrated video URL), ordered by `updated_at ASC` (oldest first).
-2. For each, call `_next_free_publish_slot()` and assign the result via UPDATE.
-3. Log every assignment to `scheduled_publish_audit` with source `_schedule_all_ready_drafts`.
+2. For each, call `_finalize_cover_and_slideshow(aid)` (§9.5) so the hero image and slideshow flag are set before the article is scheduled.
+3. Call `_next_free_publish_slot()` and assign the result via UPDATE.
+4. Log every assignment to `scheduled_publish_audit` with source `_schedule_all_ready_drafts`.
 
-This is the key to filling the schedule weeks ahead: every cron tick, any "media-complete" drafts that don't already have a date instantly get one.
+This is the key to filling the schedule weeks ahead: every cron tick, any "media-complete" drafts that don't already have a date instantly get one — with cover image and slideshow already applied.
+
+### 9.5 Cover-image + slideshow finalize helper
+
+`_finalize_cover_and_slideshow(article_id)` is a small, idempotent helper that applies two editorial defaults to an article:
+
+- **Cover image** — if `articles.image_url` is empty, set it to slide 2 of the carousel (`carousel_images[1]`, falling back to slide 1 if there are fewer than 2 images). Slide 2 is preferred because slide 1 is often a title-card / intro frame that doesn't read well as a hero.
+- **Slideshow toggle** — if `articles.show_slideshow` is `0/FALSE`, set it to `TRUE`.
+
+The helper deliberately **never overrides** an already-set cover image or an explicitly-set `show_slideshow=1`. It only writes when the field is empty / false. If the article has no carousel images at all, it returns `{ok: true, skipped_no_carousel: true}` without touching anything.
+
+**Called from four code paths** — together they guarantee every article gets its defaults applied no matter how it's scheduled:
+
+1. **Daily-media runner main loop** (§10.2) — after generating media for a draft, before the auto-schedule step.
+2. **Ready-draft pre-pass** `_schedule_all_ready_drafts` — applied to every ready draft just before its slot is assigned.
+3. **Manual scheduling routes** — both `POST /admin/articles/<id>/auto-schedule` (next-free-slot button) and `POST /admin/articles/<id>/schedule-publish` (manual date/time picker) call the helper before the UPDATE.
+4. **Publish sweep itself** — `_sweep_scheduled_publishes()` calls the helper at the moment of publication as a last-line safety net. This catches articles that were scheduled before the helper existed (legacy data) or via any other future entry point.
+
+Because the helper is idempotent, calling it from all four paths is cheap and safe — paths after the first see the values already set and return `{ok: true, no_change: true}`.
 
 ---
 

@@ -4545,6 +4545,20 @@ def _sweep_scheduled_publishes():
         )
         for _id, _title, _old_at in due:
             print(f"[ScheduledPublish] Auto-published article {_id}: {_title!r}", flush=True)
+            # Catch-all safety net: apply cover-image + slideshow defaults at
+            # publish time. Articles scheduled via the manual auto-schedule
+            # button or the date/time picker don't go through the daily
+            # runner's finalize step, so without this they'd publish without
+            # a hero image and slideshow enabled. The helper is a no-op when
+            # the values are already set.
+            try:
+                fin = _finalize_cover_and_slideshow(int(_id))
+                if fin.get("cover_set") or fin.get("slideshow_enabled"):
+                    print(f"[ScheduledPublish] Article {_id}: finalized at publish "
+                          f"(cover_set={bool(fin.get('cover_set'))}, "
+                          f"slideshow_enabled={fin.get('slideshow_enabled')})", flush=True)
+            except Exception as _fe:
+                print(f"[ScheduledPublish] Article {_id}: finalize at publish failed: {_fe}", flush=True)
             _log_schedule_audit(int(_id), "publish", old_at=_old_at, new_at=None,
                                 source="_sweep_scheduled_publishes",
                                 article_title=_title,
@@ -5740,6 +5754,8 @@ def admin_article_schedule_publish(article_id):
     if dt_utc < now_utc - _dt.timedelta(minutes=1):
         return jsonify({"error": "Scheduled time is in the past."}), 400
 
+    # Apply cover + slideshow defaults before scheduling. No-op if already set.
+    _finalize_cover_and_slideshow(article_id)
     execute(
         "UPDATE articles SET scheduled_publish_at = %s WHERE id = %s",
         (dt_utc.strftime("%Y-%m-%d %H:%M:%S"), article_id),
@@ -5780,6 +5796,8 @@ def admin_article_auto_schedule(article_id):
     slot = _next_free_publish_slot()
     if slot is None:
         return jsonify({"error": "No free slot available within 120 days."}), 500
+    # Apply cover + slideshow defaults before scheduling. No-op if already set.
+    _finalize_cover_and_slideshow(article_id)
     execute("UPDATE articles SET scheduled_publish_at = %s WHERE id = %s",
             (slot.strftime("%Y-%m-%d %H:%M:%S"), article_id))
     _log_schedule_audit(article_id, "set", old_at=None, new_at=slot,
